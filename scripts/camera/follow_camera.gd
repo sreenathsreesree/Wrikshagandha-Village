@@ -28,6 +28,10 @@ class_name FollowCamera
 
 var _last_target_position: Vector3
 var _has_last_position: bool = false
+## The current area's bounds for the camera's focus (M03.4), set by Main when
+## an area loads — replaced, or cleared, on every area change.
+var _bounds: Rect2
+var _has_bounds: bool = false
 
 func _ready() -> void:
 	if _camera:
@@ -53,10 +57,35 @@ func _physics_process(delta: float) -> void:
 	if horizontal_speed > 0.15:
 		look_ahead = Vector3(velocity_estimate.x, 0.0, velocity_estimate.z).normalized() * look_ahead_distance * speed_ratio
 
-	var desired_position := target_position + look_ahead
+	var desired_position := _clamp_to_bounds(target_position + look_ahead)
 	var smoothing := 1.0 - exp(-follow_speed * delta)
 	global_position = global_position.lerp(desired_position, smoothing)
 
 	if _camera:
 		var fov_smoothing := 1.0 - exp(-3.0 * delta)
 		_camera.fov = lerp(_camera.fov, base_fov + speed_ratio * fov_boost, fov_smoothing)
+
+## The loaded area's bounds (M03.4): the point the camera follows stays
+## inside this X/Z rectangle. Given once per area load, never polled.
+func set_bounds(bounds: Rect2) -> void:
+	_bounds = bounds
+	_has_bounds = true
+
+func clear_bounds() -> void:
+	_has_bounds = false
+
+## Straight onto the target (inside the bounds) — at start and after an area
+## change, so the camera never glides across the map; the next frame's
+## look-ahead starts fresh instead of reading the jump as speed.
+func snap_to_target() -> void:
+	if target == null:
+		return
+	global_position = _clamp_to_bounds(target.global_position)
+	_has_last_position = false
+
+func _clamp_to_bounds(point: Vector3) -> Vector3:
+	if not _has_bounds:
+		return point
+	point.x = clampf(point.x, _bounds.position.x, _bounds.end.x)
+	point.z = clampf(point.z, _bounds.position.y, _bounds.end.y)
+	return point

@@ -416,7 +416,12 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - an unknown entry id (e.g. `"nowhere"`): a warning, and the player lands on `meadow_start`;
     - **farm (M03.3):** before reloading, set up plots in different states — prepared soil, a thirsty crop, a growing (watered) crop part-way through a stage, a ready crop, a plot mid-harvest; after the reload each is exactly as it was (crop, stage, water/thirst, remaining growth time, quality; soil memory shown by the seed picker's soil rating); growing crops carry on and ripen; the garden's ready-crop wildlife pull is unchanged;
     - reload twice; then trigger an autosave (plant or harvest, or background the app) and relaunch: the farm is as it was;
-    - expected until later milestones: discoveries respawn and one-time events/time of day reset.
+    - expected until later milestones: discoveries respawn and one-time events/time of day reset;
+  - **M03.4 camera bounds — walk the edges:**
+    - away from the edges the camera looks and moves exactly as before (angle, distance, smoothing, look-ahead, FOV widening);
+    - walk (joystick, keyboard and tap-to-move) to each of the four ground edges: the camera's focus stops at the edge — no lurch, no jitter, no sideways drift; turning back, it follows smoothly again;
+    - note how much beyond the ground is still visible at each edge (for open question O-12);
+    - after a remote-debugger `load_area(...)` round-trip: the camera snaps to the player at the start, still bounded, no glide or look-ahead jump.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -583,7 +588,7 @@ Goal: persistent Player/Camera/HUD with swappable areas.
 | M03.1 | Persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1) | Meadow loads as a child area; everything works as before | Full Meadow walk-through | `[~]` |
 | M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[~]` |
 | M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[~]` |
-| M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[ ]` |
+| M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[~]` |
 | M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[ ]` |
 | M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[ ]` |
 
@@ -648,6 +653,26 @@ Goal: persistent Player/Camera/HUD with swappable areas.
   - `sim_area_loader.py` (farm section): capture/restore ported with the field list read from `farm_plot.gd`; empty / one / many / partial farms; reload once to three times; away in an area without plots with a save meanwhile; autosave right after a reload identical to before; ready counts unchanged; no duplicates, no old references; 1,500 random runs (with and without a boot save). The no-snapshot and snapshot-after-unload orders are shown to lose the farm.
   - Mutation-tested: 19 GDScript mutations caught by `check_project.py` (12 also re-run with the farm pins disabled — the content rules alone catch them) plus 7 model mutations.
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.2/M03.3 area loader").
+- **Commit:** §15.
+
+**M03.4 — Camera bounds per area** `[~]` Implemented — runtime testing pending (M01.6 checklist)
+- **Objective:** each loaded area gives the persistent camera its own bounds; replacing an area replaces (or clears) them.
+- **Audit:**
+  - `FollowCamera` (Main-owned since M03.1): smooth exponential follow of the target + velocity look-ahead (≤ 1 m), FOV widening; SpringArm3D −42°, 11 m, FOV 50. **No bounds, no limits, no area knowledge.**
+  - Meadow bounds were not represented anywhere as camera data; the Meadow's only extent is its ground: `PlaneMesh_ground` 64 × 64 and `BoxShape3D_ground` 64 × 0.2 × 64 at the origin (±32 m). No edge walls.
+  - Camera references: `main.gd` (target, snap at start and after a swap); InputManager (`get_viewport().get_camera_3d()`, read-only); none in Player, HUD, Meadow.
+  - Plan: "Camera never shows beyond the area — walk the edges". Keeping the whole view inside the Meadow would hold the camera ~9 m inside every edge (11 m arm, −42°, FOV 50) — not "visually equivalent". So bounds limit the camera's **focus** (the point it follows); the full-view reading is recorded as **O-12**.
+- **Files:** new `scripts/world/area_camera_bounds.gd`; `scenes/world/Meadow.tscn` (a `CameraBounds` node, size 64 × 64 at the origin); `scripts/camera/follow_camera.gd` (bounds, clamp, snap; pin updated deliberately); `scripts/main.gd`; `tools/check_project.py`, new `tools/sims/sim_camera_bounds.py`, `tools/sims/sim_area_loader.py` (order list); docs; `docs/DESIGN_DECISIONS.md` (O-12).
+- **Implementation:**
+  - `AreaCameraBounds` (Node3D, group `area_camera_bounds`, `size: Vector2`, zero = none, `get_rect()` in X/Z centred on the node).
+  - `FollowCamera`: `set_bounds(rect)`, `clear_bounds()`, `snap_to_target()` (onto the target, inside the bounds, look-ahead restarted); `_physics_process` clamps `target + look_ahead` before the unchanged smoothing. No area reference, no lookups, no sizes.
+  - `Main._apply_camera_bounds()` (scoped to the current area): `set_bounds()` or `clear_bounds()`; called in `_ready` and in `_swap_area()` after the new area is added, attached and the player placed, followed by `snap_to_target()` (replaces the M03.1/M03.2 direct `global_position` snap).
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: AreaCameraBounds script/group/no default size; exactly one bounds node, in the area (never in Main); the Meadow's equals its ground plane (origin, unrotated, same size); the camera has no Meadow/area/lookup/hard-coded size; `_physics_process` clamps with stored bounds and never looks them up; the clamp keeps X in [min, max] and Z in [min, max]; snap clamps; only `set_bounds`/`clear_bounds` write bounds; Main applies or clears for the current area only, in `_ready` and `_swap_area` (after installation); the camera's follow/look-ahead/smoothing/FOV lines unchanged. Existing: one Camera3D under Main, Meadow owns none, Player/InputManager/farm pins.
+  - `sim_camera_bounds.py`: parameters and order read from source; inside the Meadow the bounded camera equals the pre-M03.4 camera exactly; each of the four edges (focus stops at the edge; difference ≤ the 1 m look-ahead); a player beyond the edge; swaps to smaller/other bounds, to no bounds and back; old bounds never leak; 2,000 random swap runs; same target throughout; no look-ahead jump after a snap.
+  - Mutation-tested: 23 GDScript/scene mutations plus 2 more camera-behaviour mutations (look-ahead threshold, FOV), all caught by `check_project.py` (the camera ones also with the camera pin disabled); 6 model mutations caught.
+- **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.4 camera bounds").
 - **Commit:** §15.
 
 ### PHASE 04 — INVENTORY
@@ -808,8 +833,9 @@ No large world expansion before this gate passes.
 | M03.1 | `d000146` |
 | M03.2 | `6991da1` |
 | M03.3 | `5cd8692` |
+| M03.4 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 03 — Camera / world shell. M03.1–M03.3 implemented (`[~]`, runtime test pending; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's and M03.2/M03.3's runtime tests). The next development milestone is **M03.4 — camera bounds per area**. Either starts only on the developer's instruction.
+- **Current phase:** 03 — Camera / world shell. M03.1–M03.4 implemented (`[~]`, runtime test pending; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's M03.2/M03.3's and M03.4's runtime tests). The next development milestone is **M03.5 — clamped pinch zoom (+ mouse wheel)**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

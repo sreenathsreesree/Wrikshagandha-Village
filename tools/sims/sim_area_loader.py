@@ -33,7 +33,7 @@ MEADOW, MAIN_TSCN = _src("scenes", "world", "Meadow.tscn"), _src("scenes", "Main
 SWAP = _body(MAIN, "_swap_area")
 ORDER = ["FarmManager.cancel_seed_choice()", "FarmManager.release_plots_in(old)", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
          "area.attach_player(player)", "_find_entry(area, entry_id)", "player.place_at(entry.global_transform)",
-         "follow_camera.global_position = player.global_position"]
+         "_apply_camera_bounds()", "follow_camera.snap_to_target()"]
 idx = [SWAP.find(k) for k in ORDER]
 assert -1 not in idx and idx == sorted(idx), f"swap order in main.gd: {dict(zip(ORDER, idx))}"
 assert "queue_free" not in SWAP and "_swap_area.call_deferred(scene, entry_id)" in _body(MAIN, "load_area")

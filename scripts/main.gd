@@ -18,7 +18,8 @@ extends Node3D
 
 func _ready() -> void:
 	follow_camera.target = player
-	follow_camera.global_position = player.global_position
+	_apply_camera_bounds()
+	follow_camera.snap_to_target()
 	area.attach_player(player)
 
 ## Swaps the current area for `scene` and places the player on its entry
@@ -58,7 +59,25 @@ func _swap_area(scene: PackedScene, entry_id: String) -> void:
 	else:
 		push_warning("Main.load_area: the area has no entry; the player stays put")
 		player.place_at(player.global_transform)
-	follow_camera.global_position = player.global_position
+	_apply_camera_bounds()
+	follow_camera.snap_to_target()
+
+## The camera takes the current area's bounds (M03.4) — replacing the
+## previous area's, or clearing them if this area has none.
+func _apply_camera_bounds() -> void:
+	var bounds := _find_camera_bounds(area)
+	if bounds != null:
+		follow_camera.set_bounds(bounds.get_rect())
+	else:
+		follow_camera.clear_bounds()
+
+## This area's AreaCameraBounds (there is at most one), or null.
+func _find_camera_bounds(in_area: Node) -> AreaCameraBounds:
+	for node in get_tree().get_nodes_in_group(AreaCameraBounds.GROUP):
+		var bounds := node as AreaCameraBounds
+		if bounds != null and in_area.is_ancestor_of(bounds) and bounds.size.x > 0.0 and bounds.size.y > 0.0:
+			return bounds
+	return null
 
 ## The area's entry with this id; if there is none, its first entry by id
 ## (with a warning), so the choice never depends on tree order.

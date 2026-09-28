@@ -32,7 +32,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 │   ├── Ambient / EnvironmentalEvents / ExplorationLandmarks
 │   ├── WorldSimulation              TimeOfDay, Environment, Vegetation, Wildlife,
 │   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers
-│   └── PlayerSpawn                  AreaEntry "meadow_start" (scripts/world/area_entry.gd) at the boot position
+│   ├── PlayerSpawn                  AreaEntry "meadow_start" (scripts/world/area_entry.gd) at the boot position
+│   └── CameraBounds                 AreaCameraBounds 64 × 64 (the ground plane)
 ├── Player                           scenes/player/Player.tscn      (shell)
 ├── FollowCamera                     scenes/camera/FollowCamera.tscn (shell; the only Camera3D)
 └── HUD (CanvasLayer)                scenes/ui/HUD.tscn             (shell)
@@ -95,7 +96,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 5. Camera
 - **Current** (`scripts/camera/follow_camera.gd`): Node3D → SpringArm3D (−42°, 11 m) → Camera3D (FOV 50); smooth follow, velocity look-ahead, FOV widening at speed.
-- **Direction (Phase 03):** camera bounds per area, clamped pinch zoom, and the camera persists across areas.
+- **Bounds per area (M03.4):** each area owns one `AreaCameraBounds` (`scripts/world/area_camera_bounds.gd`, group `area_camera_bounds`): an axis-aligned X/Z rectangle centred on the node, `size` in metres (zero = none). The Meadow's is its ground plane (64 × 64 m at the origin, from `PlaneMesh_ground`). Main's `_apply_camera_bounds()` — at start and on every area swap, after the new area is installed — gives it to the camera (`set_bounds`) or clears it (`clear_bounds`), then `snap_to_target()`. The camera clamps the point it follows (player + look-ahead) to the rectangle before its unchanged smoothing; it knows no area, keeps no area reference and never looks bounds up per frame. In the Meadow the only difference from before is that the ≤ 1 m look-ahead stops at the ground's edge. Whether bounds should keep the whole *view* inside an area is open question O-12.
+- **Direction (Phase 03):** clamped pinch zoom (M03.5).
 
 ## 6. Input — InputManager
 - **Current tap pipeline:**
@@ -184,7 +186,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 - **Area reloads (M03.3):** farm plot states are captured by id before their area unloads (`FarmManager.release_plots_in`) and restored on re-registration; `farm.plots` in a save = boot states not yet claimed + unloaded states + live captures. Same save format.
 
 ## 12. Area / world architecture (direction — Phase 03)
-- A persistent shell with swappable areas. Named entry markers. Per-area navigation mesh and camera bounds.
+- A persistent shell with swappable areas (M03.1–M03.2). Named entry markers (`AreaEntry`). Per-area navigation mesh. Per-area camera bounds (`AreaCameraBounds`, M03.4). Farm plots survive reloads (M03.3).
 - World content is always placed in the editor. Places, elements and (later) NPCs are data resources referenced by id.
 - Nothing in scripts depends on exact prop positions.
 - **Known hard-coded data to move:**

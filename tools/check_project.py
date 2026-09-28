@@ -906,7 +906,7 @@ for pth, t, inst in meadow_tree:
         err(f"{MEADOW_SCENE}: {pth} — an area must not own the persistent Player/Camera/HUD")
 MAIN_GD, MEADOW_GD = "scripts/main.gd", "scripts/world/meadow.gd"
 mready = func_body(scripts.get(MAIN_GD, ""), "_ready") or ""
-if not re.search(r"follow_camera\.target = player\s*follow_camera\.global_position = player\.global_position\s*area\.attach_player\(player\)", mready):
+if not re.search(r"follow_camera\.target = player\s*_apply_camera_bounds\(\)\s*follow_camera\.snap_to_target\(\)\s*area\.attach_player\(player\)", mready):
     err(f"{MAIN_GD}: _ready() must point the camera at the player and hand the player to the area")
 mcode = code_only(scripts.get(MEADOW_GD, ""))
 if re.search(r"\$(Player|FollowCamera|HUD)\b|\bFollowCamera\b|\bHUD\b", mcode) or \
@@ -930,7 +930,7 @@ if found_al != AUTOLOADS:
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
 PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "bd56f4c597de8b35",
-          "scripts/camera/follow_camera.gd": "defdcc07193979c4", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
+          "scripts/camera/follow_camera.gd": "dadb14f88b8ea211", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           "scripts/autoload/farm_manager.gd": "5593d2e984680ab2", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
@@ -982,7 +982,7 @@ if not re.search(r"_swap_area\.call_deferred\(scene, entry_id\)", la) or re.sear
     err(f"{MAIN_GD}: load_area() only defers the swap (never runs inside the unloading area's callback)")
 sw = code_only(func_body(main_src, "_swap_area") or "")
 order = ["FarmManager.cancel_seed_choice()", "FarmManager.release_plots_in(old)", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
-         "area.attach_player(player)", "_find_entry(area, entry_id)", "player.place_at(entry.global_transform)", "follow_camera.global_position = player.global_position"]
+         "area.attach_player(player)", "_find_entry(area, entry_id)", "player.place_at(entry.global_transform)", "_apply_camera_bounds()", "follow_camera.snap_to_target()"]
 idx = [sw.find(k) for k in order]
 if -1 in idx or idx != sorted(idx) or re.search(r"queue_free|await|call_deferred", sw):
     err(f"{MAIN_GD}: _swap_area() must cancel the picker, capture the old area's plots, remove and free() it, then add (first), attach, place and snap — no queue_free/await")
@@ -1012,6 +1012,71 @@ if used - {"global_position", "global_transform", "place_at"}:
 for f, s2 in scripts.items():
     if f != PL and re.search(r"\bplayer\._\w+", code_only(s2)):
         err(f"{f}: reaches into Player's private members")
+# ------------------------------------------------------------ camera bounds per area (M03.4)
+# Each area owns one AreaCameraBounds (an X/Z rectangle); Main hands it to
+# the persistent FollowCamera whenever an area loads (replacing or clearing
+# the previous area's); the camera clamps the point it follows — no area
+# knowledge, no hard-coded sizes, no per-frame lookups.
+CB_GD, CAM_GD = "scripts/world/area_camera_bounds.gd", "scripts/camera/follow_camera.gd"
+cbs, cam_src = scripts.get(CB_GD, ""), scripts.get(CAM_GD, "")
+if not re.search(r"^extends Node3D\s*\nclass_name AreaCameraBounds", cbs, re.M) or 'const GROUP := &"area_camera_bounds"' not in cbs \
+   or not re.search(r"func _enter_tree\(\) -> void:\s*add_to_group\(GROUP\)", cbs) or "@export var size: Vector2 = Vector2.ZERO" not in cbs \
+   or "return Rect2(Vector2(global_position.x, global_position.z) - size * 0.5, size)" not in cbs:
+    err(f"{CB_GD}: AreaCameraBounds is a Node3D in the area_camera_bounds group: an X/Z rectangle centred on it, no default size")
+bounds_nodes = {}
+for path in glob.glob("**/*.tscn", recursive=True):
+    if path.startswith((".godot", "tools/")): continue
+    _, secs, ext, _ = load_scene_info(path)
+    for k, a, b in secs:
+        m = re.search(r'^script = ExtResource\("([^"]+)"\)', b, re.M)
+        if k == "node" and m and script_for_ext(ext, m.group(1)) == CB_GD:
+            bounds_nodes.setdefault(path, []).append((a.get("parent", "").strip('"'), b))
+if list(bounds_nodes) != [MEADOW_SCENE] or len(bounds_nodes[MEADOW_SCENE]) != 1:
+    err(f"camera bounds: exactly one AreaCameraBounds, in the area (found {[(p, len(v)) for p, v in bounds_nodes.items()]}) — never in Main")
+else:
+    par, body = bounds_nodes[MEADOW_SCENE][0]
+    size = re.search(r"^size = Vector2\(([^)]*)\)", body, re.M)
+    ground = re.search(r'\[sub_resource type="PlaneMesh" id="PlaneMesh_ground"\]\nsize = Vector2\(([^)]*)\)', mead := open(MEADOW_SCENE, encoding="utf-8").read())
+    if par != "." or re.search(r"^(position|transform|rotation|rotation_degrees|scale) = ", body, re.M) or not size or not ground \
+       or size.group(1).replace(" ", "") != ground.group(1).replace(" ", "") \
+       or re.search(r'\[node name="(Terrain|Ground)"[^\n]*\]\n(position|transform)', mead):
+        err(f"{MEADOW_SCENE}: the Meadow's camera bounds are its ground plane — at the origin, unrotated, the PlaneMesh_ground size")
+if re.search(r"\bMeadow|AreaCameraBounds|get_nodes_in_group|get_tree\(|\b(32|64)(\.0)?\b", code_only(cam_src)):
+    err(f"{CAM_GD}: the camera knows no area — no Meadow sizes, no lookups; bounds come only from set_bounds()")
+cpp = code_only(func_body(cam_src, "_physics_process") or "")
+if "var desired_position := _clamp_to_bounds(target_position + look_ahead)" not in cpp or \
+   re.search(r"get_node|get_nodes_in_group|find_|_bounds\s*=|_has_bounds\s*=", cpp):
+    err(f"{CAM_GD}: _physics_process() clamps the followed point with the stored bounds and never looks them up")
+CAM_BEHAVIOUR = ["var velocity_estimate := (target_position - _last_target_position) / maxf(delta, 0.0001)",
+                 "var speed_ratio := clampf(horizontal_speed / look_ahead_speed_reference, 0.0, 1.0)",
+                 "if horizontal_speed > 0.15:",
+                 "look_ahead = Vector3(velocity_estimate.x, 0.0, velocity_estimate.z).normalized() * look_ahead_distance * speed_ratio",
+                 "var smoothing := 1.0 - exp(-follow_speed * delta)",
+                 "global_position = global_position.lerp(desired_position, smoothing)",
+                 "_camera.fov = lerp(_camera.fov, base_fov + speed_ratio * fov_boost, fov_smoothing)"]
+missing_cam = [ln for ln in CAM_BEHAVIOUR if ln not in cpp]
+if missing_cam:
+    err(f"{CAM_GD}: the camera's follow/look-ahead/smoothing/FOV behaviour must stay as it was (changed: {missing_cam})")
+if not re.search(r"point\.x = clampf\(point\.x, _bounds\.position\.x, _bounds\.end\.x\)\s*point\.z = clampf\(point\.z, _bounds\.position\.y, _bounds\.end\.y\)",
+                 func_body(cam_src, "_clamp_to_bounds") or "") or "if not _has_bounds:" not in (func_body(cam_src, "_clamp_to_bounds") or ""):
+    err(f"{CAM_GD}: _clamp_to_bounds() keeps X in [min.x, max.x] and Z in [min.y, max.y]")
+if not re.search(r"global_position = _clamp_to_bounds\(target\.global_position\)\s*_has_last_position = false", func_body(cam_src, "snap_to_target") or ""):
+    err(f"{CAM_GD}: snap_to_target() jumps onto the target inside the bounds")
+writers = sorted(fn for fn in re.findall(r"^func (\w+)\(", cam_src, re.M) if re.search(r"_has_bounds = |_bounds = ", func_body(cam_src, fn) or ""))
+if writers != ["clear_bounds", "set_bounds"]:
+    err(f"{CAM_GD}: bounds are set only by set_bounds()/clear_bounds() (found {writers})")
+acb = code_only(func_body(main_src, "_apply_camera_bounds") or "")
+if not re.search(r"var bounds := _find_camera_bounds\(area\)\s*if bounds != null:\s*follow_camera\.set_bounds\(bounds\.get_rect\(\)\)\s*else:\s*follow_camera\.clear_bounds\(\)", acb):
+    err(f"{MAIN_GD}: _apply_camera_bounds() gives the camera the current area's bounds, or clears them")
+fcb = code_only(func_body(main_src, "_find_camera_bounds") or "")
+if not all(k in fcb for k in ("get_nodes_in_group(AreaCameraBounds.GROUP)", "in_area.is_ancestor_of(bounds)")):
+    err(f"{MAIN_GD}: _find_camera_bounds() looks only inside the given area")
+bcallers = sorted(fn for fn in re.findall(r"^func (\w+)\(", main_src, re.M)
+                  if fn != "_apply_camera_bounds" and "_apply_camera_bounds()" in code_only(func_body(main_src, fn) or ""))
+if bcallers != ["_ready", "_swap_area"] or [f for f, s2 in scripts.items() if f not in (MAIN_GD, CAM_GD) and re.search(r"\.(set_bounds|clear_bounds|snap_to_target)\(", code_only(s2))]:
+    err(f"camera bounds are applied only by Main, at start and on every area swap (found {bcallers})")
+notes.append("camera bounds: one AreaCameraBounds per area, applied by Main on load")
+
 # ------------------------------------------------------------ farm across area reload (M03.3)
 # Plots are captured by stable id just before their area unloads and
 # restored when their next instance registers — never recounted, never
