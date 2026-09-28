@@ -9,7 +9,7 @@ config_version=5
 config/name="Wrikshagandha"
 config/description="Mobile 2.5D exploration prototype — discover and harvest plants, animals, and resources in a natural world."
 run/main_scene="res://scenes/Main.tscn"
-config/features=PackedStringArray("4.3", "Mobile")
+config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 boot_splash/bg_color=Color(0.1, 0.15, 0.1, 1)
 
@@ -40,6 +40,11 @@ window/energy_saving/keep_screen_on=true
 [input_devices]
 
 pointing/emulate_touch_from_mouse=true
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_3="interactables"
 
 [physics]
 

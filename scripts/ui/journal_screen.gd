@@ -72,7 +72,7 @@ func _build_places_section() -> Control:
 
 	return box
 
-## The garden's small session-only record, shown once the garden has been
+## The garden's small record (saved with the farm), shown once the garden has been
 ## found (or something planted). A few compact lines of state, then the
 ## milestones as one wrapped line. Everything is read from FarmManager —
 ## the Journal only displays, it never decides progression — and every

@@ -1,10 +1,10 @@
 extends Control
 class_name SeedPicker
 
-## The small seed choice shown when the player presses Interact on prepared
+## The small seed choice shown when the player interacts with prepared
 ## soil. One large, thumb-sized card per crop — its identity color and
 ## glyph, its name, and how many seeds are left — sitting above the
-## joystick and Interact button so neither is covered.
+## joystick so it isn't covered.
 ##
 ## Deliberately not a menu screen: no dim, no pause, and the world stays
 ## playable underneath. It opens and closes entirely on FarmManager's

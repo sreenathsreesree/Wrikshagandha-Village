@@ -151,7 +151,7 @@ func _update_nearby_proximity() -> void:
 	var t := 1.0 - clampf(distance / INTERACTION_RADIUS, 0.0, 1.0)
 	nearest.update_proximity(t)
 
-## Shared by proximity feedback and the Interact press, so the object whose
+## Shared by proximity feedback and the nearest-object interaction, so the object whose
 ## indicator is visibly responding is always the one that gets interacted
 ## with. (Previously the press went to whichever object entered range
 ## first, which could differ from the glowing one when several interactables

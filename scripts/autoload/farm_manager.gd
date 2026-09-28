@@ -30,7 +30,7 @@ extends Node
 ##   soil + care (0..4): 4 = Fine, 2-3 = Good, 0-1 = Plain. Fine needs both
 ##   a rotated bed and careful watering; either factor alone can't carry a
 ##   crop, and neither alone ruins one.
-## - The basket: harvested produce by crop and quality (session-only, a
+## - The basket: harvested produce by crop and quality (saved; a
 ##   foundation — nothing consumes it yet).
 ## - Farm progression: which crops have grown, and a small fixed set of
 ##   quiet milestones, announced via milestone_reached.

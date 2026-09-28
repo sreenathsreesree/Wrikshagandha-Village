@@ -1,344 +1,454 @@
 # WRIKSHAGANDHA — Master Production Plan
 
-The single source of truth for development. Phases are locked and executed in
-order; every milestone follows the rule in §3. Last audited against `main` at
-`391404e` (28 commits, 124 tracked files, 49 scripts, 12 autoloads).
+The single source of truth for production. Every implementation belongs to a
+phase and milestone below. Related documents:
 
-## 1. Status legend
+- `docs/ARCHITECTURE.md`: how the game is built.
+- `docs/DESIGN_DECISIONS.md`: what is decided and what is open.
+- `tools/README.md`: validation.
+- `docs/farming_persistence_plan.md`: farm save format.
+
+---
+
+## 1. Game identity
+
+WRIKSHAGANDHA is a **peaceful exploration/life game**.
+
+- **The player should feel:** free, comfortable, curious, connected to nature, rewarded for exploring, never rushed, never pushed through a conventional quest grind.
+- **Farming is one part** of a larger living world. The long-term game combines exploration, nature, farming, wildlife, NPCs, homes, discoveries, collection, gentle progression, elemental regions, the Five Rishis, world changes, secrets and a peaceful sense of place.
+
+## 2. Core loop
+
+**EXPLORE → DISCOVER → COLLECT → RETURN → TEND → UNLOCK → WORLD CHANGES → EXPLORE AGAIN**
+
+- Every system must feed this loop.
+- Systems connect through shared channels: **items** (inventory), **knowledge** (journal/progression), **coins** (wallet) and **world state** (what changed).
+
+## 3. Five Elements architecture
+
+The eventual world is organized around five elemental **experiences**. Each becomes a gameplay system: its own environment, interactions, gameplay mechanic, wildlife, discoveries, progression, secrets, atmosphere and world-state changes. They are not just five biomes.
+
+| Element | Themes (decided, D-04) | Status |
+|---|---|---|
+| Earth / Prithvi | soil, plants, farming, forests, physical life, stability | Meadow/Garden is the first Earth prototype |
+| Water / Jala | ponds, rivers, flow, aquatic life, reflection, healing, water discoveries | Pond exists (no mechanic) |
+| Fire / Agni | warmth, transformation, cooking, craft, sacred fire, material transformation | Not started |
+| Air / Vayu | wind, movement, sound, birds, height, freedom | Not started |
+| Space / Akasha | silence, mystery, ancient knowledge, stars, hidden places, deep exploration | Not started |
+
+- Elements are prototyped **one at a time**, in the order Earth → Water → Fire → Air → Space (Phase 11).
+- Each element's specific mechanic is an open decision (O-09).
+- **Architecture:** element data resources, plus an optional element id on places, items, discoveries and NPCs. No bespoke per-place scripts.
+
+## 4. Five Rishis — DESIGN DEPENDENCY
+
+> **Five Rishis — pending final design decision.**
+
+- **Decided:** *Element = what the world expresses; Rishi = the wisdom/understanding associated with that element* (D-06).
+- **Not decided** (R-01…R-07 in `docs/DESIGN_DECISIONS.md`): names, element pairing, personality, location, teachings, visual identity, progression role, and how the player first learns of them.
+- **Until then:** no Rishi names, lore, data or code. Phase 12 is blocked (`[!]`) on these decisions.
+
+## 5. Production rules
+
+1. **No random features.** Every change belongs to the current phase and milestone. New ideas go to *Parked ideas* (§14).
+2. **Before changing code, state:**
+   - the current phase and milestone
+   - the exact objective
+   - the files and systems affected
+   - what is explicitly **not** changed
+   - the verification plan
+   - the definition of done
+3. **After implementing:**
+   1. Run `tools/run_all.sh`.
+   2. Run simulations where applicable.
+   3. Inspect the diff.
+   4. Commit.
+   5. Push to `main`.
+   6. Record the commit hash here.
+   7. Report **implemented** vs **verified in Godot/Android**, separately.
+4. **Never claim runtime verification** without an actual run.
+5. **No final assets, large environments, detailed houses, final NPC art, elaborate VFX or full-world level design** before the Vertical Slice Gate (Phase 16).
+6. **Farming expansion is frozen** (D-11). Integration only.
+
+## 6. Milestone system
+
+Every milestone is numbered `Mpp.n` and records:
+
+| Field | Meaning |
+|---|---|
+| Objective | What the milestone achieves |
+| Inputs | What it builds on (existing systems, decisions) |
+| Files affected | Planned files; confirmed in the report |
+| Dependencies | Milestones or decisions that must be done first |
+| Implementation | The approach, stated before coding |
+| Verification | Static checks and simulations |
+| Runtime test requirement | What must be run in Godot / on Android |
+| Definition of done | Exact completion criteria |
+| Commit | Hash(es) |
+| Status | See below |
+
+**Statuses:**
 
 | Mark | Meaning |
 |---|---|
-| `[x]` | Verified complete — for runtime features this means **actually run in Godot/Android** |
-| `[~]` | Implemented and statically verified, **not yet playtested** in Godot/Android |
-| `[ ]` | Not done |
-| GREEN / YELLOW / RED / BLUE | complete / partial or untested / missing / intentionally deferred |
+| `[ ]` | Not started |
+| `[~]` | Implemented, needs runtime testing |
+| `[x]` | Verified in Godot/device (never set from static analysis). For milestones with **no runtime component** (documentation, tooling), `[x]` means completed and checked, and says so |
+| `[!]` | Blocked |
 
-> **Important:** As of this audit, no build has been run to confirm any gameplay
-> at runtime. The developer opened the project in Godot 4.7.2 once, which
-> surfaced GDScript load errors (fixed in `ebb6f2b`); nothing since has been
-> confirmed in the engine or on a device. So **no runtime feature is `[x]`**.
-> Everything built is at best `[~]`.
+Milestones for the current and next phase are written out in full. Later phases list objective, definition of done and runtime tests; their remaining fields are filled in **before** that phase starts.
 
-## 2. Vision (locked)
+## 7. Runtime test gates
 
-A peaceful, touch-first exploration/life game: walk anywhere, touch interesting
-things, discover, collect, farm, help people, and slowly understand the world
-through the Five Elements (Prithvi, Jala, Agni, Vayu, Akasha) and the Five
-Rishis. Not a quest corridor, checklist, menu game, or farming-only game.
-Primary interaction: **touch something → walk to it → interact.**
+When a milestone reaches a state that needs Godot or Android testing, implementation **stops** and the report says **"PLAYTEST REQUIRED"** with a short checklist.
 
-Responsibilities: Claude builds systems, scripts, resources, reusable scenes,
-data definitions, validation and UI logic. The developer places and composes the
-world in the Godot editor (houses, trees, paths, NPC placement, interiors,
-visual tuning).
+- The developer runs it and reports back.
+- No unrelated work continues past a gate.
+- A milestone moves from `[~]` to `[x]` only on the developer's report.
 
-## 3. Milestone procedure (every milestone)
+## 8. Vertical-slice strategy
 
-1. Inspect current code.
-2. Identify what exists and what's duplicated.
-3. Identify what to reuse.
-4. Identify conflicts and migrations.
-5. Implement only the milestone.
-6. Run static verification (see §6).
-7. Run simulations where relevant.
-8. Check regressions.
-9. Review the git diff.
-10. Commit.
-11. Push to `main`.
-12. Update this plan.
-13. Report what changed and what still needs Godot/Android playtesting.
+- **Build first:** a small playable test area.
+- **It contains:**
+  - meadow, garden, pond, forest edge, path
+  - a simple house, a simple NPC
+  - wildlife, discoveries
+  - a basic elemental prototype
+  - farming, inventory, coins, journal, saving
+- **Placeholder geometry is expected.** The purpose is system validation.
+- **The gate (Phase 16):** the small area must feel like a coherent real game. **No large world expansion before it passes.**
 
-Never claim runtime success without a real run.
+## 9. Assets-later strategy
 
----
+- **Until Phase 16:** primitive meshes, placeholder vegetation, simple houses and NPCs, basic materials, existing lightweight props.
+- **A dedicated Final Art / World Building phase after the gate covers:**
+  - final houses, NPC models, animals, vegetation, furniture, rocks, temples;
+  - elemental environments, Rishi characters;
+  - VFX, animation polish, audio, environmental detail.
 
-## 4. Current state audit (repository, not previous reports)
+## 10. Economy direction
 
-| Phase | System | Status | Existing files | Missing | Risk | Next action |
-|---|---|---|---|---|---|---|
-| 00 | Git / branches | GREEN | `main` (28 commits) | — | Stale branch `claude/wrikshagandha-repo-audit-afzvtu` (0 unique commits, 26 behind) | Delete stale branch when convenient |
-| 00 | Project config | YELLOW | `project.godot`, `export_presets.cfg` (Android, arm64, portrait 1080×1920, mobile renderer) | Feature tag says `4.3`; developer uses 4.7.2. No `[input]` map. No named physics layers. | Editor will prompt to upgrade config; layer numbers are magic constants in code (1 = world, 4 = interactables) | Name physics layers; confirm 4.7.2 upgrade in editor |
-| 00 | Autoloads | YELLOW | 12: Points, DiscoveryDatabase, Discovery, Journal, Collection, DailyDiscovery, Farm, Exploration, AmbientAudio, Save, GameState, Input | — | Order-dependent loading (GameState loads the save before InputManager's `_ready`); FarmManager is 663 lines / 36 public funcs | Keep count frozen; plan FarmManager split in 04/06 |
-| 00 | Validation tooling | RED | **None in repo.** Suite (scene/resource checker, Godot 4.7.2 semantic checker, simulations) exists only in a temporary session directory | `tools/` with the checkers + a README on running them | Tooling is lost when the cloud session ends; future milestones can't meet §3 step 6 | **M00.4 (next milestone)** |
-| 00 | Documentation | YELLOW | `docs/farming_persistence_plan.md`, this plan | README, architecture overview | Architecture knowledge lives in script header comments only | M00.5 |
-| 01 | Joystick movement | YELLOW `[~]` | `player.gd`, `virtual_joystick.gd`, `VirtualJoystick.tscn`, `InputManager.move_vector` | — | — | Playtest |
-| 01 | Tap-to-move + navigation | YELLOW `[~]` | `InputManager` (movement mode, ground ray), `player.gd` (NavigationAgent3D path in existing physics loop), `NavigationRegion3D` baked at runtime in `meadow.gd` | Explicit "stop" gesture; editor-baked navmesh | Runtime bake never run; pond walkable (no collider); joystick still default | Playtest; decide default |
-| 01 | Camera | YELLOW | `follow_camera.gd` (smooth follow, look-ahead, FOV at speed), SpringArm3D fixed −42°, 11 m | Boundaries, zoom (pinch), bounds for world edge | Camera can show beyond the 64 m ground; no zoom on small phones | M01.3, M01.4 |
-| 01 | Desktop fallback | YELLOW | Mouse → emulated touch (joystick + tap) | Keyboard movement (no input map) | Editor testing is mouse-only | M01.5 |
-| 01 | Player animation hooks | RED | Procedural bob/squash on `Visual` | Animation state hooks (idle/walk/interact) for future rigs | Final character will need to replace procedural code | M01.6 |
-| 02 | Tap-to-interact | YELLOW `[~]` | `InputManager` (area raycast, layer 4), `player.gd` (`_interact_with`, 8 m `TAP_REACH`, walk-then-interact in tap mode) | Interaction feedback on touch; approach stops at 8 m, not beside the object | Small colliders (mushrooms) may be hard to hit | Playtest; tune |
-| 02 | Interactable base | YELLOW | `interactable.gd` (Area3D; discovery-centric: `discovery_id`, rarity windup, `DiscoveryManager.discover` in base `interact()`), `FarmPlot` overrides | Generic verbs (inspect/open/enter/talk/activate); interaction data resource | New types (NPC, door, chest) would inherit discovery-specific code | **Refactor at Phase 02 start:** split generic base from discovery behaviour |
-| 02 | Legacy interact path | YELLOW | `InputManager.interact_requested` → Player nearest-in-zone | Nothing emits it any more (button removed, no key binding) | Dead path kept "for non-touch input" | Bind to a key in M01.5 or remove in Phase 02 |
-| 03 | Sandbox world | YELLOW | `Meadow.tscn` (199 nodes: terrain, mounds, pond, trees, stone ring, secret spots, 7 farm plots, 9 discovery spawns, wildlife, events, landmarks) | House, NPC location, clear forest edge, paths as data | Player and camera live **inside** `Meadow.tscn` — blocks interiors (Phase 08) | Restructure before Phase 08 (see §5.1) |
-| 04 | Inventory | RED | Seeds + basket inside `FarmManager`; discoveries are *knowledge* (`DiscoveryManager.discovered_ids`), not items | Universal ItemDefinition + Inventory | Migration of `seeds`/`basket` save keys | Phase 04 plan |
-| 04 | Collection / Journal | YELLOW `[~]` | `CollectionManager` (derived, no state), `JournalManager` (saved), Journal/Collection/Basket screens | Item-backed collection | — | Keep; re-point at inventory in 04 |
-| 05 | Economy (coins/wallet) | RED | Only "Wriksha Points" (`PointsManager`, 21 lines, a single int) | Wallet, transactions, spend, sinks, anti-abuse | **Unbounded point faucets today** (§5.2) | Design in Phase 05; points ≠ coins |
-| 06 | Farming | YELLOW `[~]` | `farm_manager.gd`, `farm_plot.gd`, `crop_definition.gd`, `crop_visual.gd`, 4 crop `.tres`, `SeedPicker`, `BasketScreen`, `MilestoneReveal` | Integration with inventory/economy/NPCs | FarmManager too broad; "no scene reload" assumption (§5.3) | Frozen until Phase 06 |
-| 07 | NPCs | RED | — | Everything | — | Deferred |
-| 08 | Houses / interiors | RED | — | Everything | Needs world/player restructure first | Deferred |
-| 09 | Living world | YELLOW `[~]` | `WorldSimulation` (TimeOfDay 600 s cycle, EnvironmentController, Wildlife actors/controller, events, landmarks), wildlife garden interest, day-phase activity | Weather, NPC schedules, seasons | TimeOfDay not saved | Deferred |
-| 10 | Exploration / discovery | YELLOW `[~]` | `ExplorationManager` (landmarks, secret spots, curiosity/distance bonuses), `DiscoveryDatabase` (9 `.tres`), spawn points with respawn timers, clues, daily discovery | Data-driven places (place list is hard-coded in `exploration_manager.gd`) | Exploration progress **not saved** → bonuses re-award each launch | Save + data-drive places in 10/15 |
-| 11 | Requests | RED | — | — | — | Deferred |
-| 12 | Five Element prototypes | RED (Earth partial) | Meadow + farming ≈ Prithvi | Jala, Agni, Vayu, Akasha | — | Deferred |
-| 13 | Five Rishis | BLUE | — | Architecture only when phase starts | — | Deferred |
-| 14 | Progression | YELLOW | Scattered: FarmManager milestones, ExplorationManager bonuses, points | Unified progression model | Three separate reward systems | Phase 14 |
-| 15 | Save / persistence | YELLOW `[~]` | `SaveManager` (one JSON file: points, discovered_ids, journal, daily, farm v1, settings), `GameState` autosave | Top-level save version; exploration, time of day, player position | Partial coverage causes re-awards (§5.2) | Phase 15 (hazard fix may come earlier, see §7) |
-| 16–17 | Final world / assets | BLUE | Placeholder primitives only; no textures, models, fonts | — | — | Deferred |
-| 18 | Audio | YELLOW | `AmbientAudioManager` with hooks for 10 sounds | **No audio files in repo** — all streams empty, game is silent | — | Deferred |
-| 19 | Real-money redemption | BLUE | — | Backend, KYC, compliance, legal | Legal/regulatory | Deferred; no code until phase |
-| 20–22 | Polish / testing / release | RED | Android export preset only | — | — | Deferred |
-| — | Network / analytics / crypto | Correctly absent | grep: none | — | — | Keep absent |
-
-## 5. Architectural findings
-
-### 5.1 Conflicts to resolve before specific phases
-
-1. **Player and camera live inside the world scene.** `Main.tscn` = Meadow + HUD, but `Player` and `FollowCamera` are children of `Meadow.tscn` and wired by `meadow.gd`.
-   - Entering a house (Phase 08) needs a world-swap or streaming architecture where Player, Camera and HUD persist across areas.
-   - **Resolve before Phase 08.**
-2. **Interactable base is discovery-specific.**
-   - The generic `interact()` calls `DiscoveryManager.discover`, and the rarity/category windup lives in the base class.
-   - NPCs, doors and chests need a generic base plus a discovery subclass (or a behaviour resource).
-   - **Resolve at the start of Phase 02**, before adding new interactable types. The Player side is already generic: it only calls `interact()`.
-3. **FarmManager is a mega-manager.** Seeds, basket, quality rules, milestones, plots, garden interest and persistence all live in one 663-line autoload.
-   - Seeds and basket move to the universal inventory in Phase 04; quality and milestones stay.
-   - Don't split it before then.
-4. **Hard-coded world data.**
-   - The place list (ids and display names) sits in `exploration_manager.gd`.
-   - `GARDEN_PLACE_ID = "quiet_farm"` is hard-coded in FarmManager.
-   - Physics layers are magic numbers (1, 4).
-   - Move these to data or project settings as each phase touches them.
-
-### 5.2 Economy and persistence hazards (important before any coin work)
-
-- **Exploration bonuses re-award every launch.**
-  - Landmarks give 15, secrets 15, all secrets 50, curiosity 20, plus distance thresholds.
-  - Points are saved, but `ExplorationManager` state isn't.
-- **Repeat discoveries are an unbounded faucet.** Every repeat harvest pays the discovery's full `points_value`, and spawns respawn every 45–600 s.
-- **Farming harvests are renewable points.** This is by design, but uncapped.
-- **Conclusion:** points must not become coins 1:1.
-  - Phase 05 needs a separate wallet with explicit earn rules, caps or diminishing returns, and a transaction log.
-  - The re-award bug should be fixed no later than Phase 05.
-
-### 5.3 Assumptions that will break later
-
-- **FarmManager assumes plots register once per launch** ("no scene reload").
-  - If the Meadow is unloaded (house entry), `get_save_data()` skips freed plots, and their state is lost.
-  - Must be handled together with §5.1 (1).
-- **Save load runs in an autoload before the world exists.** This is handled for farm plots via `register_plot()`; any new world-state system must follow the same pattern.
-
-### 5.4 Duplicates and legacy paths
-
-- **Two interaction entry points:** `interact_requested` (nearest-in-zone, now unused) and `interact_target_requested` (tap). Keep one.
-- **Two data-definition types** (`DiscoveryDefinition`, `CropDefinition`) that both describe "things in the world". An `ItemDefinition` in Phase 04 should sit beside them, not replace them blindly.
-- **Proximity:** the 2.2 m `InteractionZone` still drives indicators and proximity, while taps use an 8 m reach. That's intentional, but it's two ranges to keep coherent.
-
-### 5.5 Things that are sound — do not touch
-
-- **Farming's data-driven core:** `CropDefinition` owns the data, `FarmPlot` holds per-plot state, and FarmManager holds the rules.
-- **The seed invariant** (seeds in hand + crops in the ground = starting seeds + found seeds), guarded by simulations.
-- **WorldSimulation's coordinator pattern:** group-based discovery of actors, events and landmarks.
-- **The event-driven style:** signals instead of polling, and a shared distance loop per controller.
-- **The GUI-first touch pipeline:** the UI consumes its own touches before `_unhandled_input` sees the world.
-
-## 6. Validation toolkit (to be committed in M00.4)
-
-These tools have been run for every milestone so far, but they aren't in the repository yet:
-
-- **Scene/resource checker:**
-  - `load_steps`, ext/sub resources, paths, and node parents and paths
-  - exported properties and `.tres` fields
-  - class names and parent-member redeclaration
-  - autoload and class member references, signal emit/handler arity, typed-call arity
-  - hard-coded crop ids and network APIs
-- **Godot 4.7.2 semantic checker**, driven by the engine API:
-  - `INFERENCE_ON_VARIANT` and native method override
-  - class_name collisions
-  - `@onready` misuse
-  - unresolved bare calls and missing native methods
-- **gdtoolkit `gdparse`:** syntax check for every script.
-- **Model simulations:**
-  - farming seed invariant, care and quality, bloom
-  - multi-launch persistence
-  - tap and movement routing, and geometry reachability
-- **Limit:** none of these replace running Godot. No Godot binary is reachable from the cloud environment (GitHub downloads are blocked by its network policy).
+- **Coins are an internal reward system.**
+  - A wallet with an append-only transaction ledger.
+  - Earn rules as data, with repeat-reward protection (caps, diminishing returns, one-time-ever rewards).
+- **1000 coins = ₹10** is a long-term *reference* only (D-10).
+  - It lives in economy configuration, is read by no gameplay code, and serves a separate future backend/redemption phase.
+- **No real-money redemption, payment systems or crypto** now.
+  - That phase needs server-authoritative balances, anti-fraud, accounts, KYC/compliance and legal review.
+- **Open:** the relationship between the existing Wriksha Points and coins (O-02).
 
 ---
 
-## 7. Phase plan
+## 11. Current repository status
 
-Each phase lists its goal, dependencies, milestones, validation, playtest requirements and completion gate.
-
-### PHASE 00 — Project foundation — **YELLOW (closing)**
-- **Goal:** a stable project base and a repeatable workflow.
-- **Dependencies:** none.
-- [x] Godot 4 project, Git on `main`, scene/resource/script folders, Android export preset
-- [x] Autoload architecture established (12 autoloads; freeze the count)
-- [x] Load-breaking GDScript errors fixed (`ebb6f2b`)
-- [ ] **M00.4** Commit the validation toolkit to `tools/`, with a README on running it
-- [ ] M00.5 Short `docs/ARCHITECTURE.md`: autoload responsibilities, scene tree, signal flow, save flow
-- [ ] M00.6 Name physics layers in `project.godot` (1 world, 3 interactables); confirm the 4.7.2 config upgrade in the editor
-- [ ] M00.7 Delete stale branch `claude/wrikshagandha-repo-audit-afzvtu`
-- **Validation:** the toolkit runs green on `main`.
-- **Playtest:** the developer opens the project in 4.7.2 with zero script errors in Output.
-- **Gate:** the toolkit is in the repo and passing, and the editor shows no errors.
-
-### PHASE 01 — Player experience — **YELLOW**
-- **Goal:** the player can comfortably navigate the sandbox by touch.
-- **Dependencies:** Phase 00.
-- [~] Joystick movement (acceleration, turning, bob, footsteps hook)
-- [~] Tap-to-move on a runtime-baked navmesh (`391404e`); joystick overrides; retarget on tap; stall timeout
-- [~] Movement mode setting (Joystick / Tap to Move), saved
-- [~] Destination marker (reused HarvestBurst)
-- [~] Camera follow with look-ahead and FOV boost
-- [ ] M01.1 **Android playtest of movement**: navmesh builds, paths avoid obstacles, mound steps climbable, bake time measured; decide the default mode (directive: touch-first)
-- [ ] M01.2 Movement cancellation gesture (e.g. tapping the player stops); decide pond walkability
-- [ ] M01.3 Camera boundaries (keep the view inside the world)
-- [ ] M01.4 Camera zoom (pinch; clamped)
-- [ ] M01.5 Desktop fallback: input map (WASD / arrows, E to interact) through InputManager
-- [ ] M01.6 Player animation state hooks (idle / walk / interact signals) for future rigs
-- **Validation:** static toolkit; routing and geometry simulations.
-- **Playtest:** walk every part of the Meadow by tap and by joystick on Android, and on desktop with mouse and keyboard.
-- **Gate:** comfortable navigation of the whole sandbox on a real device.
-
-### PHASE 02 — Universal interaction — **YELLOW**
-- **Goal:** one reusable interaction architecture for every touchable thing.
-- **Dependencies:** Phase 01 gate.
-- [~] Exact touch targeting (area raycast), tap-to-interact, walk-then-interact in tap mode
-- [~] Double-harvest guard for one-shot interactables
-- [ ] M02.1 Split `Interactable` into a generic base (verbs, range, feedback hooks) and discovery behaviour (§5.1.2), with no behaviour change
-- [ ] M02.2 Interaction verbs as data: collect / inspect / open / enter / talk / activate / harvest
-- [ ] M02.3 Approach-to-object: stop beside the object (not at the 8 m reach), face it, then interact
-- [ ] M02.4 Touch feedback (reuse the indicator pulse) and a larger touch tolerance for small objects
-- [ ] M02.5 Retire the unused `interact_requested` path, or bind it in M01.5
-- **Validation:** a new interactable type added with zero Player changes (test fixture).
-- **Playtest:** tap every interactable type on device.
-- **Gate:** a new interactable doesn't require rewriting Player.
-
-### PHASE 03 — Sandbox world — **YELLOW**
-- **Goal:** a tiny placeholder world that exercises every system.
-- **Dependencies:** Phase 02.
-- [~] Meadow, farm, pond, mounds and overlook, stone ring, secret spots, trees and rocks
-- [ ] M03.1 Restructure scenes: a persistent Player/Camera/HUD shell, with the world area as a swappable child (§5.1.1, §5.3). Prerequisite for 08.
-- [ ] M03.2 Placeholder forest edge, paths, a house exterior slot, an NPC location slot
-- [ ] M03.3 Data-drive place definitions (move the hard-coded `PLACES` list to resources)
-- **Gate:** the player can freely explore the entire sandbox.
-
-### PHASE 04 — Inventory & collection — **RED**
-- **Goal:** universal item infrastructure.
-- **Dependencies:** Phase 03.
-- [ ] M04.1 Audit and migration plan: FarmManager `seeds`/`basket` → inventory; save-key migration (`farm.seeds`, `farm.basket`)
-- [ ] M04.2 `ItemDefinition` resource and an inventory (stacks, categories, metadata) — placement decided in M04.1 without adding an autoload lightly
-- [ ] M04.3 Seeds and crops as items; the basket screen becomes an inventory view
-- **Gate:** seeds, crops and collectibles share one item architecture, and old saves still load.
-
-### PHASE 05 — Economy — **RED**
-- **Goal:** an in-game coin economy with no real money.
-- **Dependencies:** Phase 04.
-- [ ] M05.0 Fix the re-award and faucet hazards (§5.2), if not already fixed in Phase 15
-- [ ] M05.1 Wallet and transaction log (earn and spend records); points stay separate from coins
-- [ ] M05.2 Earn rules with caps and diminishing returns; first sinks
-- [ ] M05.3 Balancing simulation
-- **Gate:** the economy works end to end without any real-money path.
-
-### PHASE 06 — Farming integration — **YELLOW (frozen)**
-- **Goal:** connect the existing farming to the rest of the game.
-- **Dependencies:** Phases 04, 05, 07.
-- [~] Complete loop: prepare → plant → water → grow → harvest; renewable seeds
-- [~] 4 crops (data-driven), soil rotation + care quality, basket, 7 plots (2 milestone-unlocked), exploration seeds, Elderbloom via the Ancient Seed, wildlife interest, garden in bloom
-- [~] Farm persistence (v1) and milestones paid once
-- [ ] M06.1 Farming on the inventory and economy
-- [ ] M06.2 NPC requests for produce (after 07)
-- **Rule:** no new farming features before this phase.
-
-### PHASE 07 — NPC system — **RED**
-- **Goal:** a reusable NPC framework, tested with 2–3 NPCs.
-- **Dependencies:** 02, 03.
-- [ ] Identity, home, navigation (reuses the navmesh), idle behaviour, talk interaction, dialogue data, relationship stub
-- **Gate:** 2–3 NPCs work with no NPC-specific code.
-
-### PHASE 08 — House / interior — **RED**
-- **Goal:** one complete reusable house.
-- **Dependencies:** M03.1, 07.
-- [ ] Door interaction, enter/exit transition, interior scene, camera handling, bed/storage objects, farm state safe across transitions
-- **Gate:** the house can be duplicated in the editor without code changes.
-
-### PHASE 09 — Living world — **YELLOW (partial)**
-- **Goal:** the world feels alive without the player triggering everything.
-- **Dependencies:** 07, 08.
-- [~] Day/night cycle, wildlife behaviours, environmental events
-- [ ] NPC schedules, weather, saved time of day, seasons (later)
-
-### PHASE 10 — Exploration / discovery — **YELLOW**
-- **Goal:** deeper discovery and hidden-world systems.
-- **Dependencies:** 03, 15 (saving).
-- [~] 9 discoveries, respawns, clues, landmarks, secret spots, daily discovery, journal, collection
-- [ ] Persist exploration progress; data-driven places; new discovery mechanics
-
-### PHASE 11 — Request system — **RED**
-- **Goal:** lightweight, world-driven requests (a problem to explore → a discovered solution → the world responds).
-- **Dependencies:** 07, 04.
-
-### PHASE 12 — Five Element prototypes — **RED** (Prithvi partially covered by the Meadow)
-- **Goal:** one small prototype per element.
-- **Dependencies:** 02–11.
-- [ ] Prithvi
-- [ ] Jala
-- [ ] Agni
-- [ ] Vayu
-- [ ] Akasha
-
-Each needs a distinct interaction identity.
-
-### PHASE 13 — Five Rishis — **BLUE**
-- **Goal:** architecture first, then narrative systems.
-- **Dependencies:** 12.
-- **Rule:** no lore is invented without explicit direction.
-
-### PHASE 14 — Progression — **YELLOW (scattered)**
-- **Goal:** one progression model across all activities.
-- **Dependencies:** 05, 10, 11, 13.
-- Unify FarmManager milestones, ExplorationManager bonuses, points/coins, knowledge, element and Rishi progress.
-
-### PHASE 15 — Save / persistence — **YELLOW**
-- **Goal:** robust, versioned persistence.
-- **Dependencies:** each system as it lands.
-- [~] Single JSON save: points, discoveries, journal, daily, farm v1, settings; autosave on key events and app pause/close
-- [ ] Top-level save version and migration framework
-- [ ] Exploration progress, time of day, player position, inventory, wallet
-- [ ] Old-save compatibility tests (fixture saves)
-
-### PHASES 16–22 — **BLUE**
-
-| Phase | Covers | Condition |
+| Area | Status | Notes |
 |---|---|---|
-| 16 Final world | the real map | after the sandbox passes |
-| 17 Final assets | characters, NPCs, props, environment, VFX | after 16 |
-| 18 Audio | ambience, music, SFX | hooks exist (10 sound slots, no files) |
-| 19 Real-money redemption | backend, secure wallet, fraud prevention, accounts, KYC, payments, compliance, legal review | nothing before it |
-| 20 Polish | animation, lighting, VFX, UI, camera, touch UX, performance, loading, memory, accessibility | |
-| 21 Testing | internal QA, Android and low-end devices, touch, save and economy tests, performance, closed beta | |
-| 22 Release | production backend, analytics, crash reporting, store listing, legal pages, soft and public launch | |
+| Movement (joystick) | `[~]` implemented | Not tested in Godot/Android |
+| Tap-to-move + navigation | `[~]` implemented | Navmesh baked at runtime from static colliders; never executed |
+| Tap-to-interact | `[~]` implemented | Area raycast, 8 m reach, walk-then-interact in tap mode |
+| Camera | Partial | Follow + look-ahead; no bounds or zoom |
+| Farming | Advanced prototype, **frozen** | 4 crops, quality, basket, 7 plots, Elderbloom, exploration seeds, milestones, persistence |
+| Exploration | Partial | Landmarks, secrets, bonuses; place list hard-coded; progress not saved |
+| Discovery / journal / collection | Partial | 9 discoveries, respawns, clues, daily discovery, journal, collection |
+| Wildlife / day-night / events | Prototype | 14 wildlife actors, 600 s day, environmental events |
+| Saving | Partial | One JSON save; farm block versioned; no top-level version |
+| Inventory | Missing | Seeds/basket live inside FarmManager |
+| Economy / wallet | Missing | Only Wriksha Points |
+| NPCs, dialogue, houses, interiors, area loading | Missing | — |
+| Audio | Hooks only | 10 empty sound slots; no audio files in the repo |
+| Five Elements | Earth-like Meadow only | — |
+| Five Rishis | Missing — design pending | — |
+| Full world | Intentionally missing | — |
+| Android build | Never built | Export preset exists |
+| Runtime testing | None yet | Only one editor open, which exposed load errors (fixed `ebb6f2b`) |
+
+## 12. Known architecture risks
+
+| # | Risk | Resolved in |
+|---|---|---|
+| A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Phase 03 |
+| A2 | `Interactable` base is discovery-specific | Phase 02 |
+| A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
+| A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
+| A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | Phases 01, 03 |
+| A6 | Unused interaction path (`interact_requested`) | Phase 02 |
+| A7 | No top-level save versioning before inventory changes save keys | Phase 04 (P-01, proposed) → Phase 15 |
+| A8 | ~50 per-frame scripts; runtime navmesh bake cost unknown on device | Phase 01 test, Phase 16 |
 
 ---
 
-## 8. Next milestone
+## 13. Phases and milestones
 
-**M00.4 — Commit the validation toolkit to `tools/`.**
+### PHASE 00 — FOUNDATION — **implemented; one runtime check outstanding (M00.5)**
 
-- **Why next:**
-  - Every milestone's gate (§3 step 6) depends on these checks.
-  - Today they exist only in a temporary cloud-session directory and will be lost.
-  - It's pure tooling, with zero gameplay risk.
-- **Depends on:** nothing.
-- **Do not touch:** any `.gd`/`.tscn`/`.tres` gameplay file.
+**M00.1 — Production plan** `[x]` (no runtime component)
+- **Objective:** commit this plan as the single source of truth.
+- **Inputs:** repository audit; master production direction.
+- **Files:** `docs/WRIKSHAGANDHA_MASTER_PRODUCTION_PLAN.md` (replaces the v1 audit).
+- **Dependencies:** none.
+- **Verification:** content review against the direction's checklist.
+- **Runtime test:** none.
+- **Done when:** the plan is on `main`.
+- **Commit:** recorded in §15.
 
-**Then:**
-- M00.5 architecture overview
-- M00.6 named physics layers
-- M00.7 branch cleanup
-- **M01.1 Android movement playtest** (developer). It's the first real runtime gate and decides the default movement mode.
+**M00.2 — Validation toolkit** `[x]` (no runtime component; toolkit executed)
+- **Objective:** move the toolkit from the temporary session workspace into the repository.
+- **Files:**
+  - `tools/check_project.py`, `tools/check_gdscript.py`
+  - `tools/sims/sim_farming.py`, `sim_persistence.py`, `sim_tap_movement.py`
+  - `tools/run_all.sh`, `tools/fetch_godot_api.sh`
+  - `tools/README.md`, `tools/.gdignore`
+  - `.gitignore`
+- **Verification:** `tools/run_all.sh` passes on `main`; a deliberately broken copy fails.
+- **Runtime test:** none.
+- **Done when:** the toolkit runs from the repo.
+- **Commit:** §15.
 
-**Must wait for the playtest:** camera bounds/zoom (M01.3/M01.4), and any Phase 02 refactor.
+**M00.3 — Architecture overview** `[x]` (no runtime component)
+- **Files:** `docs/ARCHITECTURE.md`.
+- **Done when:** it documents scenes, player, camera, input, interaction, farming, inventory/economy/saving direction, area architecture, UI, data definitions and elemental direction.
+- **Commit:** §15.
 
-**Frozen until their phase:** farming features, NPCs, houses, inventory, economy.
+**M00.4 — Design decisions registry** `[x]` (no runtime component)
+- **Files:** `docs/DESIGN_DECISIONS.md`.
+- **Done when:** decided, open (Rishis, economy, progression, areas, controls) and proposed items are recorded, with nothing invented.
+- **Commit:** §15.
+
+**M00.5 — Repository cleanup (safe only)** `[~]` (needs the Godot 4.7.2 open check)
+- **Scope:**
+  - Godot feature tag `4.3` → `4.7`.
+  - Physics layers named (`world`, `interactables`) in `project.godot`.
+  - Stale code comments corrected (comment lines only: "session-only", "Interact button").
+  - v1 plan replaced.
+  - Stale branch `claude/wrikshagandha-repo-audit-afzvtu` deleted (0 unique commits).
+- **Not in scope:** any code, scene or data change.
+- **Verification:** the diff shows comment-only `.gd` changes; the toolkit passes.
+- **Runtime test:** open the project in Godot 4.7.2 and confirm there are no errors (first item of the Phase 01 playtest).
+- **Commit:** §15.
+
+---
+
+### PHASE 01 — PLAYER — **next**
+
+Goal: comfortable, reliable movement in both modes on a real phone.
+
+**M01.1 — Physics layer constants** `[ ]`
+- **Objective:** replace numeric masks in code with the named layers (one shared definition).
+- **Inputs:** layer names (M00.5).
+- **Files:** `input_manager.gd`, `Player.tscn` (InteractionZone mask stays the same value).
+- **Dependencies:** M00.5.
+- **Implementation:** constants derived from layer numbers in one place; no behaviour change.
+- **Verification:** toolkit; tap-routing simulation.
+- **Runtime test:** covered by M01.5.
+- **Done when:** no magic mask numbers remain in scripts.
+
+**M01.2 — Keyboard fallback (desktop testing)** `[ ]`
+- **Objective:** WASD/arrow movement through `InputManager.move_vector`, the same path as the joystick.
+- **Files:** `project.godot` (`[input]` map), `input_manager.gd`.
+- **Dependencies:** none.
+- **Implementation:** read actions inside the existing joystick flow; no new loop.
+- **Verification:** toolkit.
+- **Runtime test:** move with the keyboard in the editor.
+- **Done when:** desktop movement works without mouse emulation.
+
+**M01.3 — Movement cancel + water decision** `[!]` blocked on decision O-07
+- **Objective:** a deliberate way to stop tap-to-move (e.g. tap the player); pond walkability per the developer's decision.
+- **Files:** `input_manager.gd`, `player.gd`, possibly `Meadow.tscn`.
+- **Done when:** the player can stop a walk; the pond behaves as decided.
+
+**M01.4 — Animation state hooks** `[ ]`
+- **Objective:** Player emits idle/walk/interact state changes for future character rigs; the current procedural bob/squash is unchanged.
+- **Files:** `player.gd`.
+- **Verification:** toolkit.
+- **Done when:** signals fire on state changes (verified in code).
+
+**M01.5 — Android movement playtest** `[ ]` → **PLAYTEST REQUIRED**
+- **Objective:** confirm movement on a phone and decide the default mode (O-06).
+- **Checklist:**
+  - project opens in Godot 4.7.2 with no errors;
+  - joystick moves and turns smoothly;
+  - Movement toggle switches modes and the joystick hides;
+  - tap on ground walks there and paths go around trees, rocks, logs and the monolith;
+  - mound steps are climbable;
+  - a tap while walking retargets;
+  - taps on buttons, screens and the seed picker never move the player;
+  - a drag does not move the player;
+  - note the load time (navmesh bake);
+  - note the frame rate.
+- **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
+
+---
+
+### PHASE 02 — INTERACTION
+Goal: one generic interaction architecture for everything touchable.
+
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[ ]` |
+| M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[ ]` |
+| M02.3 | Approach point + facing: walk beside the object, then interact (reach per O-08) | Approach consistent for near/far taps | Android: approach feel | `[ ]` |
+| M02.4 | Interaction feedback on tap (reuse the indicator) + touch tolerance for small objects | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
+| M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
+| M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
+
+### PHASE 03 — CAMERA / WORLD SHELL
+Goal: persistent Player/Camera/HUD with swappable areas.
+
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M03.1 | Persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1) | Meadow loads as a child area; everything works as before | Full Meadow walk-through | `[ ]` |
+| M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[ ]` |
+| M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[ ]` |
+| M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[ ]` |
+| M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[ ]` |
+| M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[ ]` |
+
+### PHASE 04 — INVENTORY
+Goal: one universal item model.
+
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M04.0 | *(Proposed P-01)* Top-level save version + migration hook | Old saves load; version recorded | Relaunch with an old save | `[!]` awaiting approval of P-01 |
+| M04.1 | Item definitions (id, name, category, stackable, glyph, element id, value) + item store | Items stored and saved | — | `[ ]` |
+| M04.2 | Seeds and harvests become items; migrate from FarmManager (A3) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[ ]` |
+| M04.3 | Discoveries and collectibles can grant items | Collect → item | Tap a collectible | `[ ]` |
+| M04.4 | Inventory UI; seed picker and basket become filtered views | One inventory screen | Android: readability | `[ ]` |
+
+### PHASE 05 — ECONOMY
+Goal: an internal coin economy with repeat-reward protection.
+
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M05.1 | Wallet + append-only transaction ledger (saved) | Every coin change has a ledger entry | — | `[ ]` |
+| M05.2 | Repeat-reward protection: persist exploration progress (P-02); one-time-ever rewards; caps/diminishing returns (A4) | Relaunch never re-awards; no unbounded faucet | Relaunch test | `[ ]` |
+| M05.3 | Reward architecture: earn rules as data | Rewards configurable without code | — | `[ ]` |
+| M05.4 | Economy configuration (incl. redemption reference as unused config) | No rate in gameplay code | — | `[ ]` |
+| M05.5 | Points ↔ coins relationship per O-02 | Decision implemented | — | `[!]` blocked on O-02 |
+| M05.6 | Economy simulation in `tools/sims/` | Earn/spend balances and abuse loops modelled | — | `[ ]` |
+
+### PHASE 06 — FARMING INTEGRATION
+Goal: connect the existing farming to inventory, economy, saving and progression, then freeze it.
+
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M06.1 | Farming uses inventory items end to end | No seed/produce storage left in FarmManager | Farm loop on device | `[ ]` |
+| M06.2 | Harvest/sell rewards through the economy | Coins via ledger | — | `[ ]` |
+| M06.3 | Farm milestones through progression hooks | One reward path | — | `[ ]` |
+| M06.4 | FarmManager reduced to farm rules/plots; farming frozen | Responsibilities documented in ARCHITECTURE.md | — | `[ ]` |
+
+### PHASE 07 — VERTICAL SLICE WORLD
+Goal: the small playable test area (placeholders).
+
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M07.1 | Slice layout plan (meadow, garden, pond, forest edge, path, house slot, NPC spot) | Developer-approved layout | — | `[ ]` |
+| M07.2 | Reusable placeholder scenes for the developer to place in the editor | Placement needs no code | Godot: place and run | `[ ]` |
+| M07.3 | Navigation, bounds and entry points for the slice | Whole slice reachable | Walk everything | `[ ]` |
+
+### PHASE 08 — HOUSES / NPCS
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M08.1 | Enterable house: Door (Enter/Exit) via the area loader | Enter/exit with state intact | Android: transition | `[ ]` |
+| M08.2 | Interior area (placeholder) with its own navmesh and camera bounds | Interior playable | Walk the interior | `[ ]` |
+| M08.3 | NPC framework: NPC definition + scene, idle/wander on navmesh, Talk | NPC placed in editor, no NPC-specific code | Tap NPC | `[ ]` |
+| M08.4 | Minimal data dialogue (conditions, outcomes) | One conversation with an outcome | Read on device | `[ ]` |
+| M08.5 | Relationships (saved value per NPC) | Survives relaunch | Relaunch | `[ ]` |
+| M08.6 | Requests (world-driven: problem → explore → solution → response) | One request completable without quest markers | Complete it | `[ ]` |
+| M08.7 | Services (e.g. a trade/gift) | One service works via economy/inventory | Use it | `[ ]` |
+
+### PHASE 09 — LIVING WORLD
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M09.1 | NPC routines on time-of-day phases | NPC follows a daily routine | Watch a day | `[ ]` |
+| M09.2 | Save time of day | Survives relaunch | Relaunch | `[ ]` |
+| M09.3 | Simple weather | Weather visible, event-driven | Watch | `[ ]` |
+| M09.4 | Environmental reactions to NPCs/weather (reuse event layer) | One reaction | Observe | `[ ]` |
+
+### PHASE 10 — EXPLORATION
+| Milestone | Objective | Done when | Runtime test | Status |
+|---|---|---|---|---|
+| M10.1 | Discoveries/secrets/hidden locations as data | New ones need no code | — | `[ ]` |
+| M10.2 | Collectibles via inventory; exploration rewards via economy (capped) | No unbounded rewards | Explore | `[ ]` |
+| M10.3 | Hidden location in the slice with a clue trail | Found by observation | Find it on device | `[ ]` |
+
+### PHASE 11 — FIVE ELEMENTS (one at a time)
+| Milestone | Objective | Done when | Status |
+|---|---|---|---|
+| M11.0 | Element definitions + element ids on places/items/discoveries | Data only | `[ ]` |
+| M11.1 | Earth prototype mechanic (decision O-09) | Distinct mechanic playable | `[!]` O-09 |
+| M11.2 | Water prototype | 〃 | `[!]` O-09 |
+| M11.3 | Fire prototype | 〃 | `[!]` O-09 |
+| M11.4 | Air prototype | 〃 | `[!]` O-09 |
+| M11.5 | Space prototype | 〃 | `[!]` O-09 |
+
+### PHASE 12 — FIVE RISHIS — `[!]` blocked on R-01…R-07
+- Only after the Rishi design is formally locked. Milestones will be written from the decisions.
+
+### PHASE 13 — PROGRESSION
+| Milestone | Objective | Done when | Status |
+|---|---|---|---|
+| M13.1 | Unify farm milestones, exploration bonuses and future rewards into one progression record | One path; paid once ever | `[ ]` |
+| M13.2 | Discovery → Understanding → World Change → New Access → New Discovery (per O-04) | One full chain in the slice | `[!]` O-04 |
+
+### PHASE 14 — JOURNAL / COLLECTION
+| Milestone | Objective | Done when | Status |
+|---|---|---|---|
+| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[ ]` |
+| M14.2 | Elements and Rishis sections | After Phases 11–12 | `[!]` |
+
+### PHASE 15 — SAVE SYSTEM
+| Milestone | Objective | Done when | Status |
+|---|---|---|---|
+| M15.1 | Full versioned persistence: inventory, crops, discoveries, coins, NPC relationships, world changes, elemental and Rishi progression | Everything important survives close/reopen/update | `[ ]` |
+| M15.2 | Session vs persistent state documented and enforced | Doc + checks | `[ ]` |
+| M15.3 | Old-save compatibility fixtures in `tools/` | Fixtures load | `[ ]` |
+
+### PHASE 16 — VERTICAL SLICE GATE
+The small area must feel like a coherent real game. All must pass **on Android**:
+
+- [ ] enter the area
+- [ ] comfortable movement (both modes)
+- [ ] camera feels good
+- [ ] tap an object; it responds correctly
+- [ ] collect something
+- [ ] receive coins and progression
+- [ ] discovery appears in the journal
+- [ ] farming: plant, grow, harvest
+- [ ] approach and talk to an NPC
+- [ ] enter the house; the interior loads
+- [ ] a progression milestone
+- [ ] one elemental prototype
+- [ ] save/load
+- [ ] returning feels meaningful
+
+No large world expansion before this gate passes.
+
+### LATER PHASES (only after Phase 16)
+- Full world and complete elemental regions
+- Villages and full NPC populations
+- Final Art / World Building: houses, NPCs, animals, vegetation, props, temples, elemental environments, Rishi characters, VFX, animation
+- Audio
+- Polish and optimization
+- Android production and QA
+- Backend
+- Real-money redemption infrastructure: server-authoritative wallet, anti-fraud, accounts, KYC/compliance, legal review
+
+---
+
+## 14. Parked ideas (not scheduled)
+- Seasons
+- Fishing/observation (Water)
+- Cooking/crafting depth (Fire)
+- Wildlife photography journal
+- More crops (frozen at 4, D-14)
+- Camera rotation
+
+## 15. Commit log for milestones
+| Milestone | Commit |
+|---|---|
+| M00.1–M00.5 | *(recorded after the Phase 00 commit)* |
+
+## 16. Current position
+- **Current phase:** 00 — Foundation (complete once committed).
+- **Next milestone:** **M01.1 — Physics layer constants** (Phase 01). It starts only on the developer's instruction.
+- **First runtime gate:** M01.5 — Android movement playtest.

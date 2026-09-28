@@ -11,3 +11,7 @@ export_credentials.cfg
 # OS/editor cruft
 .DS_Store
 *.tmp
+
+# Validation toolkit cache (downloaded API data) and Python bytecode
+tools/.cache/
+__pycache__/

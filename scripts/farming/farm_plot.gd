@@ -17,11 +17,11 @@ class_name FarmPlot
 ##             dries back out when the crop needs water again
 ##   READY   — the crop at full size, riper color, swaying gently
 ##
-## Planting is chosen, not fixed: pressing Interact on prepared soil asks
+## Planting is chosen, not fixed: interacting with prepared soil asks
 ## FarmManager to open the seed picker for this plot, and FarmManager calls
 ## plant() back with whichever seed the player chose (having checked and
 ## consumed the seed). While a crop grows, the plot's indicator takes that
-## crop's identity color. Plot state is session-only (never saved).
+## crop's identity color. Plot state is saved via capture()/restore().
 ##
 ## The soil remembers: each harvest's crop id is kept (the last
 ## FarmManager.SOIL_MEMORY of them), and FarmManager rates the next
@@ -95,7 +95,7 @@ var _longest_thirst_seconds: float = 0.0
 
 ## Guards _run_harvest_sequence()'s awaited animation. A FarmPlot stays in
 ## the player's nearby-interactables list (remove_on_harvest is false), so a
-## rapid second Interact press during the harvest animation would otherwise
+## rapid second tap/interaction during the harvest animation would otherwise
 ## re-enter this coroutine and double-award points.
 var _is_harvesting: bool = false
 ## Set once a harvest in progress has been reported to FarmManager (seed
