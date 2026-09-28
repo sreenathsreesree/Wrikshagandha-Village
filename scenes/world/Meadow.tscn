@@ -614,6 +614,14 @@ trigger_radius = 4.0
 cooldown_seconds = 120.0
 reveal_node_path = NodePath("../../Terrain/OverlookMotes")
 
+[node name="SecludedPondNookDisturbance" type="Node3D" parent="EnvironmentalEvents"]
+script = ExtResource("36")
+position = Vector3(13.6, 0, -11.8)
+event_type = 0
+trigger_radius = 3.0
+cooldown_seconds = 60.0
+actor_paths = [NodePath("../../Wildlife/PondNookButterfly")]
+
 [node name="ExplorationLandmarks" type="Node3D" parent="."]
 
 [node name="OverlookLandmark" type="Node3D" parent="ExplorationLandmarks"]
@@ -650,6 +658,20 @@ position = Vector3(17.6, 0, -2.5)
 location_id = "hidden_flower_pocket"
 kind = 1
 radius = 3.0
+
+[node name="WildflowerClearingLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(5.3, 0, 5.5)
+location_id = "wildflower_clearing"
+kind = 0
+radius = 5.0
+
+[node name="AncientGroveLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(-9, 0, -12)
+location_id = "ancient_grove"
+kind = 0
+radius = 5.0
 
 [node name="WorldSimulation" parent="." instance=ExtResource("28")]
 

@@ -26,6 +26,11 @@ func _ready() -> void:
 	ExplorationManager.exploration_bonus_awarded.connect(_on_exploration_bonus_awarded)
 	ExplorationManager.landmark_reached.connect(_on_landmark_reached)
 	ExplorationManager.secret_location_found.connect(_on_secret_location_found)
+	ExplorationManager.first_discovery_noted.connect(_on_first_discovery_noted)
+	ExplorationManager.rare_discovery_noted.connect(_on_rare_discovery_noted)
+	ExplorationManager.all_secret_locations_found.connect(_on_all_secret_locations_found)
+	ExplorationManager.curiosity_bonus_awarded.connect(_on_curiosity_bonus_awarded)
+	ExplorationManager.session_summary_ready.connect(_on_session_summary_ready)
 	DailyDiscoveryManager.daily_completed.connect(_on_daily_completed)
 
 	interact_button.pivot_offset = interact_button.size / 2.0
@@ -95,6 +100,60 @@ func _on_secret_location_found(location_id: String, bonus_points: int) -> void:
 
 func _format_location_name(id: String) -> String:
 	return id.replace("_", " ").capitalize()
+
+## The very first discovery of the session — a mood beat, not a reward, so
+## it carries no points and no fanfare title.
+func _on_first_discovery_noted() -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("🌱", "The Meadow is waking up.", "")
+
+## First rare-or-better discovery this session: deliberately subtle — no
+## extra points (the discovery itself already paid out for its rarity),
+## just a quiet acknowledgment that this one was different.
+func _on_rare_discovery_noted(definition: DiscoveryDefinition) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("☾ Something Rare ☾", definition.display_name, "You don't find this every day.")
+
+func _on_all_secret_locations_found(bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("★ Every Secret Found ★", "You've uncovered every hidden place in the Meadow.", "+%d Wriksha Points" % bonus_points)
+
+## Reaching a secret location before finding the discovery it's paired
+## with — curiosity paid off before the obvious route did.
+func _on_curiosity_bonus_awarded(_location_id: String, bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("✧ Curious Explorer ✧", "You found this before you were meant to.", "+%d Wriksha Points" % bonus_points)
+
+## A calm, optional recap once the player has substantially explored the
+## Meadow this session — reuses the same notification card as everything
+## else, just with a short multi-line body instead of one name.
+func _on_session_summary_ready(summary: Dictionary) -> void:
+	var lines: Array[String] = []
+	lines.append(_pluralized_line(int(summary.get("discoveries", 0)), "discovery", "discoveries"))
+	lines.append(_pluralized_line(int(summary.get("places_explored", 0)), "place explored", "places explored"))
+	var rare_count: int = int(summary.get("rare_discoveries", 0))
+	if rare_count > 0:
+		lines.append(_pluralized_line(rare_count, "rare discovery", "rare discoveries"))
+	var secret_count: int = int(summary.get("secret_locations_found", 0))
+	if secret_count > 0:
+		lines.append(_pluralized_line(secret_count, "hidden place found", "hidden places found"))
+
+	var body := ""
+	for i in lines.size():
+		if i > 0:
+			body += "\n"
+		body += lines[i]
+
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("✦ Today's Meadow ✦", body, "")
+
+func _pluralized_line(count: int, singular: String, plural: String) -> String:
+	return "%d %s" % [count, singular if count == 1 else plural]
 
 func _update_discoveries_label() -> void:
 	var found := DiscoveryManager.get_discovered_ids().size()

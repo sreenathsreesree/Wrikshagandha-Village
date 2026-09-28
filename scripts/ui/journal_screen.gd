@@ -27,6 +27,19 @@ func _on_entry_added(_entry: Dictionary) -> void:
 func _refresh() -> void:
 	for child in list_container.get_children():
 		child.queue_free()
+
+	list_container.add_child(_build_places_section())
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 12)
+	list_container.add_child(spacer)
+
+	var discoveries_header := Label.new()
+	discoveries_header.text = "Discoveries"
+	discoveries_header.add_theme_font_size_override("font_size", 18)
+	discoveries_header.modulate.a = 0.8
+	list_container.add_child(discoveries_header)
+
 	var entries := JournalManager.get_entries()
 	if entries.is_empty():
 		var empty_label := Label.new()
@@ -36,6 +49,27 @@ func _refresh() -> void:
 		return
 	for entry: Dictionary in entries:
 		list_container.add_child(_build_entry_row(entry))
+
+## Small "Exploration Memory" section: places visited this session, in a
+## fixed order, session-only (not saved) — reveals its real name once
+## visited, stays "???" until then so secret locations stay secret.
+func _build_places_section() -> Control:
+	var box := VBoxContainer.new()
+
+	var header := Label.new()
+	header.text = "Places"
+	header.add_theme_font_size_override("font_size", 18)
+	header.modulate.a = 0.8
+	box.add_child(header)
+
+	for place: Dictionary in ExplorationManager.get_places_progress():
+		var row := Label.new()
+		var visited: bool = place.visited
+		row.text = "✓ %s" % place.display_name if visited else "???"
+		row.modulate.a = 1.0 if visited else 0.6
+		box.add_child(row)
+
+	return box
 
 func _build_entry_row(entry: Dictionary) -> Control:
 	var box := VBoxContainer.new()
