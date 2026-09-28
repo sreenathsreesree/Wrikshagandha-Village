@@ -33,6 +33,8 @@ var state: String = "idle"
 var _home_position: Vector3
 var _target_position: Vector3
 var _state_timer: float = 0.0
+var _idle_wiggle_time: float = 0.0
+var _idle_base_rotation: float = 0.0
 
 func _ready() -> void:
 	_home_position = position
@@ -50,6 +52,8 @@ func _process(delta: float) -> void:
 		"idle", "pause":
 			if player_distance < alert_distance:
 				_face_player(delta)
+			else:
+				_idle_look_around(delta)
 			_state_timer -= delta
 			if _state_timer <= 0.0:
 				_enter_wander()
@@ -62,6 +66,14 @@ func _process(delta: float) -> void:
 			_state_timer -= delta
 			if _state_timer <= 0.0 and (player == null or position.distance_to(player.global_position) > flee_distance * 1.5):
 				_enter_idle()
+
+## A tiny head-turn-like wiggle while idling with no player nearby to react
+## to — makes the creature read as alive/curious rather than frozen,
+## without any new state or extra processing cost beyond a sine.
+func _idle_look_around(delta: float) -> void:
+	_idle_wiggle_time += delta
+	var wiggle := sin(_idle_wiggle_time * 0.6) * 0.35
+	rotation.y = lerp_angle(rotation.y, _idle_base_rotation + wiggle, 2.0 * delta)
 
 func _face_player(delta: float) -> void:
 	if player == null:
@@ -94,11 +106,15 @@ func _flee_target() -> Vector3:
 func _enter_idle() -> void:
 	state = "idle"
 	_state_timer = randf_range(idle_time_min, idle_time_max)
+	_idle_base_rotation = rotation.y
+	_idle_wiggle_time = 0.0
 	state_changed.emit(state)
 
 func _enter_pause() -> void:
 	state = "pause"
 	_state_timer = randf_range(idle_time_min, idle_time_max)
+	_idle_base_rotation = rotation.y
+	_idle_wiggle_time = 0.0
 	state_changed.emit(state)
 
 func _enter_wander() -> void:

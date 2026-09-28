@@ -13,8 +13,8 @@ uniform float roughness_value : hint_range(0.0, 1.0) = 0.9;
 
 global uniform vec3 wg_player_position;
 
-const float BEND_RADIUS = 1.1;
-const float BEND_STRENGTH = 0.22;
+const float BEND_RADIUS = 1.35;
+const float BEND_STRENGTH = 0.3;
 
 void vertex() {
 	float phase = TIME * sway_speed + VERTEX.x * 3.0 + VERTEX.z * 3.0;

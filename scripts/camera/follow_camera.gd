@@ -8,20 +8,31 @@ class_name FollowCamera
 ## position, rather than reading a CharacterBody3D.velocity property).
 ##
 ## Adds a small velocity-based look-ahead (so the world in front of the
-## player's movement is a little more visible) and a subtle FOV widening at
-## speed, for readability rather than pure framing.
+## player's movement is a little more visible), a gentle FOV widen at
+## speed, and a fixed screen-space offset so the player sits in a
+## comfortable exploration-camera position rather than dead-center.
 
 @export var target: Node3D
-@export var follow_speed: float = 6.0
-@export var look_ahead_distance: float = 1.1
-@export var look_ahead_speed_reference: float = 4.5
+@export var follow_speed: float = 6.5
+@export var look_ahead_distance: float = 1.0
+@export var look_ahead_speed_reference: float = 4.3
 @export var base_fov: float = 50.0
-@export var fov_boost: float = 4.0
+@export var fov_boost: float = 2.0
+
+## Camera3D's built-in framing offset (viewport-space, not a 3D move) —
+## keeps the player a little below and off dead-center so more of the
+## world ahead is visible, without touching the actual camera position.
+@export var screen_offset := Vector2(0.0, 0.08)
 
 @onready var _camera: Camera3D = get_node_or_null("SpringArm3D/Camera3D") as Camera3D
 
 var _last_target_position: Vector3
 var _has_last_position: bool = false
+
+func _ready() -> void:
+	if _camera:
+		_camera.h_offset = screen_offset.x
+		_camera.v_offset = screen_offset.y
 
 func _physics_process(delta: float) -> void:
 	if target == null:

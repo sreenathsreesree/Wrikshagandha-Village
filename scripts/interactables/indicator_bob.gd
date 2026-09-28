@@ -68,6 +68,7 @@ func _process(delta: float) -> void:
 		var speed_boost := 1.0 + _proximity * 0.8
 		position.y = _base_y + sin(_time * bob_speed * speed_boost) * bob_height
 		rotate_y(spin_speed * speed_boost * delta)
+		scale = Vector3.ONE * (1.0 + _proximity * 0.25)
 		return
 
 	if rarity != "very_rare" and rarity != "legendary":

@@ -7,16 +7,23 @@ extends CharacterBody3D
 ## enters/leaves range, and feeds it a live proximity value while nearby so
 ## approaching something builds anticipation before the harvest itself.
 
-const MAX_SPEED := 4.5
-const ACCELERATION := 18.0
-const DECELERATION := 22.0
-const TURN_SPEED := 10.0
+const MAX_SPEED := 4.3
+const ACCELERATION := 15.0
+const DECELERATION := 19.0
+const TURN_SPEED := 11.0
 const GRAVITY := 12.0
-const BOB_HEIGHT := 0.045
-const BOB_SPEED := 9.0
-const SQUASH_AMOUNT := 0.06
+const BOB_HEIGHT := 0.035
+const BOB_SPEED := 8.5
+const SQUASH_AMOUNT := 0.045
 const FOOTSTEP_INTERVAL := 0.32
 const INTERACTION_RADIUS := 2.2
+const DEAD_ZONE := 0.12
+
+## Shapes the raw joystick deflection before it becomes a target speed.
+## >1 gives finer, easier control near the center of the joystick (slow,
+## precise movement) while still reaching full speed at full deflection —
+## without the joystick itself needing to know anything about this.
+const INPUT_RESPONSE_CURVE := 1.2
 
 @onready var interaction_zone: Area3D = $InteractionZone
 @onready var visual: Node3D = $Visual
@@ -33,18 +40,12 @@ func _ready() -> void:
 	_facing_angle = visual.rotation.y
 
 func _physics_process(delta: float) -> void:
-	var move_vector: Vector2 = InputManager.move_vector
-	if move_vector.length() < 0.12:
-		move_vector = Vector2.ZERO
+	var direction := _shape_input(InputManager.move_vector)
 
 	if is_on_floor():
 		velocity.y = 0.0
 	else:
 		velocity.y -= GRAVITY * delta
-
-	var direction := Vector3(move_vector.x, 0.0, move_vector.y)
-	if direction.length_squared() > 1.0:
-		direction = direction.normalized()
 
 	var horizontal_velocity := Vector3(velocity.x, 0.0, velocity.z)
 	var target_velocity := direction * MAX_SPEED
@@ -60,6 +61,18 @@ func _physics_process(delta: float) -> void:
 	_update_walk_bob(delta, speed)
 	_update_footsteps(delta, speed)
 	_update_nearby_proximity()
+
+## Converts the raw (already 0..1, already dead-zoned by the joystick)
+## input vector into a movement direction, applying a response curve to
+## the magnitude only — direction is untouched, so diagonals stay
+## correctly normalized regardless of the curve.
+func _shape_input(move_vector: Vector2) -> Vector3:
+	var magnitude := move_vector.length()
+	if magnitude < DEAD_ZONE:
+		return Vector3.ZERO
+	var shaped_magnitude := pow(clamp(magnitude, 0.0, 1.0), INPUT_RESPONSE_CURVE)
+	var shaped := move_vector.normalized() * shaped_magnitude
+	return Vector3(shaped.x, 0.0, shaped.y)
 
 func _update_facing(direction: Vector3, delta: float) -> void:
 	if direction.length_squared() > 0.01:
@@ -78,7 +91,7 @@ func _update_walk_bob(delta: float, speed: float) -> void:
 
 	# Subtle squash/stretch: a touch shorter and wider while accelerating
 	# hard, a touch taller and thinner at full speed — smoothed so it never
-	# snaps.
+	# snaps, and kept gentle so it reads as weight, not cartoon bounce.
 	var target_stretch := speed_ratio * SQUASH_AMOUNT
 	var target_scale := Vector3(1.0 - target_stretch * 0.5, 1.0 + target_stretch, 1.0 - target_stretch * 0.5)
 	visual.scale = visual.scale.lerp(target_scale, 8.0 * delta)

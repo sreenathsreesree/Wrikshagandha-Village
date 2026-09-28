@@ -30,11 +30,15 @@ func set_highlighted(active: bool) -> void:
 
 ## t in 0..1: how close the player currently is within interaction range.
 ## Called every frame by Player while this item is nearby, so approaching
-## it visibly builds anticipation before the harvest itself.
+## it visibly builds anticipation before the harvest itself. The whole
+## object grows by a barely-perceptible amount on top of whatever its
+## indicator does — a subtle "it notices you too" reaction that works for
+## every item regardless of its mesh layout.
 func update_proximity(t: float) -> void:
 	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
 	if indicator:
 		indicator.set_proximity(t)
+	scale = Vector3.ONE * (1.0 + t * 0.05)
 
 func interact() -> bool:
 	if discovery_id == "":
