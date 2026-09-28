@@ -1,0 +1,35 @@
+[gd_scene load_steps=3 format=3]
+
+[sub_resource type="BoxMesh" id="BoxMesh_print"]
+size = Vector3(0.09, 0.01, 0.16)
+
+[sub_resource type="StandardMaterial3D" id="Material_print"]
+albedo_color = Color(0.28, 0.22, 0.16, 0.55)
+roughness = 1.0
+transparency = 1
+
+[node name="Footprints" type="Node3D"]
+
+[node name="Print1" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.01, 0)
+rotation_degrees = Vector3(0, 10, 0)
+mesh = SubResource("BoxMesh_print")
+surface_material_override/0 = SubResource("Material_print")
+
+[node name="Print2" type="MeshInstance3D" parent="."]
+position = Vector3(0.22, 0.01, 0.4)
+rotation_degrees = Vector3(0, -8, 0)
+mesh = SubResource("BoxMesh_print")
+surface_material_override/0 = SubResource("Material_print")
+
+[node name="Print3" type="MeshInstance3D" parent="."]
+position = Vector3(-0.05, 0.01, 0.82)
+rotation_degrees = Vector3(0, 12, 0)
+mesh = SubResource("BoxMesh_print")
+surface_material_override/0 = SubResource("Material_print")
+
+[node name="Print4" type="MeshInstance3D" parent="."]
+position = Vector3(0.2, 0.01, 1.22)
+rotation_degrees = Vector3(0, -6, 0)
+mesh = SubResource("BoxMesh_print")
+surface_material_override/0 = SubResource("Material_print")

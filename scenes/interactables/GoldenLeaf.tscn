@@ -1,0 +1,37 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator.tscn" id="2"]
+
+[sub_resource type="PrismMesh" id="PrismMesh_leaf"]
+size = Vector3(0.22, 0.03, 0.16)
+
+[sub_resource type="StandardMaterial3D" id="Material_leaf"]
+albedo_color = Color(0.95, 0.75, 0.2, 1)
+emission_enabled = true
+emission = Color(0.95, 0.75, 0.25, 1)
+emission_energy_multiplier = 0.8
+metallic = 0.3
+roughness = 0.25
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_leaf"]
+radius = 0.18
+
+[node name="GoldenLeaf" type="Area3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+discovery_id = "golden_leaf"
+
+[node name="Leaf" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.08, 0)
+rotation_degrees = Vector3(0, 20, 5)
+mesh = SubResource("PrismMesh_leaf")
+surface_material_override/0 = SubResource("Material_leaf")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.08, 0)
+shape = SubResource("SphereShape3D_leaf")
+
+[node name="Indicator" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)

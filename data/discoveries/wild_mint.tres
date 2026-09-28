@@ -6,7 +6,9 @@
 script = ExtResource("1")
 id = "wild_mint"
 display_name = "Wild Mint"
-description = "A fragrant sprout that grows in cool, shaded patches near water."
+description = "Found growing near damp ground, close to the water."
 category = "plant"
+rarity = "uncommon"
 points_value = 15
 harvestable = true
+respawn_seconds = 90.0

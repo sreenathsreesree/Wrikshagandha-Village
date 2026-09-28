@@ -2,6 +2,8 @@ extends Node
 
 ## Local save/load only. Reads and writes a single JSON file under the
 ## platform-specific user:// directory (app-private storage on Android).
+## Every field is read with a default, so a save written before Journal /
+## Daily Discovery existed still loads cleanly.
 
 const SAVE_PATH := "user://save.json"
 
@@ -9,6 +11,8 @@ func save_game() -> void:
 	var data := {
 		"points": PointsManager.get_points(),
 		"discovered_ids": DiscoveryManager.get_discovered_ids(),
+		"journal_entries": JournalManager.get_save_data(),
+		"daily_discovery": DailyDiscoveryManager.get_save_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -32,6 +36,8 @@ func load_game() -> bool:
 		return false
 	PointsManager.set_points(int(parsed.get("points", 0)))
 	DiscoveryManager.set_discovered_ids(parsed.get("discovered_ids", []))
+	JournalManager.apply_save_data(parsed.get("journal_entries", {}))
+	DailyDiscoveryManager.apply_save_data(parsed.get("daily_discovery", {}))
 	return true
 
 func has_save_file() -> bool:

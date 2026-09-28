@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3]
+[gd_scene load_steps=34 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -18,6 +18,15 @@
 [ext_resource type="PackedScene" path="res://scenes/world/props/MushroomCluster.tscn" id="16"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/PondWater.tscn" id="17"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/TerracedMound.tscn" id="18"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoverySpawnPoint.tscn" id="19"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/HiddenHerb.tscn" id="20"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/BlueMushroom.tscn" id="21"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/GoldenLeaf.tscn" id="22"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/AncientSeed.tscn" id="23"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/GlowingMotes.tscn" id="24"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/Butterfly.tscn" id="25"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/Footprints.tscn" id="26"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/UnusualFlowerPatch.tscn" id="27"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -267,20 +276,59 @@ position = Vector3(-12, 0, -9)
 
 [node name="Discoverables" type="Node3D" parent="."]
 
-[node name="MeadowFlower" parent="Discoverables" instance=ExtResource("3")]
+[node name="MeadowFlowerSpawn" parent="Discoverables" instance=ExtResource("19")]
 position = Vector3(3, 0, 0.5)
+discovery_scene = ExtResource("3")
 
-[node name="WildMint" parent="Discoverables" instance=ExtResource("4")]
+[node name="WildMintSpawn" parent="Discoverables" instance=ExtResource("19")]
 position = Vector3(8.5, 0, -7.5)
+discovery_scene = ExtResource("4")
 
-[node name="SmallMushroom" parent="Discoverables" instance=ExtResource("5")]
+[node name="SmallMushroomSpawn" parent="Discoverables" instance=ExtResource("19")]
 position = Vector3(-9, 0, -5)
+discovery_scene = ExtResource("5")
 
-[node name="HealingHerb" parent="Discoverables" instance=ExtResource("6")]
+[node name="HealingHerbSpawn" parent="Discoverables" instance=ExtResource("19")]
 position = Vector3(-11, 0, 7.6)
+discovery_scene = ExtResource("6")
 
-[node name="RiverStone" parent="Discoverables" instance=ExtResource("7")]
+[node name="RiverStoneSpawn" parent="Discoverables" instance=ExtResource("19")]
 position = Vector3(11.5, 0, -10.5)
+discovery_scene = ExtResource("7")
+
+[node name="HiddenHerbSpawn" parent="Discoverables" instance=ExtResource("19")]
+position = Vector3(-9, 0, -17)
+discovery_scene = ExtResource("20")
+
+[node name="BlueMushroomSpawn" parent="Discoverables" instance=ExtResource("19")]
+position = Vector3(16, 0, 10.5)
+discovery_scene = ExtResource("21")
+
+[node name="GoldenLeafSpawn" parent="Discoverables" instance=ExtResource("19")]
+position = Vector3(3, 0, 16.5)
+discovery_scene = ExtResource("22")
+
+[node name="AncientSeedSpawn" parent="Discoverables" instance=ExtResource("19")]
+position = Vector3(-19, 0, 12)
+discovery_scene = ExtResource("23")
+
+[node name="Clues" type="Node3D" parent="."]
+
+[node name="GlowingMotesNearBlueMushroom" parent="Clues" instance=ExtResource("24")]
+position = Vector3(15.3, 0, 9.6)
+
+[node name="FootprintsTowardHiddenHerb" parent="Clues" instance=ExtResource("26")]
+position = Vector3(-9.6, 0, -14.4)
+rotation_degrees = Vector3(0, 200, 0)
+
+[node name="UnusualFlowerPatchNearHiddenHerb" parent="Clues" instance=ExtResource("27")]
+position = Vector3(-8.3, 0, -16.4)
+
+[node name="UnusualFlowerPatchNearGoldenLeaf" parent="Clues" instance=ExtResource("27")]
+position = Vector3(2.3, 0, 15.8)
+
+[node name="ButterflyNearAncientSeed" parent="Clues" instance=ExtResource("25")]
+position = Vector3(-18.5, 0, 11)
 
 [node name="PlayerSpawn" type="Marker3D" parent="."]
 position = Vector3(0, 0, 5)

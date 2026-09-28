@@ -1,0 +1,38 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator.tscn" id="2"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_seed"]
+radius = 0.11
+height = 0.18
+
+[sub_resource type="StandardMaterial3D" id="Material_seed"]
+albedo_color = Color(0.55, 0.35, 0.75, 1)
+emission_enabled = true
+emission = Color(0.65, 0.45, 0.95, 1)
+emission_energy_multiplier = 1.1
+metallic = 0.15
+roughness = 0.3
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_seed"]
+radius = 0.18
+
+[node name="AncientSeed" type="Area3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+discovery_id = "ancient_seed"
+
+[node name="Seed" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.11, 0)
+scale = Vector3(1, 1.2, 1)
+mesh = SubResource("SphereMesh_seed")
+surface_material_override/0 = SubResource("Material_seed")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.11, 0)
+shape = SubResource("SphereShape3D_seed")
+
+[node name="Indicator" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)

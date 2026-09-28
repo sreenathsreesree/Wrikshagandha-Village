@@ -16,7 +16,7 @@ shadow_color = Color(0.2, 0.15, 0.05, 0.25)
 shadow_size = 10
 
 [node name="DiscoveryNotification" type="Control"]
-custom_minimum_size = Vector2(300, 100)
+custom_minimum_size = Vector2(300, 120)
 mouse_filter = 2
 script = ExtResource("1")
 

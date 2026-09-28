@@ -1,0 +1,33 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Shader" path="res://shaders/sway.gdshader" id="1"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_unusual"]
+shader = ExtResource("1")
+shader_parameter/base_color = Color(0.68, 0.55, 0.85, 1)
+shader_parameter/sway_speed = 1.3
+shader_parameter/sway_amount = 0.04
+shader_parameter/roughness_value = 0.5
+
+[sub_resource type="SphereMesh" id="SphereMesh_dot"]
+radius = 0.05
+height = 0.08
+
+[node name="UnusualFlowerPatch" type="Node3D"]
+
+[node name="DotA" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.09, 0)
+mesh = SubResource("SphereMesh_dot")
+surface_material_override/0 = SubResource("ShaderMaterial_unusual")
+
+[node name="DotB" type="MeshInstance3D" parent="."]
+position = Vector3(0.1, 0.07, 0.06)
+scale = Vector3(0.8, 0.8, 0.8)
+mesh = SubResource("SphereMesh_dot")
+surface_material_override/0 = SubResource("ShaderMaterial_unusual")
+
+[node name="DotC" type="MeshInstance3D" parent="."]
+position = Vector3(-0.08, 0.075, -0.05)
+scale = Vector3(0.85, 0.85, 0.85)
+mesh = SubResource("SphereMesh_dot")
+surface_material_override/0 = SubResource("ShaderMaterial_unusual")

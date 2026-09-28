@@ -8,5 +8,7 @@ id = "healing_herb"
 display_name = "Healing Herb"
 description = "A softly glowing herb said to ease pain and speed recovery."
 category = "plant"
+rarity = "uncommon"
 points_value = 20
 harvestable = true
+respawn_seconds = 120.0

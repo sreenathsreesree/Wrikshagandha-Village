@@ -4,11 +4,11 @@
 
 [resource]
 script = ExtResource("1")
-id = "small_mushroom"
-display_name = "Small Mushroom"
-description = "A bright red-capped mushroom hiding in the shade of the trees."
-category = "fungus"
-rarity = "common"
-points_value = 12
+id = "hidden_herb"
+display_name = "Hidden Herb"
+description = "Tucked away where few would think to look."
+category = "plant"
+rarity = "rare"
+points_value = 30
 harvestable = true
-respawn_seconds = 60.0
+respawn_seconds = 240.0
