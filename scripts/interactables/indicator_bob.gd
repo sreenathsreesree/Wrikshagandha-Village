@@ -61,6 +61,16 @@ func _make_gem_material_unique() -> void:
 		copy.emission = tint
 	_gem.set_surface_override_material(0, copy)
 
+## Recolors this instance's gem (safe: _ready made the material unique).
+## Farm plots use it to show the growing crop's identity color.
+func set_tint(color: Color) -> void:
+	tint = color
+	var material := _get_gem_material()
+	if material == null:
+		return
+	material.albedo_color = color
+	material.emission = color
+
 ## A brief acknowledgement swell, folded into the same scale formula
 ## _process already applies every frame — so it can never be fought or
 ## overwritten by that per-frame scale write.

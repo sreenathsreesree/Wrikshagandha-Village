@@ -1,4 +1,4 @@
-[gd_scene load_steps=48 format=3]
+[gd_scene load_steps=45 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -38,9 +38,6 @@
 [ext_resource type="Script" path="res://scripts/world_simulation/environmental_event.gd" id="36"]
 [ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark.gd" id="37"]
 [ext_resource type="PackedScene" path="res://scenes/farming/FarmPlot.tscn" id="38"]
-[ext_resource type="Resource" path="res://data/crops/wild_carrot.tres" id="39"]
-[ext_resource type="Resource" path="res://data/crops/meadow_herb.tres" id="40"]
-[ext_resource type="Resource" path="res://data/crops/golden_sunflower.tres" id="41"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -546,27 +543,22 @@ position = Vector3(17.3, 0, -2.0)
 
 [node name="FarmPlot1" parent="Farm" instance=ExtResource("38")]
 position = Vector3(11.0, 0, 0.5)
-crop_definition = ExtResource("39")
 
 [node name="FarmPlot2" parent="Farm" instance=ExtResource("38")]
 position = Vector3(13.2, 0, 0.9)
 rotation_degrees = Vector3(0, 25, 0)
-crop_definition = ExtResource("39")
 
 [node name="FarmPlot3" parent="Farm" instance=ExtResource("38")]
 position = Vector3(10.8, 0, 2.8)
 rotation_degrees = Vector3(0, -15, 0)
-crop_definition = ExtResource("40")
 
 [node name="FarmPlot4" parent="Farm" instance=ExtResource("38")]
 position = Vector3(13.5, 0, 3.0)
 rotation_degrees = Vector3(0, 10, 0)
-crop_definition = ExtResource("40")
 
 [node name="FarmPlot5" parent="Farm" instance=ExtResource("38")]
 position = Vector3(12.0, 0, 4.0)
 rotation_degrees = Vector3(0, -30, 0)
-crop_definition = ExtResource("41")
 
 [node name="FarmGrass1" parent="Farm" instance=ExtResource("13")]
 position = Vector3(10.2, 0, 0.2)

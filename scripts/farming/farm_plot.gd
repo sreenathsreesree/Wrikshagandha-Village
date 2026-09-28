@@ -17,12 +17,16 @@ class_name FarmPlot
 ##             dries back out when the crop needs water again
 ##   READY   — the crop at full size, riper color, swaying gently
 ##
-## Milestone scope: each plot has one deterministic starter crop assigned
-## per-instance in the scene. Plot state is session-only (never saved).
+## Planting is chosen, not fixed: pressing Interact on prepared soil asks
+## FarmManager to open the seed picker for this plot, and FarmManager calls
+## plant() back with whichever seed the player chose (having checked and
+## consumed the seed). While a crop grows, the plot's indicator takes that
+## crop's identity color. Plot state is session-only (never saved).
 
 enum PlotState { EMPTY, SOIL, PLANTED, GROWING, READY }
 
-@export var crop_definition: CropDefinition
+## The crop currently in the ground — set by plant(), cleared on harvest.
+var crop_definition: CropDefinition
 
 const SOIL_COLOR_FRESH := Color(0.5, 0.4, 0.27, 1.0)
 const SOIL_COLOR_DRY := Color(0.42, 0.32, 0.22, 1.0)
@@ -51,6 +55,9 @@ var _last_action_msec: int = -ACTION_COOLDOWN_MSEC
 ## re-enter this coroutine and double-award points.
 var _is_harvesting: bool = false
 
+## The plot's own quiet green, restored when the soil is empty again.
+var _default_indicator_tint: Color = Color(0, 0, 0, 0)
+
 @onready var patch_mesh: MeshInstance3D = $PatchMesh
 @onready var soil_mesh: MeshInstance3D = $SoilMesh
 @onready var seed_mound: MeshInstance3D = $SeedMound
@@ -67,7 +74,18 @@ func _ready() -> void:
 	_make_soil_material_unique()
 	var indicator := _get_indicator()
 	if indicator:
-		indicator.set_rarity(crop_definition.rarity if crop_definition else "common")
+		_default_indicator_tint = indicator.tint
+
+## Leaving range also closes this plot's seed picker if it's the one open,
+## so a picker can never outlive the player standing at its plot.
+func set_highlighted(active: bool) -> void:
+	super(active)
+	if not active:
+		FarmManager.cancel_seed_choice(self)
+
+## True only for prepared, empty soil — the one state a seed can go into.
+func can_plant() -> bool:
+	return plot_state == PlotState.SOIL and not _is_harvesting
 
 func interact() -> bool:
 	var now := Time.get_ticks_msec()
@@ -79,7 +97,9 @@ func interact() -> bool:
 			_prepare_soil()
 			acted = true
 		PlotState.SOIL:
-			acted = _plant_crop()
+			FarmManager.request_seed_choice(self)
+			_pulse_indicator(0.3)
+			acted = true
 		PlotState.PLANTED, PlotState.GROWING:
 			if _needs_water:
 				_water_crop()
@@ -107,17 +127,21 @@ func _prepare_soil() -> void:
 	_pulse_indicator(0.25)
 	AmbientAudioManager.play_ui_feedback()
 
-## A seed mound rises out of the soil and the seedling emerges from it.
-func _plant_crop() -> bool:
-	if crop_definition == null or crop_definition.visual_scene == null:
+## Called by FarmManager with the player's chosen seed, after it has
+## verified a seed is available (it consumes the seed only if this returns
+## true). A seed mound rises out of the soil with a small puff, and the
+## seedling emerges from it.
+func plant(crop: CropDefinition) -> bool:
+	if not can_plant() or crop == null or crop.visual_scene == null:
 		return false
-	var node := crop_definition.visual_scene.instantiate()
+	var node := crop.visual_scene.instantiate()
 	var visual := node as CropVisual
 	if visual == null:
-		push_warning("FarmPlot: visual_scene for '%s' has no CropVisual script" % crop_definition.crop_id)
+		push_warning("FarmPlot: visual_scene for '%s' has no CropVisual script" % crop.crop_id)
 		node.free()
 		return false
 
+	crop_definition = crop
 	plot_state = PlotState.PLANTED
 	_stage_index = 0
 	_needs_water = true
@@ -133,9 +157,12 @@ func _plant_crop() -> bool:
 	_mound_tween.tween_property(seed_mound, "scale", Vector3.ONE, 0.3) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
+	var indicator := _get_indicator()
+	if indicator:
+		indicator.set_tint(crop.identity_color)
+	_spawn_burst(DUST_TINT, 0.22, 0.4, 0.06)
 	_pulse_indicator(0.3)
 	AmbientAudioManager.play_ui_feedback()
-	FarmManager.notify_crop_planted(crop_definition)
 	return true
 
 ## Watering darkens the soil (and it stays dark while this stage grows),
@@ -218,8 +245,12 @@ func _run_harvest_sequence() -> void:
 
 func _reset_to_soil() -> void:
 	plot_state = PlotState.SOIL
+	crop_definition = null
 	_stage_index = 0
 	_needs_water = false
+	var indicator := _get_indicator()
+	if indicator:
+		indicator.set_tint(_default_indicator_tint)
 	growth_timer.stop()
 	crop_root.visible = false
 	_kill_tween(_mound_tween)

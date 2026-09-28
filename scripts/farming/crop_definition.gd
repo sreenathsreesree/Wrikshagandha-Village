@@ -20,6 +20,19 @@ class_name CropDefinition
 ## leafy sway then a gentle lift, "bloom" = a scale pulse like opening up.
 @export_enum("pull", "sway", "bloom") var harvest_style: String = "pull"
 
+## Identity: the one color that means "this crop" everywhere it appears —
+## the seed picker's swatch and the plot's indicator gem while it grows.
+## The crop's own meshes carry the same accent (carrot shoulder, herb
+## buds, sunflower head), so what's growing is readable without labels.
+@export var identity_color: Color = Color(0.72, 0.92, 0.5, 1)
+## A single glyph shown on the seed picker button beside the color swatch.
+@export var icon_glyph: String = "🌱"
+
+## Seeds the player starts each session with. Harvesting returns exactly
+## one seed of the harvested crop, so this is also the most of this crop
+## that can ever be growing at once — renewable, never accumulating.
+@export var starting_seeds: int = 1
+
 ## Seconds spent in each growth stage before it can advance to the next —
 ## each advance requires the plot to be watered first (see FarmPlot).
 ## seed_duration is 0 by design: the very first watering sprouts it

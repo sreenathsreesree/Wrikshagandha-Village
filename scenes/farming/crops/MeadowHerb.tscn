@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/farming/crop_visual.gd" id="1"]
 
@@ -10,6 +10,16 @@ height = 0.26
 [sub_resource type="StandardMaterial3D" id="Material_herb"]
 albedo_color = Color(0.42, 0.44, 0.2, 1)
 roughness = 0.85
+
+[sub_resource type="SphereMesh" id="SphereMesh_bud"]
+radius = 0.022
+height = 0.04
+radial_segments = 8
+rings = 4
+
+[sub_resource type="StandardMaterial3D" id="Material_bud"]
+albedo_color = Color(0.72, 0.6, 0.9, 1)
+roughness = 0.6
 
 [node name="MeadowHerb" type="Node3D"]
 script = ExtResource("1")
@@ -37,3 +47,23 @@ position = Vector3(0.01, 0.12, -0.05)
 rotation_degrees = Vector3(-8, 90, 6)
 mesh = SubResource("CylinderMesh_stem")
 surface_material_override/0 = SubResource("Material_herb")
+
+[node name="Bud1" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.26, 0)
+mesh = SubResource("SphereMesh_bud")
+surface_material_override/0 = SubResource("Material_bud")
+
+[node name="Bud2" type="MeshInstance3D" parent="."]
+position = Vector3(0.08, 0.24, 0.05)
+mesh = SubResource("SphereMesh_bud")
+surface_material_override/0 = SubResource("Material_bud")
+
+[node name="Bud3" type="MeshInstance3D" parent="."]
+position = Vector3(-0.07, 0.24, -0.05)
+mesh = SubResource("SphereMesh_bud")
+surface_material_override/0 = SubResource("Material_bud")
+
+[node name="Bud4" type="MeshInstance3D" parent="."]
+position = Vector3(0.01, 0.24, -0.08)
+mesh = SubResource("SphereMesh_bud")
+surface_material_override/0 = SubResource("Material_bud")

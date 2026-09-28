@@ -11,25 +11,18 @@ var _definitions: Dictionary = {}
 func _ready() -> void:
 	_load_definitions()
 
+## ResourceDirectory handles exported builds, where these files are listed
+## as "*.tres.remap" rather than "*.tres".
 func _load_definitions() -> void:
 	_definitions.clear()
-	var dir := DirAccess.open(DISCOVERIES_PATH)
-	if dir == null:
-		push_warning("DiscoveryDatabase: could not open %s" % DISCOVERIES_PATH)
-		return
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while file_name != "":
-		if not dir.current_is_dir() and file_name.ends_with(".tres"):
-			var resource: Resource = load(DISCOVERIES_PATH + file_name)
-			if resource is DiscoveryDefinition:
-				var definition: DiscoveryDefinition = resource
-				if definition.id == "":
-					push_warning("DiscoveryDatabase: %s has an empty id" % file_name)
-				else:
-					_definitions[definition.id] = definition
-		file_name = dir.get_next()
-	dir.list_dir_end()
+	for path in ResourceDirectory.list_tres_paths(DISCOVERIES_PATH):
+		var resource: Resource = load(path)
+		if resource is DiscoveryDefinition:
+			var definition: DiscoveryDefinition = resource
+			if definition.id == "":
+				push_warning("DiscoveryDatabase: %s has an empty id" % path)
+			else:
+				_definitions[definition.id] = definition
 
 func get_definition(id: String) -> DiscoveryDefinition:
 	return _definitions.get(id, null)

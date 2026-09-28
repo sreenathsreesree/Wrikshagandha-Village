@@ -26,7 +26,11 @@ signal rare_discovery_noted(definition: DiscoveryDefinition)
 signal all_secret_locations_found(bonus_points: int)
 signal curiosity_bonus_awarded(location_id: String, bonus_points: int)
 signal session_summary_ready(summary: Dictionary)
-signal first_crop_planted(crop_definition: CropDefinition)
+## One acknowledgement per planting, decided here so the HUD shows exactly
+## one card: moment is "garden_first" (the first seed after finding the
+## Quiet Garden — the discovery continuing), "first" (first seed, garden
+## not yet formally found), or "" (every later planting).
+signal crop_planting_noted(crop_definition: CropDefinition, moment: String)
 signal first_crop_harvested(crop_definition: CropDefinition, bonus_points: int)
 signal all_starter_crops_harvested(bonus_points: int)
 
@@ -81,6 +85,9 @@ var _all_secrets_bonus_awarded: bool = false
 var _curiosity_bonus_given: bool = false
 var _summary_shown: bool = false
 var _first_planted_crop_name: String = ""
+var _first_planted_after_discovery: bool = false
+var _crops_planted_count: int = 0
+var _crops_harvested_count: int = 0
 var _first_harvested_crop_name: String = ""
 var _harvested_crop_ids: Array[String] = []
 var _all_starter_crops_awarded: bool = false
@@ -189,12 +196,16 @@ func _show_session_summary() -> void:
 	session_summary_ready.emit(get_session_summary())
 
 func _on_crop_planted(crop_definition: CropDefinition) -> void:
-	if _first_planted_crop_name != "":
-		return
-	_first_planted_crop_name = crop_definition.display_name
-	first_crop_planted.emit(crop_definition)
+	_crops_planted_count += 1
+	var moment := ""
+	if _first_planted_crop_name == "":
+		_first_planted_crop_name = crop_definition.display_name
+		_first_planted_after_discovery = _reached_landmarks.has(GARDEN_PLACE_ID)
+		moment = "garden_first" if _first_planted_after_discovery else "first"
+	crop_planting_noted.emit(crop_definition, moment)
 
 func _on_crop_harvested(crop_definition: CropDefinition, _points_awarded: int) -> void:
+	_crops_harvested_count += 1
 	if _first_harvested_crop_name == "":
 		_first_harvested_crop_name = crop_definition.display_name
 		PointsManager.add_points(FIRST_HARVEST_BONUS)
@@ -221,6 +232,9 @@ func get_garden_journal() -> Dictionary:
 		"found": _reached_landmarks.has(GARDEN_PLACE_ID),
 		"place_name": get_place_display_name(GARDEN_PLACE_ID),
 		"first_planted": _first_planted_crop_name,
+		"first_planted_after_discovery": _first_planted_after_discovery,
+		"crops_planted": _crops_planted_count,
+		"crops_harvested": _crops_harvested_count,
 		"first_harvested": _first_harvested_crop_name,
 	}
 

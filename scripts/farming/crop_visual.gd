@@ -11,7 +11,7 @@ class_name CropVisual
 ##   stage_scale — persistent growth size (only growth/removal touch it)
 ##   squash      — transient squash/stretch, always settles back to ONE
 ##   lift        — transient vertical offset, always settles back to 0
-##   sway        — rotation about the base (ready idle / harvest sway)
+##   sway        — rotation about the base (growing/ready idle, harvest sway)
 ## Every tween drives exactly one channel, so a watering bounce can never
 ## overwrite a growth-stage tween the way two tweens both writing `scale`
 ## would (the last one to finish won, which could leave a sprouted crop
@@ -21,8 +21,14 @@ const STAGE_SCALES := [0.28, 0.55, 0.8, 1.0]
 const MATURE_STAGE := 3
 const MIN_SCALE := 0.001
 const SEED_SINK := -0.05
-const READY_SWAY := 0.05
+## Idle life by stage: a seed is still; a growing crop barely stirs; a ready
+## crop sways a little more and gently rises and settles — the most
+## noticeable thing on the plot, but still calm.
+const GROWING_SWAY := 0.02
+const GROWING_SWAY_PERIOD := 2.2
+const READY_SWAY := 0.06
 const READY_SWAY_PERIOD := 1.4
+const READY_BOB := 0.012
 const READY_LIGHTEN := 0.18
 
 var stage_scale: float = 0.0:
@@ -90,7 +96,9 @@ func set_stage(stage_index: int) -> void:
 
 	if clamped == MATURE_STAGE:
 		_ripen_colors()
-		_motion_tween.tween_callback(_start_ready_idle)
+		_motion_tween.tween_callback(_start_idle.bind(READY_SWAY, READY_SWAY_PERIOD, READY_BOB))
+	elif clamped > 0:
+		_motion_tween.tween_callback(_start_idle.bind(GROWING_SWAY, GROWING_SWAY_PERIOD, 0.0))
 
 ## A gentle bounce when watered. Touches only the transient channels, and
 ## always returns them to neutral.
@@ -140,14 +148,23 @@ func _apply() -> void:
 	position.y = lift
 	rotation.z = sway
 
-func _start_ready_idle() -> void:
+## One looping tween per crop. Uses only sway (and lift, when bobbing) —
+## watering touches squash/lift but can't happen once a crop is ready, and
+## a growing crop's idle never uses lift, so the channels never collide.
+func _start_idle(amplitude: float, period: float, bob: float) -> void:
 	if _idle_tween and _idle_tween.is_valid():
 		_idle_tween.kill()
 	_idle_tween = create_tween().set_loops()
-	_idle_tween.tween_property(self, "sway", READY_SWAY, READY_SWAY_PERIOD) \
+	_idle_tween.tween_property(self, "sway", amplitude, period) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_idle_tween.tween_property(self, "sway", -READY_SWAY, READY_SWAY_PERIOD) \
+	if bob > 0.0:
+		_idle_tween.parallel().tween_property(self, "lift", bob, period) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_idle_tween.tween_property(self, "sway", -amplitude, period) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if bob > 0.0:
+		_idle_tween.parallel().tween_property(self, "lift", 0.0, period) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 ## Ready crops read slightly lighter/riper — a value change, not a glow.
 func _ripen_colors() -> void:

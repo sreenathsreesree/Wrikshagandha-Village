@@ -88,11 +88,24 @@ func _build_garden_section(garden: Dictionary) -> Control:
 	if garden.found:
 		box.add_child(_build_note("Found the Meadow's little growing place."))
 	if garden.first_planted != "":
-		box.add_child(_build_note("First crop planted: %s" % garden.first_planted))
+		var first_line := "Planted the garden's first seed: %s" if garden.first_planted_after_discovery else "First crop planted: %s"
+		box.add_child(_build_note(first_line % garden.first_planted))
 	if garden.first_harvested != "":
 		box.add_child(_build_note("First crop harvested: %s" % garden.first_harvested))
 
+	box.add_child(_build_note("Seeds: %s" % _seed_summary()))
+	box.add_child(_build_note("Crops planted: %d" % int(garden.crops_planted)))
+	box.add_child(_build_note("Crops harvested: %d" % int(garden.crops_harvested)))
+
 	return box
+
+## "Wild Carrot ×2, Meadow Herb ×1, Golden Sunflower ×0" — read straight
+## from FarmManager's session inventory, in its crop order.
+func _seed_summary() -> String:
+	var parts: PackedStringArray = []
+	for crop in FarmManager.get_crops():
+		parts.append("%s ×%d" % [crop.display_name, FarmManager.get_seed_count(crop.crop_id)])
+	return ", ".join(parts)
 
 func _build_note(text: String) -> Label:
 	var label := Label.new()

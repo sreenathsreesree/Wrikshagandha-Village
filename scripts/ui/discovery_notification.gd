@@ -31,10 +31,15 @@ func show_discovery(definition: DiscoveryDefinition) -> void:
 ## Repeat harvest of something already known: small, quiet, points-only —
 ## never the full "NEW DISCOVERY" presentation.
 func show_repeat(definition: DiscoveryDefinition) -> void:
+	show_compact(definition.display_name, "+%d" % definition.points_value)
+
+## The same quiet, small card as a repeat harvest, for any short everyday
+## note (e.g. "Wild Carrot planted" / "1 seed left").
+func show_compact(name_text: String, detail_text: String) -> void:
 	custom_minimum_size = COMPACT_SIZE
 	title_label.visible = false
-	name_label.text = definition.display_name
-	points_label.text = "+%d" % definition.points_value
+	name_label.text = name_text
+	points_label.text = detail_text
 	_play_entry_animation(REPEAT_DISPLAY_TIME, 0.92)
 
 ## Generic path used by exploration bonuses and daily-discovery completion.

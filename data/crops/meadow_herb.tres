@@ -14,4 +14,7 @@ points_value = 15
 seed_duration = 0.0
 sprout_duration = 14.0
 growing_duration = 24.0
+identity_color = Color(0.72, 0.6, 0.9, 1)
+icon_glyph = "🌿"
+starting_seeds = 2
 visual_scene = ExtResource("2")
