@@ -509,7 +509,7 @@ No large world expansion before this gate passes.
 | M00.1–M00.5 | `9da18a6` |
 | M01.1 | `e678d45` |
 | M01.2 | `d316ecc` |
-| M01.2a | *(recorded after commit)* |
+| M01.2a | `b663d76` |
 
 ## 16. Current position
 - **Current phase:** 01 — Player. M01.1, M01.2 and the M01.2a touch correction implemented (`[~]`); M01.2a **needs its playtest** before M01.3. Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
