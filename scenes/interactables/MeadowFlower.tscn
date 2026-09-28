@@ -1,0 +1,47 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator.tscn" id="2"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stem"]
+top_radius = 0.02
+bottom_radius = 0.03
+height = 0.3
+
+[sub_resource type="StandardMaterial3D" id="Material_stem"]
+albedo_color = Color(0.3, 0.5, 0.22, 1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_bloom"]
+radius = 0.13
+height = 0.2
+
+[sub_resource type="StandardMaterial3D" id="Material_bloom"]
+albedo_color = Color(0.95, 0.35, 0.6, 1)
+roughness = 0.4
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_bloom"]
+radius = 0.18
+
+[node name="MeadowFlower" type="Area3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+discovery_id = "meadow_flower"
+
+[node name="Stem" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.15, 0)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_stem")
+
+[node name="Bloom" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.34, 0)
+scale = Vector3(1, 0.75, 1)
+mesh = SubResource("SphereMesh_bloom")
+surface_material_override/0 = SubResource("Material_bloom")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.2, 0)
+shape = SubResource("SphereShape3D_bloom")
+
+[node name="Indicator" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.65, 0)

@@ -1,41 +1,64 @@
 extends Control
 
-## On-screen touch joystick. Writes a normalized Vector2 into InputManager
-## on drag; resets to zero on release. Touch is the primary input model —
-## "emulate touch from mouse" (enabled in project settings) lets this be
-## tested with a mouse in the editor without any separate desktop controls.
+## Floating mobile joystick: invisible until the player touches down inside
+## a generous capture area, then the base appears centered on that touch so
+## it always lands comfortably under the thumb. Includes a dead zone (to
+## stop idle drift) and per-frame smoothing (so movement doesn't feel
+## twitchy). "Emulate touch from mouse" (project setting) lets this be
+## tested with a mouse in the editor.
 
+@export var base_radius: float = 85.0
 @export var knob_max_distance: float = 60.0
+@export var dead_zone: float = 0.15
+@export var smoothing_speed: float = 14.0
 
 @onready var base: Control = $Base
 @onready var knob: Control = $Base/Knob
 
 var _touch_index: int = -1
-var _base_center: Vector2 = Vector2.ZERO
+var _raw_vector: Vector2 = Vector2.ZERO
+var _smoothed_vector: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
-	_base_center = base.size / 2.0
-	_reset()
+	base.visible = false
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
-		if event.pressed and _touch_index == -1:
-			_touch_index = event.index
-			_update_knob(event.position)
-		elif not event.pressed and event.index == _touch_index:
-			_reset()
+		var touch: InputEventScreenTouch = event
+		if touch.pressed and _touch_index == -1:
+			_touch_index = touch.index
+			_activate_at(touch.position)
+		elif not touch.pressed and touch.index == _touch_index:
+			_release()
 	elif event is InputEventScreenDrag:
-		if event.index == _touch_index:
-			_update_knob(event.position)
+		var drag: InputEventScreenDrag = event
+		if drag.index == _touch_index:
+			_update_knob(drag.position)
+
+func _activate_at(local_position: Vector2) -> void:
+	var clamped := Vector2(
+		clamp(local_position.x, base_radius, size.x - base_radius),
+		clamp(local_position.y, base_radius, size.y - base_radius)
+	)
+	base.position = clamped - Vector2(base_radius, base_radius)
+	base.visible = true
+	_update_knob(local_position)
 
 func _update_knob(local_position: Vector2) -> void:
-	var offset := local_position - _base_center
+	var base_center := base.position + Vector2(base_radius, base_radius)
+	var offset := local_position - base_center
 	if offset.length() > knob_max_distance:
 		offset = offset.normalized() * knob_max_distance
-	knob.position = _base_center + offset - knob.size / 2.0
-	InputManager.set_move_vector(offset / knob_max_distance)
+	knob.position = Vector2(base_radius, base_radius) + offset - knob.size / 2.0
+	var normalized := offset / knob_max_distance
+	_raw_vector = normalized if normalized.length() >= dead_zone else Vector2.ZERO
 
-func _reset() -> void:
+func _release() -> void:
 	_touch_index = -1
-	knob.position = _base_center - knob.size / 2.0
-	InputManager.set_move_vector(Vector2.ZERO)
+	base.visible = false
+	knob.position = Vector2(base_radius, base_radius) - knob.size / 2.0
+	_raw_vector = Vector2.ZERO
+
+func _process(delta: float) -> void:
+	_smoothed_vector = _smoothed_vector.lerp(_raw_vector, clamp(smoothing_speed * delta, 0.0, 1.0))
+	InputManager.set_move_vector(_smoothed_vector)

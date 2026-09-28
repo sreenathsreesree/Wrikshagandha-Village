@@ -1,0 +1,35 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator.tscn" id="2"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_stone"]
+radius = 0.17
+height = 0.26
+
+[sub_resource type="StandardMaterial3D" id="Material_stone"]
+albedo_color = Color(0.5, 0.55, 0.6, 1)
+roughness = 0.25
+metallic = 0.05
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_stone"]
+radius = 0.2
+
+[node name="RiverStone" type="Area3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+discovery_id = "river_stone"
+
+[node name="Stone" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.09, 0)
+scale = Vector3(1.2, 0.55, 1)
+mesh = SubResource("SphereMesh_stone")
+surface_material_override/0 = SubResource("Material_stone")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.09, 0)
+shape = SubResource("SphereShape3D_stone")
+
+[node name="Indicator" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.4, 0)

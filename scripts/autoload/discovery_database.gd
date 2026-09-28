@@ -23,10 +23,11 @@ func _load_definitions() -> void:
 		if not dir.current_is_dir() and file_name.ends_with(".tres"):
 			var resource: Resource = load(DISCOVERIES_PATH + file_name)
 			if resource is DiscoveryDefinition:
-				if resource.id == "":
+				var definition: DiscoveryDefinition = resource
+				if definition.id == "":
 					push_warning("DiscoveryDatabase: %s has an empty id" % file_name)
 				else:
-					_definitions[resource.id] = resource
+					_definitions[definition.id] = definition
 		file_name = dir.get_next()
 	dir.list_dir_end()
 

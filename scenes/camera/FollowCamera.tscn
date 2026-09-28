@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/camera/follow_camera.gd" id="1"]
+
+[node name="FollowCamera" type="Node3D"]
+script = ExtResource("1")
+
+[node name="SpringArm3D" type="SpringArm3D" parent="."]
+position = Vector3(0, 1.4, 0)
+rotation_degrees = Vector3(-42, 0, 0)
+spring_length = 11.0
+
+[node name="Camera3D" type="Camera3D" parent="SpringArm3D"]
+current = true
+fov = 50.0

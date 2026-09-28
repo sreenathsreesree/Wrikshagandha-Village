@@ -1,0 +1,47 @@
+[gd_scene load_steps=6 format=3]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stem"]
+top_radius = 0.035
+bottom_radius = 0.045
+height = 0.16
+
+[sub_resource type="StandardMaterial3D" id="Material_stem"]
+albedo_color = Color(0.92, 0.87, 0.75, 1)
+roughness = 0.7
+
+[sub_resource type="SphereMesh" id="SphereMesh_cap"]
+radius = 0.1
+height = 0.14
+
+[sub_resource type="StandardMaterial3D" id="Material_cap"]
+albedo_color = Color(0.78, 0.22, 0.18, 1)
+roughness = 0.5
+
+[sub_resource type="SphereMesh" id="SphereMesh_cap_small"]
+radius = 0.07
+height = 0.1
+
+[node name="MushroomCluster" type="Node3D"]
+
+[node name="StemA" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.08, 0)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_stem")
+
+[node name="CapA" type="MeshInstance3D" parent="StemA"]
+position = Vector3(0, 0.09, 0)
+scale = Vector3(1, 0.6, 1)
+mesh = SubResource("SphereMesh_cap")
+surface_material_override/0 = SubResource("Material_cap")
+
+[node name="StemB" type="MeshInstance3D" parent="."]
+position = Vector3(0.13, 0.06, 0.08)
+scale = Vector3(0.75, 0.75, 0.75)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_stem")
+
+[node name="CapB" type="MeshInstance3D" parent="StemB"]
+position = Vector3(0, 0.09, 0)
+scale = Vector3(1, 0.6, 1)
+mesh = SubResource("SphereMesh_cap_small")
+surface_material_override/0 = SubResource("Material_cap")

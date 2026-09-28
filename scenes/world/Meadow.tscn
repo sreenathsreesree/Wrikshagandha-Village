@@ -1,100 +1,292 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=25 format=3]
 
-[ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="1"]
-[ext_resource type="PackedScene" path="res://scenes/interactables/Plant.tscn" id="2"]
+[ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/MeadowFlower.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/WildMint.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/SmallMushroom.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/HealingHerb.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/RiverStone.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://scenes/camera/FollowCamera.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/TreeRound.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/TreeTall.tscn" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/TreeWide.tscn" id="11"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/Rock.tscn" id="12"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/GrassClump.tscn" id="13"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/Bush.tscn" id="14"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/FallenLog.tscn" id="15"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/MushroomCluster.tscn" id="16"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/PondWater.tscn" id="17"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/TerracedMound.tscn" id="18"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
-background_color = Color(0.55, 0.75, 0.95, 1)
+background_color = Color(0.62, 0.78, 0.9, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.8, 0.85, 0.7, 1)
-ambient_light_energy = 0.6
+ambient_light_color = Color(0.85, 0.82, 0.65, 1)
+ambient_light_energy = 0.7
+fog_enabled = true
+fog_light_color = Color(0.75, 0.82, 0.78, 1)
+fog_density = 0.006
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-size = Vector2(40, 40)
+size = Vector2(64, 64)
 
 [sub_resource type="StandardMaterial3D" id="Material_ground"]
-albedo_color = Color(0.32, 0.55, 0.25, 1)
+albedo_color = Color(0.36, 0.56, 0.28, 1)
+roughness = 0.95
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(40, 0.2, 40)
+size = Vector3(64, 0.2, 64)
 
-[sub_resource type="BoxMesh" id="BoxMesh_tree"]
-size = Vector3(1, 2, 1)
+[sub_resource type="CylinderMesh" id="CylinderMesh_path"]
+top_radius = 1.0
+bottom_radius = 1.0
+height = 0.03
+radial_segments = 10
 
-[sub_resource type="StandardMaterial3D" id="Material_tree"]
-albedo_color = Color(0.25, 0.4, 0.15, 1)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_tree"]
-size = Vector3(1, 2, 1)
+[sub_resource type="StandardMaterial3D" id="Material_path"]
+albedo_color = Color(0.55, 0.44, 0.3, 1)
+roughness = 1.0
 
 [node name="Meadow" type="Node3D"]
+script = ExtResource("1")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_1")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-position = Vector3(0, 10, 0)
-rotation_degrees = Vector3(-45, 45, 0)
+position = Vector3(0, 12, 0)
+rotation_degrees = Vector3(-50, 35, 0)
+light_color = Color(1, 0.96, 0.85, 1)
+light_energy = 1.1
 shadow_enabled = true
 
-[node name="Ground" type="StaticBody3D" parent="."]
+[node name="Terrain" type="Node3D" parent="."]
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
+[node name="Ground" type="StaticBody3D" parent="Terrain"]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Terrain/Ground"]
 mesh = SubResource("PlaneMesh_ground")
 surface_material_override/0 = SubResource("Material_ground")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Terrain/Ground"]
 position = Vector3(0, -0.1, 0)
 shape = SubResource("BoxShape3D_ground")
 
-[node name="TreeMarkers" type="Node3D" parent="."]
+[node name="MoundNorthWest" parent="Terrain" instance=ExtResource("18")]
+position = Vector3(-11, 0, 7)
 
-[node name="Tree1" type="StaticBody3D" parent="TreeMarkers"]
-position = Vector3(-8, 1, -8)
+[node name="MoundNorthEast" parent="Terrain" instance=ExtResource("18")]
+position = Vector3(13, 0, 11)
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="TreeMarkers/Tree1"]
-mesh = SubResource("BoxMesh_tree")
-surface_material_override/0 = SubResource("Material_tree")
+[node name="Path" type="Node3D" parent="Terrain"]
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TreeMarkers/Tree1"]
-shape = SubResource("BoxShape3D_tree")
+[node name="Patch1" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(0.5, 0.015, 3.2)
+scale = Vector3(1.3, 1, 2.2)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="Tree2" type="StaticBody3D" parent="TreeMarkers"]
-position = Vector3(8, 1, -8)
+[node name="Patch2" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(1.6, 0.015, 1.4)
+rotation_degrees = Vector3(0, 20, 0)
+scale = Vector3(1.2, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="TreeMarkers/Tree2"]
-mesh = SubResource("BoxMesh_tree")
-surface_material_override/0 = SubResource("Material_tree")
+[node name="Patch3" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(2.6, 0.015, -0.6)
+rotation_degrees = Vector3(0, -10, 0)
+scale = Vector3(1.1, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TreeMarkers/Tree2"]
-shape = SubResource("BoxShape3D_tree")
+[node name="Patch4" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(3.7, 0.015, -2.8)
+rotation_degrees = Vector3(0, 15, 0)
+scale = Vector3(1.2, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="Tree3" type="StaticBody3D" parent="TreeMarkers"]
-position = Vector3(-8, 1, 8)
+[node name="Patch5" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(5.0, 0.015, -4.8)
+rotation_degrees = Vector3(0, -25, 0)
+scale = Vector3(1.3, 1, 2.3)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="TreeMarkers/Tree3"]
-mesh = SubResource("BoxMesh_tree")
-surface_material_override/0 = SubResource("Material_tree")
+[node name="Patch6" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(6.6, 0.015, -6.4)
+rotation_degrees = Vector3(0, 10, 0)
+scale = Vector3(1.2, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TreeMarkers/Tree3"]
-shape = SubResource("BoxShape3D_tree")
+[node name="Patch7" type="MeshInstance3D" parent="Terrain/Path"]
+position = Vector3(8.0, 0.015, -8.0)
+rotation_degrees = Vector3(0, -15, 0)
+scale = Vector3(1.3, 1, 2.2)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
-[node name="Tree4" type="StaticBody3D" parent="TreeMarkers"]
-position = Vector3(8, 1, 8)
+[node name="Water" type="Node3D" parent="."]
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="TreeMarkers/Tree4"]
-mesh = SubResource("BoxMesh_tree")
-surface_material_override/0 = SubResource("Material_tree")
+[node name="Pond" parent="Water" instance=ExtResource("17")]
+position = Vector3(10, 0, -9)
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TreeMarkers/Tree4"]
-shape = SubResource("BoxShape3D_tree")
+[node name="Vegetation" type="Node3D" parent="."]
+
+[node name="TreeRound1" parent="Vegetation" instance=ExtResource("9")]
+position = Vector3(-16, 0, -4)
+
+[node name="TreeRound2" parent="Vegetation" instance=ExtResource("9")]
+position = Vector3(6, 0, 14)
+rotation_degrees = Vector3(0, 40, 0)
+
+[node name="TreeRound3" parent="Vegetation" instance=ExtResource("9")]
+position = Vector3(-6, 0, -14)
+rotation_degrees = Vector3(0, 110, 0)
+
+[node name="TreeTall1" parent="Vegetation" instance=ExtResource("10")]
+position = Vector3(16, 0, -6)
+
+[node name="TreeTall2" parent="Vegetation" instance=ExtResource("10")]
+position = Vector3(-14, 0, 14)
+rotation_degrees = Vector3(0, 60, 0)
+
+[node name="TreeTall3" parent="Vegetation" instance=ExtResource("10")]
+position = Vector3(2, 0, -18)
+rotation_degrees = Vector3(0, -30, 0)
+
+[node name="TreeWide1" parent="Vegetation" instance=ExtResource("11")]
+position = Vector3(-18, 0, 6)
+
+[node name="TreeWide2" parent="Vegetation" instance=ExtResource("11")]
+position = Vector3(18, 0, 4)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="TreeWide3" parent="Vegetation" instance=ExtResource("11")]
+position = Vector3(0, 0, 18)
+rotation_degrees = Vector3(0, 200, 0)
+
+[node name="Rock1" parent="Vegetation" instance=ExtResource("12")]
+position = Vector3(9, 0, -6)
+
+[node name="Rock2" parent="Vegetation" instance=ExtResource("12")]
+position = Vector3(-9, 0, 10)
+rotation_degrees = Vector3(0, 60, 0)
+
+[node name="Rock3" parent="Vegetation" instance=ExtResource("12")]
+position = Vector3(14.5, 0, 8.5)
+rotation_degrees = Vector3(0, 140, 0)
+
+[node name="Rock4" parent="Vegetation" instance=ExtResource("12")]
+position = Vector3(2, 0, -9)
+rotation_degrees = Vector3(0, 210, 0)
+
+[node name="Bush1" parent="Vegetation" instance=ExtResource("14")]
+position = Vector3(4, 0, 3)
+
+[node name="Bush2" parent="Vegetation" instance=ExtResource("14")]
+position = Vector3(-5, 0, -3)
+rotation_degrees = Vector3(0, 80, 0)
+
+[node name="Bush3" parent="Vegetation" instance=ExtResource("14")]
+position = Vector3(6.5, 0, 7.5)
+rotation_degrees = Vector3(0, 150, 0)
+
+[node name="Bush4" parent="Vegetation" instance=ExtResource("14")]
+position = Vector3(-13, 0, 2)
+rotation_degrees = Vector3(0, 30, 0)
+
+[node name="Bush5" parent="Vegetation" instance=ExtResource("14")]
+position = Vector3(-3, 0, 12)
+rotation_degrees = Vector3(0, 260, 0)
+
+[node name="FallenLog1" parent="Vegetation" instance=ExtResource("15")]
+position = Vector3(4.5, 0, -3.5)
+rotation_degrees = Vector3(0, 25, 0)
+
+[node name="FallenLog2" parent="Vegetation" instance=ExtResource("15")]
+position = Vector3(-7, 0, 9)
+rotation_degrees = Vector3(0, -50, 0)
+
+[node name="MushroomClusterA" parent="Vegetation" instance=ExtResource("16")]
+position = Vector3(-15, 0, -5.5)
+
+[node name="MushroomClusterB" parent="Vegetation" instance=ExtResource("16")]
+position = Vector3(6.5, 0, 12.5)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="MushroomClusterC" parent="Vegetation" instance=ExtResource("16")]
+position = Vector3(-13, 0, 13)
+rotation_degrees = Vector3(0, 180, 0)
+
+[node name="GrassClump1" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(2, 0, -1)
+
+[node name="GrassClump2" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-2, 0, 2)
+
+[node name="GrassClump3" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(5, 0, 6)
+
+[node name="GrassClump4" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-6, 0, 5)
+
+[node name="GrassClump5" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(8, 0, -3)
+
+[node name="GrassClump6" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-8, 0, -2)
+
+[node name="GrassClump7" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(1, 0, 9)
+
+[node name="GrassClump8" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-4, 0, 8)
+
+[node name="GrassClump9" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(10, 0, 2)
+
+[node name="GrassClump10" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-10, 0, -6)
+
+[node name="GrassClump11" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(3, 0, -6)
+
+[node name="GrassClump12" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-3, 0, -9)
+
+[node name="GrassClump13" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(12, 0, -2)
+
+[node name="GrassClump14" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(-12, 0, -9)
+
+[node name="Discoverables" type="Node3D" parent="."]
+
+[node name="MeadowFlower" parent="Discoverables" instance=ExtResource("3")]
+position = Vector3(3, 0, 0.5)
+
+[node name="WildMint" parent="Discoverables" instance=ExtResource("4")]
+position = Vector3(8.5, 0, -7.5)
+
+[node name="SmallMushroom" parent="Discoverables" instance=ExtResource("5")]
+position = Vector3(-9, 0, -5)
+
+[node name="HealingHerb" parent="Discoverables" instance=ExtResource("6")]
+position = Vector3(-11, 0, 7.6)
+
+[node name="RiverStone" parent="Discoverables" instance=ExtResource("7")]
+position = Vector3(11.5, 0, -10.5)
 
 [node name="PlayerSpawn" type="Marker3D" parent="."]
-position = Vector3(0, 0, 3)
+position = Vector3(0, 0, 5)
 
-[node name="Player" parent="." instance=ExtResource("1")]
-position = Vector3(0, 1, 3)
+[node name="Player" parent="." instance=ExtResource("2")]
+position = Vector3(0, 0.2, 5)
 
-[node name="Plant" parent="." instance=ExtResource("2")]
-position = Vector3(2, 0.3, -2)
+[node name="FollowCamera" parent="." instance=ExtResource("8")]
+position = Vector3(0, 0.2, 5)

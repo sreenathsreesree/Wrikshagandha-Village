@@ -1,0 +1,31 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://shaders/water.gdshader" id="1"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_water"]
+shader = ExtResource("1")
+shader_parameter/water_color = Color(0.25, 0.55, 0.65, 0.82)
+shader_parameter/wave_speed = 1.0
+shader_parameter/wave_height = 0.025
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_water"]
+top_radius = 3.6
+bottom_radius = 3.6
+height = 0.1
+radial_segments = 24
+
+[sub_resource type="StandardMaterial3D" id="Material_bank"]
+albedo_color = Color(0.4, 0.32, 0.22, 1)
+roughness = 0.95
+
+[node name="PondWater" type="Node3D"]
+
+[node name="Bank" type="MeshInstance3D" parent="."]
+position = Vector3(0, -0.08, 0)
+scale = Vector3(1.15, 1, 1.15)
+mesh = SubResource("CylinderMesh_water")
+surface_material_override/0 = SubResource("Material_bank")
+
+[node name="Water" type="MeshInstance3D" parent="."]
+mesh = SubResource("CylinderMesh_water")
+surface_material_override/0 = SubResource("ShaderMaterial_water")

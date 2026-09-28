@@ -1,0 +1,52 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator.tscn" id="2"]
+[ext_resource type="Shader" path="res://shaders/sway.gdshader" id="3"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_mint"]
+shader = ExtResource("3")
+shader_parameter/base_color = Color(0.55, 0.82, 0.45, 1)
+shader_parameter/sway_speed = 2.0
+shader_parameter/sway_amount = 0.04
+shader_parameter/roughness_value = 0.7
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_leaf"]
+top_radius = 0.02
+bottom_radius = 0.06
+height = 0.28
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_mint"]
+radius = 0.2
+
+[node name="WildMint" type="Area3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+discovery_id = "wild_mint"
+
+[node name="LeafA" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.14, 0)
+mesh = SubResource("CylinderMesh_leaf")
+surface_material_override/0 = SubResource("ShaderMaterial_mint")
+
+[node name="LeafB" type="MeshInstance3D" parent="."]
+position = Vector3(0.09, 0.12, 0.05)
+rotation_degrees = Vector3(10, 25, 0)
+scale = Vector3(0.85, 0.85, 0.85)
+mesh = SubResource("CylinderMesh_leaf")
+surface_material_override/0 = SubResource("ShaderMaterial_mint")
+
+[node name="LeafC" type="MeshInstance3D" parent="."]
+position = Vector3(-0.08, 0.11, -0.05)
+rotation_degrees = Vector3(-8, -30, 0)
+scale = Vector3(0.8, 0.8, 0.8)
+mesh = SubResource("CylinderMesh_leaf")
+surface_material_override/0 = SubResource("ShaderMaterial_mint")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.15, 0)
+shape = SubResource("SphereShape3D_mint")
+
+[node name="Indicator" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
