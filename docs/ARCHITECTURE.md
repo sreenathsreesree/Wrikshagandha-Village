@@ -73,8 +73,9 @@ Main (Node3D)                       scenes/Main.tscn
   - **Joystick input cancels a path.** A new tap replaces it; a stalled path is dropped after 1 s.
   - **Interaction:**
     - `InteractionZone` (2.2 m Area3D) toggles indicators and proximity.
-    - Taps interact with the exact target within `TAP_REACH` (8 m).
-    - In Tap to Move, a farther target is walked to first.
+    - A tapped Interactable already inside `InteractionZone` is interacted with at once.
+    - Otherwise the player walks toward it (NavigationAgent3D path to the nearest walkable point) and interacts on the zone's `area_entered` for that exact object. Event-driven, no distance polling.
+    - With no navigation path yet (mesh still building at load), it heads straight for the target; collisions still block, and the stall timeout ends the walk.
     - `_interact_with()` is the single call site of `interact()`, with a double-harvest guard for one-shot discoveries.
 - **Direction:**
   - Animation-state signals for future rigs (Phase 01).
@@ -88,14 +89,20 @@ Main (Node3D)                       scenes/Main.tscn
 - **Current tap pipeline:**
   1. **The GUI consumes its own touches.** Joystick zone, buttons, seed picker and screens have `mouse_filter` STOP. Only `_unhandled_input` reaches the world.
   2. **A tap is a short, still touch** (≤ 24 px, ≤ 450 ms). Drags never issue commands.
-  3. **On the next physics frame** (one-off await), a ray against layer 3 (areas only) finds an **Interactable** → `interact_target_requested(target)`.
-  4. **Otherwise, in Tap to Move only,** a ray against layer 1 is snapped onto the navigation mesh (rejected if off-mesh) → `move_target_requested(destination)`.
+  3. **On the next physics frame** (one-off await), a ray against `interactables` (areas only) finds an active **Interactable** → `interact_target_requested(target)`.
+     - Non-monitorable ones (locked plots, items mid-harvest) are skipped.
+  4. **Otherwise,** a ray against `world` gives the tapped ground point.
+     - If an active Interactable lies within `TAP_SELECT_TOLERANCE` (0.45 m) of it, that object is selected. This covers small flowers and mushrooms.
+     - Otherwise the point is snapped to the nearest navigation-mesh point within 1 m → `move_target_requested(destination)`. Farther means the top of an obstacle or off the edge: ignored.
+     - Before the mesh exists, the tapped point is used directly.
+  5. **Taps behave the same in both movement modes** (decision D-15).
 - **Desktop:** the mouse emulates touch (`emulate_touch_from_mouse`), so a click takes the same path.
 - **Keyboard (desktop fallback):**
   - InputMap actions `move_up/down/left/right` (W/S/A/D + arrows) are read in `_input` on key events only (non-consuming) via `Input.get_vector()`.
   - InputManager combines joystick (`set_move_vector`, every frame) and keyboard into the one `move_vector`, clamped to length 1. Player is unaware of the source.
   - Focus loss clears keys. Raw key polling is not allowed (toolkit-enforced).
-- **Movement mode:** `movement_mode` (JOYSTICK default, TAP_TO_MOVE) is the single switch. It's saved in `settings`. The HUD hides the joystick in Tap to Move.
+- **Movement mode:** `movement_mode` (JOYSTICK default, TAP_TO_MOVE) only controls whether the joystick is shown. It's saved in `settings`.
+- **Notification cards** are input-transparent, so they never swallow a world tap.
 - **Legacy:** `interact_requested` (interact with the nearest object in the zone) is still connected in Player, but nothing emits it. Resolve in Phase 02.
 - **Direction:** no second input system, ever.
 

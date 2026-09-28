@@ -1,90 +1,138 @@
 #!/usr/bin/env python3
 """Model checks for tap-to-move / tap-to-interact (Python ports, not the engine).
-1. Tap routing decision table (InputManager._track_tap/_handle_tap), exhaustive.
-2. Player navigation state machine under random input sequences.
+1. Tap routing decision table (InputManager._track_tap/_handle_tap), exhaustive;
+   mode-independent; constants read from the GDScript.
+2. Player tap state machine: walk-to-interact on InteractionZone entry, the
+   exact target preserved, retargeting, joystick/keyboard cancellation.
 3. Meadow geometry: spawn and every interactable reachable (not inside an
    obstacle footprint grown by the nav agent radius).
 """
 import itertools, math, os, random, re
 
 # ---------------------------------------------------------------- 1. routing
-TAP_MAX_MOVE, TAP_MAX_MSEC = 24.0, 450
-def route(gui_consumed, move_px, msec, hits_interactable, ground_hit, walkable, mode):
-    if gui_consumed: return None                      # never reaches _unhandled_input
+# Constants come from the GDScript itself, so the model can't drift from it.
+REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+_IM = open(os.path.join(REPO, "scripts", "autoload", "input_manager.gd")).read()
+def _const(name, src=_IM):
+    return float(re.search(rf"^const {name} := ([0-9.]+)", src, re.M).group(1))
+TAP_MAX_MOVE, TAP_MAX_MSEC = _const("TAP_MAX_MOVE"), _const("TAP_MAX_MSEC")
+SNAP_H, SNAP_V = _const("WALKABLE_SNAP_HORIZONTAL"), _const("WALKABLE_SNAP_VERTICAL")
+SELECT_TOL = _const("TAP_SELECT_TOLERANCE")
+ZONE_R = float(re.search(r'SphereShape3D_interact"\]\s*radius = ([0-9.]+)',
+                         open(os.path.join(REPO, "scenes", "player", "Player.tscn")).read()).group(1))
+
+def route(gui_consumed, move_px, msec, ray_hit, ray_hit_active, near_active, ground_hit, has_mesh, snap_h, snap_v):
+    """Port of InputManager._track_tap + _handle_tap. Mode is deliberately
+    not an input: taps behave the same in Joystick and Tap to Move."""
+    if gui_consumed: return None                                   # never reaches _unhandled_input
     if move_px > TAP_MAX_MOVE or msec > TAP_MAX_MSEC: return None   # drag / hold
-    if hits_interactable: return "interact"
-    if mode != "tap": return None
-    if not ground_hit or not walkable: return None
-    return "move"
+    if ray_hit and ray_hit_active: return "interact:exact"
+    if not ground_hit: return None
+    if near_active: return "interact:near"                          # small-object tolerance
+    if not has_mesh: return "move:direct"                           # mesh not built yet
+    if snap_h > SNAP_H or snap_v > SNAP_V: return None              # top of an obstacle / off the edge
+    return "move:snapped"
 
 rows = 0
-for gui, move, ms, inter, ground, walk, mode in itertools.product(
-        [False, True], [0.0, 10.0, 30.0, 200.0], [100, 400, 600], [False, True], [False, True], [False, True],
-        ["joystick", "tap"]):
-    r = route(gui, move, ms, inter, ground, walk, mode)
-    rows += 1
+for combo in itertools.product([False, True], [0.0, 10.0, 30.0], [100, 400, 600], [False, True], [False, True],
+                               [False, True], [False, True], [False, True], [0.0, 0.3, 0.9, 1.5], [0.0, 0.8]):
+    gui, move, ms, hit, hit_active, near, ground, mesh, sh, sv = combo
+    r = route(*combo); rows += 1
+    tap = not gui and move <= TAP_MAX_MOVE and ms <= TAP_MAX_MSEC
     if gui: assert r is None, "UI touch leaked into the world"
     if move > TAP_MAX_MOVE: assert r is None, "drag issued a command"
-    if r == "move": assert mode == "tap" and walk and not inter
-    if mode == "joystick": assert r != "move", "joystick mode moved by tap"
-    if inter and not gui and move <= TAP_MAX_MOVE and ms <= TAP_MAX_MSEC:
-        assert r == "interact", "interactable priority lost"
-print(f"routing table: {rows} combinations OK")
+    if tap and hit and hit_active: assert r == "interact:exact", "exact interactable must win"
+    if tap and hit and not hit_active and ground and not near and mesh and sh <= SNAP_H and sv <= SNAP_V:
+        assert r == "move:snapped", "an inactive interactable must not block the ground"
+    if tap and not (hit and hit_active) and ground and not near and mesh and sh <= SNAP_H and sv <= SNAP_V:
+        assert r == "move:snapped", "walkable ground tap must move"
+    if tap and not (hit and hit_active) and ground and near: assert r == "interact:near", "small-object tolerance"
+    if tap and not (hit and hit_active) and ground and not near and not mesh: assert r == "move:direct"
+    if r and r.startswith("move"): assert not (hit and hit_active) and not near
+print(f"routing table: {rows} combinations OK (mode-independent; snap {SNAP_H} m, select tolerance {SELECT_TOL} m)")
+assert SNAP_H >= 0.5, "snap tolerance must reach past the nav agent radius around obstacles"
 
 # ------------------------------------------------------------ 2. player model
-TAP_REACH = 8.0
+# Port of Player tap handling. Interaction range = the InteractionZone
+# sphere (from Player.tscn): an object is "in range" once the zone overlaps
+# its shape; interaction fires on that zone-entry event, never earlier.
 class Player:
-    def __init__(p): p.pos = (0.0, 0.0); p.nav = False; p.dest = None; p.approach = None; p.stuck = 0.0; p.interacted = []
+    def __init__(p):
+        p.pos = (0.0, 0.0); p.nav = False; p.dest = None; p.approach = None
+        p.stuck = 0.0; p.interacted = []; p.nearby = set()
+    def in_zone(p, t): return math.dist(p.pos, t["pos"]) <= ZONE_R + t["r"]
     def stop(p): p.nav = False; p.approach = None; p.stuck = 0.0
     def start(p, d): p.approach = None; p.dest = d; p.nav = True; p.stuck = 0.0
-    def on_interact_target(p, t, mode):
-        if math.dist(p.pos, t) <= TAP_REACH: p.stop(); p.interacted.append(t); return
-        if mode == "tap": p.start(t); p.approach = t if p.nav else None
+    def on_interact_target(p, t):
+        if t["id"] in p.nearby: p.stop(); p.interacted.append(t["id"]); return
+        p.start(t["pos"]); p.approach = t
     def on_move(p, d): p.start(d)
-    def physics(p, joystick, dt=1 / 60, blocked=False):
-        if joystick: p.stop(); p.pos = (p.pos[0] + joystick[0] * 4.3 * dt, p.pos[1] + joystick[1] * 4.3 * dt); return
-        if not p.nav: return
-        d = math.dist(p.pos, p.dest)
-        if d <= 0.3: p.stop(); return
-        speed = 0.0 if blocked else 4.3 * max(min(d / 1.2, 1.0), 0.35)
-        if speed > 0:
-            step = min(speed * dt, d); p.pos = (p.pos[0] + (p.dest[0] - p.pos[0]) / d * step, p.pos[1] + (p.dest[1] - p.pos[1]) / d * step)
-        if p.approach is not None and math.dist(p.pos, p.approach) <= TAP_REACH:
-            t = p.approach; p.stop(); p.interacted.append(t); return
-        if speed < 0.25:
-            p.stuck += dt
-            if p.stuck >= 1.0: p.stop()
-        else: p.stuck = 0.0
+    def zone_update(p, objects):  # area_entered / area_exited
+        for t in objects:
+            inside = p.in_zone(t)
+            if inside and t["id"] not in p.nearby:
+                p.nearby.add(t["id"])
+                if p.approach is not None and p.approach["id"] == t["id"]:
+                    tgt = p.approach; p.stop(); p.interacted.append(tgt["id"])
+            elif not inside: p.nearby.discard(t["id"])
+    def physics(p, move_vector, objects, dt=1 / 60, blocked=False):
+        if move_vector: p.stop(); p.pos = (p.pos[0] + move_vector[0] * 4.3 * dt, p.pos[1] + move_vector[1] * 4.3 * dt)
+        elif p.nav:
+            d = math.dist(p.pos, p.dest)
+            if d <= 0.3: p.stop()
+            else:
+                speed = 0.0 if blocked else 4.3 * max(min(d / 1.2, 1.0), 0.35)
+                step = min(speed * dt, d)
+                if step > 0: p.pos = (p.pos[0] + (p.dest[0] - p.pos[0]) / d * step, p.pos[1] + (p.dest[1] - p.pos[1]) / d * step)
+                if speed < 0.25:
+                    p.stuck += dt
+                    if p.stuck >= 1.0: p.stop()
+                else: p.stuck = 0.0
+        p.zone_update(objects)
 
-stats = dict(moves=0, approaches=0, far_interacts=0, retargets=0, stuck_stops=0)
-for trial in range(3000):
-    rnd = random.Random(trial); p = Player(); mode = rnd.choice(["joystick", "tap"])
+def objects_for(rnd):
+    return [{"id": f"o{i}", "pos": (rnd.uniform(-30, 30), rnd.uniform(-30, 30)), "r": rnd.choice([0.18, 0.2, 0.55])}
+            for i in range(12)]
+
+# scripted cases
+objs = [{"id": "flower", "pos": (20.0, 0.0), "r": 0.18}]
+p = Player(); p.on_interact_target(objs[0])
+assert p.nav and p.approach["id"] == "flower" and p.interacted == [], "far tap: walk first, no instant interaction"
+frames = 0
+while p.nav and frames < 2000: p.physics(None, objs); frames += 1
+assert p.interacted == ["flower"], "interacts on reaching range"
+assert math.dist(p.pos, (20.0, 0.0)) > 1.5, "stops at interaction range, not on top of the object"
+print(f"far flower: walked {frames} frames, interacted at {math.dist(p.pos, (20.0, 0.0)):.2f} m (zone {ZONE_R} m + shape)")
+p = Player(); p.on_move((10.0, 0.0)); p.on_move((0.0, 10.0)); assert p.dest == (0.0, 10.0) and p.approach is None, "new tap replaces"
+p = Player(); p.on_move((10.0, 0.0)); p.on_interact_target(objs[0]); assert p.approach["id"] == "flower", "interactable replaces move target"
+p = Player(); p.on_interact_target(objs[0]); p.physics((1.0, 0.0), objs); assert not p.nav and p.approach is None, "joystick/keyboard cancels"
+p = Player(); p.pos = (19.0, 0.0); p.zone_update(objs); p.on_interact_target(objs[0]); assert p.interacted == ["flower"] and not p.nav, "in range: immediate"
+
+stats = dict(taps=0, approaches=0, zone_interactions=0, cancels=0, retargets=0)
+for trial in range(2000):
+    rnd = random.Random(trial); p = Player(); objs = objects_for(rnd); p.zone_update(objs)
     for step in range(600):
         ev = rnd.random()
         if ev < 0.05:
             d = (rnd.uniform(-30, 30), rnd.uniform(-30, 30))
-            if mode == "tap":
-                if p.nav: stats["retargets"] += 1
-                p.on_move(d); stats["moves"] += 1
-                assert p.nav and p.dest == d and p.approach is None, "new tap must replace the destination"
-        elif ev < 0.08:
-            t = (rnd.uniform(-30, 30), rnd.uniform(-30, 30)); before = len(p.interacted)
-            near = math.dist(p.pos, t) <= TAP_REACH
-            p.on_interact_target(t, mode)
-            if near: assert len(p.interacted) == before + 1 and not p.nav
-            elif mode == "tap": assert p.approach == t and p.nav; stats["approaches"] += 1
-            else: assert not p.nav and len(p.interacted) == before, "joystick mode must ignore far taps"
+            if p.nav: stats["retargets"] += 1
+            p.on_move(d); stats["taps"] += 1
+            assert p.nav and p.dest == d and p.approach is None
         elif ev < 0.09:
-            mode = "tap" if mode == "joystick" else "joystick"; p.stop()   # mode change stops navigation
-        joy = (rnd.uniform(-1, 1), rnd.uniform(-1, 1)) if (mode == "joystick" and rnd.random() < 0.3) else None
-        blocked = rnd.random() < 0.02
-        n_before = len(p.interacted); was_nav = p.nav
-        p.physics(joy, blocked=blocked)
-        if joy: assert not p.nav, "joystick must override navigation"
-        if len(p.interacted) > n_before and was_nav: stats["far_interacts"] += 1
-        if was_nav and not p.nav and p.stuck == 0.0 and blocked: stats["stuck_stops"] += 1
-        if mode == "joystick" and p.nav: assert p.approach is None or True
-print(f"player model: 3000 runs x 600 steps OK; {stats}")
+            t = rnd.choice(objs); before = list(p.interacted); was_near = t["id"] in p.nearby
+            p.on_interact_target(t)
+            if was_near: assert p.interacted == before + [t["id"]] and not p.nav
+            else: assert p.approach is t and p.nav and p.interacted == before; stats["approaches"] += 1
+        mv = (rnd.uniform(-1, 1), rnd.uniform(-1, 1)) if rnd.random() < 0.15 else None
+        approach_before = p.approach; n_before = len(p.interacted); was_nav = p.nav
+        p.physics(mv, objs, blocked=rnd.random() < 0.02)
+        if mv: assert not p.nav and p.approach is None; stats["cancels"] += was_nav
+        if len(p.interacted) > n_before and not mv and approach_before is not None and was_nav:
+            assert p.interacted[-1] == approach_before["id"], "the exact tapped object is the one interacted with"
+            t = approach_before; assert p.in_zone(t), "interaction only once in range"
+            stats["zone_interactions"] += 1
+        if p.approach is not None: assert p.nav, "an approach target implies an active walk"
+print(f"player model: 2000 runs x 600 steps OK; {stats}")
 
 # ------------------------------------------------------------ 3. geometry
 AGENT_R = 0.35

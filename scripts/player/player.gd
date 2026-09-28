@@ -3,16 +3,19 @@ extends CharacterBody3D
 ## Moves the player from InputManager.move_vector (written by the on-screen
 ## joystick), with acceleration/deceleration and a smoothly-turning visual
 ## body. Interaction is touch-to-interact: InputManager raycasts a tap and
-## names the Interactable that was touched; the player interacts with it if
-## it's within TAP_REACH. InteractionZone still toggles each Interactable's
-## indicator as it enters/leaves range and feeds it a live proximity value,
-## so approaching something builds anticipation before the harvest itself.
+## names the Interactable that was touched; the player walks toward it and
+## interacts the moment it's inside InteractionZone — the same interaction
+## range the zone has always defined, for every kind of Interactable. The
+## zone also toggles each Interactable's indicator as it enters/leaves range
+## and feeds it a live proximity value, so approaching something builds
+## anticipation before the harvest itself.
 ##
-## Two control schemes feed the same movement code (InputManager.
-## movement_mode): the joystick's move_vector, or Tap to Move, where the
+## Two sources feed the same movement code: InputManager.move_vector
+## (joystick and keyboard), or a tap-started walk, where the
 ## NavigationAgent3D's path supplies the direction instead. Either way the
 ## body moves with the same acceleration and move_and_slide(), so obstacles
-## block it exactly the same. Joystick input always wins over a path.
+## block it exactly the same. Joystick/keyboard input always wins over a
+## walk; a new tap replaces it.
 
 const MAX_SPEED := 4.3
 const ACCELERATION := 15.0
@@ -24,9 +27,6 @@ const BOB_SPEED := 8.5
 const SQUASH_AMOUNT := 0.045
 const FOOTSTEP_INTERVAL := 0.32
 const INTERACTION_RADIUS := 2.2
-## How far away a tapped object can be and still respond: the thing you
-## touch, not the nearest thing, but not from across the meadow either.
-const TAP_REACH := 8.0
 ## Tap to Move eases off over the last stretch so arriving isn't a hard stop.
 const ARRIVAL_SLOWDOWN_DISTANCE := 1.2
 const ARRIVAL_MIN_SPEED := 0.35
@@ -56,8 +56,8 @@ var _footstep_timer: float = 0.0
 var _spent_interactables: Array[Interactable] = []
 var _navigating: bool = false
 var _navigation_stuck_time: float = 0.0
-## Tap to Move: an Interactable tapped out of reach, walked to and
-## interacted with on arrival.
+## The Interactable a tap asked for, while walking to it: interacted with
+## the moment it enters InteractionZone (see _on_interaction_zone_area_entered).
 var _approach_target: Interactable
 
 func _ready() -> void:
@@ -175,6 +175,9 @@ func _on_interaction_zone_area_entered(area: Area3D) -> void:
 	if not _nearby_interactables.has(interactable):
 		_nearby_interactables.append(interactable)
 		interactable.set_highlighted(true)
+	if interactable == _approach_target:
+		_stop_navigation()
+		_interact_with(interactable)
 
 func _on_interaction_zone_area_exited(area: Area3D) -> void:
 	if not (area is Interactable):
@@ -194,19 +197,19 @@ func _on_interact_requested() -> void:
 		return
 	_interact_with(target)
 
-## A tap landed on this exact Interactable (see InputManager). Within
-## reach it's interacted with at once, as before. Out of reach, Tap to Move
-## walks there first; with the joystick it's ignored, as before.
+## A tap landed on this exact Interactable (see InputManager). Already in
+## interaction range: interact now. Otherwise walk toward it (the path ends
+## on the walkable ground nearest the object, so the player never needs to
+## stand inside it) and interact when it enters InteractionZone.
 func _on_interact_target_requested(target: Interactable) -> void:
 	if not is_instance_valid(target):
 		return
-	if global_position.distance_to(target.global_position) <= TAP_REACH:
+	if _nearby_interactables.has(target):
 		_stop_navigation()
 		_interact_with(target)
 		return
-	if InputManager.is_tap_to_move():
-		_start_navigation(target.global_position)
-		_approach_target = target if _navigating else null
+	_start_navigation(target.global_position)
+	_approach_target = target
 
 func _on_move_target_requested(destination: Vector3) -> void:
 	_start_navigation(destination)
@@ -233,31 +236,39 @@ func _stop_navigation() -> void:
 
 ## Direction toward the next corner of the agent's path, scaled down over
 ## the last stretch. Called from _physics_process only while navigating.
+## Without a navigation path (the mesh is still being built at load) the
+## player heads straight for the target; move_and_slide() still stops it at
+## obstacles, and the stall timeout ends the walk.
 func _navigation_direction() -> Vector3:
-	if nav_agent.is_navigation_finished():
+	var next := nav_agent.get_next_path_position()
+	var goal := nav_agent.get_final_position()
+	if nav_agent.get_current_navigation_path().is_empty():
+		next = nav_agent.target_position
+		goal = next
+		var remaining := next - global_position
+		remaining.y = 0.0
+		if remaining.length() <= nav_agent.target_desired_distance:
+			_stop_navigation()
+			return Vector3.ZERO
+	elif nav_agent.is_navigation_finished():
 		_stop_navigation()
 		return Vector3.ZERO
-	var to_next := nav_agent.get_next_path_position() - global_position
+	var to_next := next - global_position
 	to_next.y = 0.0
 	if to_next.length() < 0.01:
 		return Vector3.ZERO
-	var to_goal := nav_agent.get_final_position() - global_position
+	var to_goal := goal - global_position
 	to_goal.y = 0.0
 	var pace := clampf(to_goal.length() / ARRIVAL_SLOWDOWN_DISTANCE, ARRIVAL_MIN_SPEED, 1.0)
 	return to_next.normalized() * pace
 
-## Arrival at a tapped Interactable, and giving up on a path that has
-## stalled against something.
+## Giving up on a walk whose target vanished or that has stalled against
+## something. (Reaching a tapped Interactable is handled by the zone's
+## area_entered signal, not here.)
 func _update_navigation_progress(delta: float, speed: float) -> void:
-	if _approach_target != null:
-		if not is_instance_valid(_approach_target):
-			_stop_navigation()
-			return
-		if global_position.distance_to(_approach_target.global_position) <= TAP_REACH:
-			var target := _approach_target
-			_stop_navigation()
-			_interact_with(target)
-			return
+	if _approach_target != null and not is_instance_valid(_approach_target):
+		_stop_navigation()
+		return
 	if speed < NAVIGATION_STUCK_SPEED:
 		_navigation_stuck_time += delta
 		if _navigation_stuck_time >= NAVIGATION_STUCK_SECONDS:

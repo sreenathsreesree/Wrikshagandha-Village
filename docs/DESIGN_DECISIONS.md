@@ -26,6 +26,8 @@ blocked (`[!]`) until the developer records a decision here.
 | D-12 | Small vertical slice first (meadow, garden, pond, forest edge, path, simple house, simple NPC, wildlife, discoveries, basic elemental prototype, farming, inventory, coins, journal, saving); no large world expansion before the Vertical Slice Gate | Master production direction |
 | D-13 | Placeholder art until the gameplay architecture is proven; final art/world building is a dedicated later phase | Master production direction |
 | D-14 | Crop count stays at 4 (no more crops before the farming loop is proven fun) | Developer instruction (farm depth milestone) |
+| D-15 | **The world itself is the control.** Tap ground → walk there; tap an object → walk to it and interact. Taps work in both movement modes. The movement-mode setting only chooses whether the joystick is shown. Joystick/keyboard input always takes over from a tap-started walk; a new tap replaces the current target. Refines D-07 | Developer instruction (touch interaction fix) |
+| D-16 | Interaction range for tapped objects is the existing player interaction range (the InteractionZone), not a separate reach: the player walks toward the object and interacts once it's in range. No per-object distances. Resolves O-08 | Developer instruction (touch interaction fix) |
 
 ## Open — Five Rishis (pending final design decision)
 
@@ -50,9 +52,8 @@ blocked (`[!]`) until the developer records a decision here.
 | O-03 | Redemption go/no-go, thresholds, markets, legal/compliance approach | Future backend phase | Only after the gameplay economy is proven |
 | O-04 | Final progression structure: how discovery → understanding → world change → new access is expressed | Phase 13 | — |
 | O-05 | Final area structure: which areas, how they connect, elemental regions' layout | After Phase 16 | The vertical-slice layout is enough until then |
-| O-06 | Default movement mode (tap-to-move vs joystick) | Phase 01 | Decide after the Android movement playtest |
+| O-06 | Default movement mode: joystick shown or hidden by default (taps work either way, D-15) | Phase 01 | Decide after the Android movement playtest |
 | O-07 | Is water (the pond) walkable? | Phase 01 | Currently walkable: the pond has no collision |
-| O-08 | Interaction reach: how far away a tapped object may be (currently 8 m) and whether the player always walks right up to it | Phase 02 | — |
 | O-09 | Each element's distinct gameplay mechanic | Phase 11, per element | Themes are decided (D-04); mechanics are not |
 
 ## Proposed — production recommendations awaiting approval

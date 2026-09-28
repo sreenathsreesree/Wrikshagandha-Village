@@ -506,6 +506,42 @@ for f, s2 in scripts.items():
                 if name and not name.startswith("ui_") and name not in defined_actions:
                     err(f"{f}:{ln}: input action '{name}' is not defined in project.godot")
 
+# ------------------------------------------------------------ tap contracts
+# Guards the touch-control rules (docs/ARCHITECTURE.md §6-7) in the real
+# scripts, not just in the simulation's port of them:
+#  - taps resolve the same in every movement mode;
+#  - a tapped Interactable is walked to and interacted with on entering the
+#    player's InteractionZone, never by a separate distance rule;
+#  - joystick/keyboard input cancels a tap-started walk;
+#  - inactive (non-monitorable) interactables never capture a tap.
+def func_body(src, name):
+    m = re.search(rf"^func {name}\(.*?(?=^func |\Z)", src, re.M | re.S)
+    return m.group(0) if m else None
+IM, PL = "scripts/autoload/input_manager.gd", "scripts/player/player.gd"
+contracts = [
+    (IM, "_handle_tap", lambda b: not re.search(r"is_tap_to_move|movement_mode", b),
+     "tap routing must not depend on the movement mode"),
+    (IM, "_handle_tap", lambda b: "_interactable_near(" in b and "move_target_requested.emit" in b,
+     "tap routing must try small-object selection and emit ground movement"),
+    (IM, "_find_interactable", lambda b: "monitorable" in b,
+     "inactive (non-monitorable) interactables must not capture taps"),
+    (PL, "_on_interact_target_requested", lambda b: "_nearby_interactables.has(target)" in b and "_approach_target = target" in b,
+     "a tapped interactable is interacted with in InteractionZone range, otherwise walked to"),
+    (PL, "_on_interact_target_requested", lambda b: not re.search(r"distance_to|REACH", b),
+     "no separate distance/reach rule for tapped interactables"),
+    (PL, "_on_interaction_zone_area_entered", lambda b: "_approach_target" in b and "_interact_with(" in b,
+     "reaching the tapped object's range must trigger its interaction"),
+    (PL, "_physics_process", lambda b: re.search(r"if direction != Vector3\.ZERO:\s*_stop_navigation\(\)", b) is not None,
+     "joystick/keyboard input must cancel a tap-started walk"),
+]
+for f, fn, ok, why in contracts:
+    body = func_body(scripts.get(f, ""), fn)
+    if body is None:
+        err(f"{f}: {fn}() missing (tap contract: {why})")
+    elif not ok(body):
+        err(f"{f}: {fn}() breaks tap contract: {why}")
+notes.append(f"tap contracts checked: {len(contracts)}")
+
 print("NOTES:"); [print("  " + n) for n in notes]
 print(f"{len(scripts)} scripts, {len(all_res)} resources checked")
 if errors:

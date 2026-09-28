@@ -1,18 +1,21 @@
 extends Node
 
 ## Single source of truth for player intent. The virtual joystick and the
-## keyboard (desktop fallback) both feed move_vector; Player reads it. A tap on the game world is resolved here,
-## in this order:
+## keyboard (desktop fallback) both feed move_vector; Player reads it.
+##
+## The world itself is the control. A tap on the game world is resolved
+## here, the same way in every movement mode:
 ##   1. the GUI keeps its own touches (joystick zone, buttons, seed picker,
 ##      screens) — only unhandled input reaches the world;
-##   2. a ray against Interactables: if one is hit,
-##      interact_target_requested names that exact object (Player runs its
-##      normal interact(), walking to it first in Tap to Move);
-##   3. in Tap to Move only, a ray against walkable ground, snapped onto the
-##      navigation mesh: move_target_requested gives the destination.
-## movement_mode (Joystick / Tap to Move) is the one switch between the two
-## control schemes; everything that differs between them reads it here, so
-## the two can be compared without touching the movement code.
+##   2. a ray against Interactables: if one is hit — or, for small objects,
+##      one lies within TAP_SELECT_TOLERANCE of the tapped ground point —
+##      interact_target_requested names that exact object (Player walks to
+##      it and runs its normal interact() once it's in interaction range);
+##   3. otherwise a ray against the world, snapped onto the navigation mesh:
+##      move_target_requested gives the destination.
+## movement_mode (Joystick / Tap to Move) only chooses whether the joystick
+## is shown; taps work in both. Joystick or keyboard input always takes over
+## from a tap-started walk (see Player).
 ##
 ## Taps are read in _unhandled_input, so anything the GUI consumes never
 ## reaches the world: the joystick's touch zone, HUD buttons, the seed
@@ -30,11 +33,15 @@ signal movement_mode_changed(mode: MovementMode)
 const TAP_MAX_MOVE := 24.0
 const TAP_MAX_MSEC := 450
 const RAY_LENGTH := 100.0
-## A ground hit counts as walkable only if the navigation mesh is right
-## there: tapping a rock, a tree trunk or off the edge of the world lands
-## too far from any walkable surface and is ignored.
-const WALKABLE_SNAP_HORIZONTAL := 0.35
+## A tapped world point becomes the nearest walkable (navigation-mesh)
+## point if one is this close — so a tap right beside a rock or tree, where
+## the mesh keeps the player's radius clear, still walks up to it. Farther
+## (the top of a big obstacle, off the world's edge) is ignored.
+const WALKABLE_SNAP_HORIZONTAL := 1.0
 const WALKABLE_SNAP_VERTICAL := 0.6
+## Small objects (flowers, mushrooms) have small collision shapes; a tap
+## that lands on the ground within this distance of one selects it.
+const TAP_SELECT_TOLERANCE := 0.45
 ## Stands in for a touch index when a real mouse is used without touch
 ## emulation.
 const MOUSE_TAP_INDEX := -100
@@ -54,6 +61,7 @@ var movement_mode: MovementMode = MovementMode.JOYSTICK
 var _tap_starts: Dictionary = {}
 var _mouse_emulates_touch: bool = false
 var _joystick_vector: Vector2 = Vector2.ZERO
+var _tap_select_shape: SphereShape3D
 var _keyboard_vector: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
@@ -165,24 +173,53 @@ func _handle_tap(screen_position: Vector2) -> void:
 			interact_target_requested.emit(target)
 			return
 
-	if not is_tap_to_move():
-		return
-	# Then the world: the first solid surface under the tap, which must sit
-	# on the navigation mesh to be a destination.
+	# Then the world: the first solid surface under the tap.
 	var ground_query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.WORLD)
 	var ground_hit := space.intersect_ray(ground_query)
 	if ground_hit.is_empty():
 		return
 	var tapped_point: Vector3 = ground_hit.get("position", Vector3.ZERO)
+	# A near miss on a small object still means that object.
+	var near_target := _interactable_near(space, tapped_point)
+	if near_target:
+		interact_target_requested.emit(near_target)
+		return
 	var destination: Variant = _walkable_point(camera.get_world_3d().navigation_map, tapped_point)
 	if destination != null:
 		move_target_requested.emit(destination)
 
-## The navigation-mesh point under a tapped world point, or null if there
-## is no walkable surface there (an obstacle, or no mesh baked yet).
+## The closest currently-interactable object whose shape lies within
+## TAP_SELECT_TOLERANCE of a tapped ground point, or null.
+func _interactable_near(space: PhysicsDirectSpaceState3D, point: Vector3) -> Interactable:
+	if _tap_select_shape == null:
+		_tap_select_shape = SphereShape3D.new()
+		_tap_select_shape.radius = TAP_SELECT_TOLERANCE
+	var params := PhysicsShapeQueryParameters3D.new()
+	params.shape = _tap_select_shape
+	params.transform = Transform3D(Basis.IDENTITY, point)
+	params.collision_mask = PhysicsLayers.INTERACTABLES
+	params.collide_with_areas = true
+	params.collide_with_bodies = false
+	var best: Interactable = null
+	var best_distance := INF
+	for result: Dictionary in space.intersect_shape(params, 8):
+		var candidate := _find_interactable(result.get("collider") as Node)
+		if candidate == null:
+			continue
+		var offset := candidate.global_position - point
+		var distance := Vector2(offset.x, offset.z).length()
+		if distance < best_distance:
+			best_distance = distance
+			best = candidate
+	return best
+
+## The navigation-mesh point for a tapped world point, or null if there is
+## no walkable surface close enough. Before the navigation mesh exists (it's
+## built at load) the tapped point itself is used: the player then walks
+## straight there, and collisions still stop it at obstacles.
 func _walkable_point(map: RID, point: Vector3) -> Variant:
-	if NavigationServer3D.map_get_iteration_id(map) == 0:
-		return null
+	if not NavigationServer3D.map_get_closest_point_owner(map, point).is_valid():
+		return point
 	var closest := NavigationServer3D.map_get_closest_point(map, point)
 	var offset := closest - point
 	if Vector2(offset.x, offset.z).length() > WALKABLE_SNAP_HORIZONTAL:
@@ -191,10 +228,16 @@ func _walkable_point(map: RID, point: Vector3) -> Variant:
 		return null
 	return closest
 
-## The hit collider itself, or the Interactable it belongs to.
+## The hit collider itself, or the Interactable it belongs to — if it can
+## be interacted with right now. An Interactable that isn't monitorable
+## (a locked plot, a discovery mid-harvest) is ignored, so the tap falls
+## through to the ground.
 func _find_interactable(node: Node) -> Interactable:
 	while node:
 		if node is Interactable:
-			return node as Interactable
+			var interactable := node as Interactable
+			if not interactable.monitorable:
+				return null
+			return interactable
 		node = node.get_parent()
 	return null

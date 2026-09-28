@@ -145,7 +145,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 |---|---|---|
 | Movement (joystick) | `[~]` implemented | Not tested in Godot/Android |
 | Tap-to-move + navigation | `[~]` implemented | Navmesh baked at runtime from static colliders; never executed |
-| Tap-to-interact | `[~]` implemented | Area raycast, 8 m reach, walk-then-interact in tap mode |
+| Tap-to-interact | `[~]` implemented | Area raycast + small-object tolerance; walk to the object, interact on entering the interaction zone (M01.2a) |
 | Camera | Partial | Follow + look-ahead; no bounds or zoom |
 | Farming | Advanced prototype, **frozen** | 4 crops, quality, basket, 7 plots, Elderbloom, exploration seeds, milestones, persistence |
 | Exploration | Partial | Landmarks, secrets, bonuses; place list hard-coded; progress not saved |
@@ -279,6 +279,38 @@ Goal: comfortable, reliable movement in both modes on a real phone.
 - **Done when:** desktop movement works without mouse emulation (awaiting the Godot run).
 - **Commit:** §15.
 
+**M01.2a — Touch interaction correction** `[~]` (verified in code; **PLAYTEST REQUIRED**)
+- **Why:** a developer desktop test found that some ground taps didn't move the player, and tapped objects only worked when already within reach. This was inserted before M01.3.
+- **Root causes (from the code):**
+  1. Ground taps were ignored unless the mode was Tap to Move; the default is Joystick.
+  2. Taps near obstacles or edges were rejected: the navmesh snap tolerance (0.35 m) equalled the agent radius the mesh keeps clear around obstacles.
+  3. All taps were dropped until the runtime navmesh existed.
+  4. Notification card panels blocked pointer input.
+  5. A tapped object within 8 m was interacted with instantly without walking; farther ones only in Tap to Move mode.
+  6. The 0.18–0.2 m discovery shapes made near misses fall through to the ground.
+- **Changes:**
+  - Taps are mode-independent (D-15).
+  - Snap tolerance 1 m; straight-line fallback before the mesh exists.
+  - Small-object selection tolerance 0.45 m around the tapped ground point.
+  - Inactive interactables are ignored.
+  - Interaction happens on entering the existing `InteractionZone` (D-16), event-driven; the 8 m rule is removed.
+  - Cards are input-transparent.
+- **Files:** `input_manager.gd`, `player.gd`, `DiscoveryNotification.tscn` (one property), `tools/check_project.py` (7 tap contracts), `tools/sims/sim_tap_movement.py`, docs.
+- **Verification:**
+  - `tools/run_all.sh` passes.
+  - 6 GDScript bug re-creations are caught by the contracts; 5 model mutations are caught by the simulation.
+- **PLAYTEST REQUIRED (Godot desktop, then Android):**
+  - [ ] Tap empty ground → player walks there. Try several spots, near rocks, trees and edges, and repeatedly.
+  - [ ] Tap while walking → the destination changes.
+  - [ ] Tap a flower from far away → the player walks to it, stops about 2 m away, and it's collected automatically.
+  - [ ] The same for a mushroom/discovery, and for a farm plot (the normal plot action or seed picker opens).
+  - [ ] Double tap never interacts twice.
+  - [ ] Joystick or keyboard during a walk → manual control takes over.
+  - [ ] HUD buttons, open screens, the seed picker and notification cards never cause world movement (cards should let taps through).
+  - [ ] Both movement modes: taps behave the same; the mode only shows/hides the joystick.
+  - [ ] Feel: "I tap what I want and the character handles the rest."
+- **Commit:** §15.
+
 **M01.3 — Movement cancel + water decision** `[!]` blocked on decision O-07
 - **Objective:** a deliberate way to stop tap-to-move (e.g. tap the player); pond walkability per the developer's decision.
 - **Files:** `input_manager.gd`, `player.gd`, possibly `Meadow.tscn`.
@@ -314,8 +346,8 @@ Goal: one generic interaction architecture for everything touchable.
 |---|---|---|---|---|
 | M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[ ]` |
 | M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[ ]` |
-| M02.3 | Approach point + facing: walk beside the object, then interact (reach per O-08) | Approach consistent for near/far taps | Android: approach feel | `[ ]` |
-| M02.4 | Interaction feedback on tap (reuse the indicator) + touch tolerance for small objects | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
+| M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.2a, D-16) | Player faces what it interacts with | Android: approach feel | `[ ]` |
+| M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.2a | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
 | M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
 
@@ -477,8 +509,9 @@ No large world expansion before this gate passes.
 | M00.1–M00.5 | `9da18a6` |
 | M01.1 | `e678d45` |
 | M01.2 | `d316ecc` |
+| M01.2a | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 01 — Player. M01.1 and M01.2 implemented (`[~]`); Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Current phase:** 01 — Player. M01.1, M01.2 and the M01.2a touch correction implemented (`[~]`); M01.2a **needs its playtest** before M01.3. Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
 - **Next milestone:** **M01.3 — Movement cancel + water decision**. It is blocked on decision O-07, and starts only on the developer's instruction.
 - **First runtime gate:** M01.5 — Android movement playtest.
