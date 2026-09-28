@@ -379,7 +379,17 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - taps on buttons, screens and the seed picker never move the player;
   - a drag does not move the player;
   - note the load time (navmesh bake);
-  - note the frame rate.
+  - note the frame rate;
+  - **known issue to observe (not yet fixed):** the player occasionally gets stuck or spins while navigating toward a target. Note when it happens; it belongs to a later movement-polish pass;
+  - **M02.3 facing:**
+    - tap a distant flower/discovery → the player walks to it, stops at interaction range, faces it, interacts;
+    - tap a distant farm plot → approaches, faces the plot, the existing plot interaction happens;
+    - tap an object already beside the player → it faces the object before interacting;
+    - targets behind, left and right of the player all turn correctly;
+    - no sideways movement or new spinning;
+    - cancel before arrival → no turn toward the cancelled target;
+    - replace the target while walking → only the final target is faced;
+    - the M01.5 INTERACT state still works; joystick and keyboard takeover unchanged.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -391,7 +401,7 @@ Goal: one generic interaction architecture for everything touchable.
 |---|---|---|---|---|
 | M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[~]` |
 | M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[~]` |
-| M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[ ]` |
+| M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[~]` |
 | M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
 | M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
@@ -447,6 +457,27 @@ Goal: one generic interaction architecture for everything touchable.
   - `sim_interaction.py`: FarmPlot's `interact()` and verb query are read from the GDScript and cross-checked state by state (same action, same guard); all 80 plot condition combinations; discovery available/unavailable; empty lists; changing verbs; the generic ask → choose → pass-back path.
   - Mutation-tested: 21 GDScript and 7 model mutations caught.
 - **Runtime test:** none needed on its own (no behaviour change); covered by M02.1's checklist at the playtest gate.
+- **Commit:** §15.
+
+**M02.3 — Player faces the interactable on arrival** `[~]` Implemented — runtime testing pending (M01.6 checklist)
+- **Objective:** when the player reaches a tapped object (or taps one already in range), it turns to face it, then the existing interaction begins. Orientation only.
+- **Audit:**
+  - Facing lives in `_update_facing(direction, delta)`, in the existing physics step: `_facing_angle` is set from the *intended* direction (joystick/keyboard input or the navigation path direction, not velocity) when it's longer than 0.1, and the visual eases toward `_facing_angle` every frame (`lerp_angle`, `TURN_SPEED` 11). With no direction, the last facing is kept.
+  - Range is entered in `_on_interaction_zone_area_entered` (only the current `_approach_target` interacts), or at once in `_on_interact_target_requested` when already in range. Both stop navigation and call `_interact_with()`, the single `interact()` call site.
+  - During the final approach the player faces its path direction, which usually points roughly at the object but not exactly (the path ends at the nearest walkable point). An object already in range could be behind or beside it.
+  - Nothing would fight a target facing: navigation is stopped before `_interact_with()`, so the next physics step has no direction and keeps the facing. Joystick/keyboard input still overrides it (takeover unchanged).
+- **Files:** `scripts/player/player.gd`, `tools/check_project.py`, `tools/sims/sim_tap_movement.py`, docs.
+- **Implementation:**
+  - `_face_target(target)`: horizontal direction from the player to `target.global_position` (y ignored); if shorter than `FACE_TARGET_MIN_DISTANCE` (0.05 m) the facing is kept (no NaN, no spin); otherwise it sets `_facing_angle` with the same formula `_update_facing()` uses.
+  - Called once in `_interact_with()`, after the spent/availability guards and before `_begin_interaction()` (INTERACT) and `interact()`. Generic: target position only, no type or verb.
+  - The turn itself is the existing smooth ease (no snap). The interaction starts on the same frame, so the turn completes during its first moments (about 0.2 s).
+  - No change to range, navigation, constants (one new facing threshold only), animation states, scenes, verbs or `interact_with_verb()`.
+- **Known issue (recorded, not addressed):** the occasional stuck/spinning navigation belongs to a later movement-polish pass. This milestone doesn't touch navigation.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - 12 facing contracts: the order accept → face → INTERACT → `interact()`; the target position, horizontal, with a zero-distance guard; no movement direction, type, verb, snap or waiting in the facing; called only from `_interact_with()`; `_facing_angle` written only by `_ready`/`_update_facing`/`_face_target`; no target facing in the physics step; stop and retarget drop the approach target; arrival interacts only with the current target; no `_process` in Player.
+  - Movement model: ordered face/interact events; far arrival, in range, behind/left/right, underfoot; cancel and replace never face the old target; walking faces the path; 2,000 random runs where every face is immediately followed by its interaction.
+  - Mutation-tested: 15 GDScript mutations (all caught by `check_project.py`) and 6 model mutations caught.
 - **Commit:** §15.
 
 ### PHASE 03 — CAMERA / WORLD SHELL
@@ -612,8 +643,9 @@ No large world expansion before this gate passes.
 | M01.5 | `9ec60f1` |
 | M02.1 | `1a6b2cd` |
 | M02.2 | `3a26ee4` |
+| M02.3 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.2 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's runtime test). In Phase 02 the next is **M02.3 — facing the object on arrival**. Either starts only on the developer's instruction.
+- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.3 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's and M02.3's runtime tests). In Phase 02 the next is **M02.4 — interaction feedback on tap; tune the small-object tolerance**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

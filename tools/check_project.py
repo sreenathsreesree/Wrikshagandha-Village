@@ -669,6 +669,48 @@ for f, s2 in scripts.items():
                 err(f"{f}: unknown verb Verb.{m.group(1)}")
 notes.append(f"interaction verbs: {sorted(VERBS, key=VERBS.get)} (D-09 subset)")
 
+# ------------------------------------------------------------ facing on arrival
+# M02.3: the player turns toward an object once, at the generic interaction
+# boundary (Player._interact_with), after it has been accepted and before
+# INTERACT/interact() — never while walking, never for a cancelled target.
+pl_src = scripts.get(PL, "")
+iw = func_body(pl_src, "_interact_with") or ""
+pos = {k: iw.find(k) for k in ("is_interaction_available()", "_face_target(target)", "_begin_interaction(target)", "target.interact()")}
+if -1 in pos.values() or not (pos["is_interaction_available()"] < pos["_face_target(target)"] < pos["_begin_interaction(target)"] < pos["target.interact()"]):
+    err(f"{PL}: _interact_with() must face the target after accepting it and before INTERACT/interact() {pos}")
+ft = func_body(pl_src, "_face_target") or ""
+if not ft:
+    err(f"{PL}: _face_target() missing")
+else:
+    if "target.global_position - global_position" not in ft or not re.search(r"\.y = 0\.0", ft):
+        err(f"{PL}: _face_target() must use the horizontal direction to the target's position")
+    guard = re.search(r"if to_target\.length\(\) < FACE_TARGET_MIN_DISTANCE:\s*return", ft)
+    if not guard or guard.start() > ft.find("_facing_angle ="):
+        err(f"{PL}: _face_target() must keep the facing when there's no horizontal direction")
+    if re.search(r"\bvelocity\b|\bdirection\b|nav_agent|\bis\s+[A-Z]|visual\.rotation|\bawait\b|\bVerb\.", ft):
+        err(f"{PL}: _face_target() must use only the target position (no movement direction, type, verb, snap or waiting)")
+    if "_facing_angle = atan2(to_target.x, -to_target.z)" not in ft:
+        err(f"{PL}: _face_target() must set the existing facing (_facing_angle) that _update_facing() eases to")
+face_calls = [(f, len(re.findall(r"_face_target\(", code_only(s2))) - (1 if f == PL else 0)) for f, s2 in scripts.items()]
+face_calls = [c for c in face_calls if c[1]]
+if face_calls != [(PL, 1)] or "_face_target(" not in iw:
+    err(f"_face_target() must be called only from Player._interact_with (found {face_calls})")
+writers = sorted({m for m in re.findall(r"^func (\w+)\(", pl_src, re.M) if "_facing_angle =" in (func_body(pl_src, m) or "")})
+if writers != ["_face_target", "_ready", "_update_facing"]:
+    err(f"{PL}: _facing_angle may only be set in _ready/_update_facing/_face_target (found {writers})")
+if re.search(r"_face_target|target\.global_position", func_body(pl_src, "_physics_process") or "") or \
+   re.search(r"_approach_target|_interaction_target", func_body(pl_src, "_update_facing") or ""):
+    err(f"{PL}: no continuous turning toward a target while walking")
+for fn in ("_start_navigation", "_stop_navigation"):
+    if "_approach_target = null" not in (func_body(pl_src, fn) or ""):
+        err(f"{PL}: {fn}() must drop the approach target (no late facing/interaction for a cancelled or replaced target)")
+if not re.search(r"if interactable == _approach_target:\s*_stop_navigation\(\)\s*_interact_with\(interactable\)",
+                 func_body(pl_src, "_on_interaction_zone_area_entered") or ""):
+    err(f"{PL}: arrival must interact (and face) only with the current approach target")
+if re.search(r"^func _process\(", pl_src, re.M):
+    err(f"{PL}: no _process() in Player — its one per-frame step is the existing _physics_process()")
+notes.append("facing contracts checked: 12")
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).

@@ -4,6 +4,9 @@
    mode-independent; constants read from the GDScript.
 2. Player tap state machine: walk-to-interact on InteractionZone entry, the
    exact target preserved, retargeting, joystick/keyboard cancellation.
+   Facing on arrival (M02.3): accept -> face the target -> interact, from the
+   target's position (behind/side/underfoot), never for a cancelled or
+   replaced target; walking faces the path, not a target.
 3. Meadow geometry: spawn and every interactable reachable (not inside an
    obstacle footprint grown by the nav agent radius).
 """
@@ -21,6 +24,12 @@ SELECT_TOL = _const("TAP_SELECT_TOLERANCE")
 PLAYER_TAP_R = _const("PLAYER_TAP_RADIUS")
 ZONE_R = float(re.search(r'SphereShape3D_interact"\]\s*radius = ([0-9.]+)',
                          open(os.path.join(REPO, "scenes", "player", "Player.tscn")).read()).group(1))
+_PL_SRC = open(os.path.join(REPO, "scripts", "player", "player.gd")).read()
+FACE_MIN = _const("FACE_TARGET_MIN_DISTANCE", _PL_SRC)
+_IW = re.search(r"^func _interact_with\(.*?(?=^func )", _PL_SRC, re.M | re.S).group(0)
+assert _IW.find("is_interaction_available()") < _IW.find("_face_target(target)") < _IW.find("target.interact()"), \
+    "the model's order (accept, face, interact) is the script's"
+assert "_facing_angle = atan2(to_target.x, -to_target.z)" in _PL_SRC and "_facing_angle = atan2(direction.x, -direction.z)" in _PL_SRC
 
 def route(gui_consumed, move_px, msec, ray_hit, ray_hit_active, player_tap, near_active, ground_hit, has_mesh, snap_h, snap_v):
     """Port of InputManager._track_tap + _handle_tap. Mode is deliberately
@@ -65,11 +74,19 @@ class Player:
     def __init__(p):
         p.pos = (0.0, 0.0); p.nav = False; p.dest = None; p.approach = None
         p.stuck = 0.0; p.interacted = []; p.nearby = set()
+        p.facing = 0.0; p.events = []  # (kind, id): "face" / "interact", in order
+    def interact_with(p, t):  # _interact_with: face the target, then interact
+        dx, dz = t["pos"][0] - p.pos[0], t["pos"][1] - p.pos[1]
+        if math.hypot(dx, dz) >= FACE_MIN:
+            p.facing = math.atan2(dx, -dz); p.events.append(("face", t["id"]))
+        p.events.append(("interact", t["id"])); p.interacted.append(t["id"])
+    def face_move(p, dx, dz):  # _update_facing: the intended movement direction
+        if dx * dx + dz * dz > 0.01: p.facing = math.atan2(dx, -dz)
     def in_zone(p, t): return math.dist(p.pos, t["pos"]) <= ZONE_R + t["r"]
     def stop(p): p.nav = False; p.approach = None; p.stuck = 0.0
     def start(p, d): p.approach = None; p.dest = d; p.nav = True; p.stuck = 0.0
     def on_interact_target(p, t):
-        if t["id"] in p.nearby: p.stop(); p.interacted.append(t["id"]); return
+        if t["id"] in p.nearby: p.stop(); p.interact_with(t); return
         p.start(t["pos"]); p.approach = t
     def on_move(p, d): p.start(d)
     def on_stop(p): p.stop()
@@ -79,16 +96,19 @@ class Player:
             if inside and t["id"] not in p.nearby:
                 p.nearby.add(t["id"])
                 if p.approach is not None and p.approach["id"] == t["id"]:
-                    tgt = p.approach; p.stop(); p.interacted.append(tgt["id"])
+                    tgt = p.approach; p.stop(); p.interact_with(tgt)
             elif not inside: p.nearby.discard(t["id"])
     def physics(p, move_vector, objects, dt=1 / 60, blocked=False):
-        if move_vector: p.stop(); p.pos = (p.pos[0] + move_vector[0] * 4.3 * dt, p.pos[1] + move_vector[1] * 4.3 * dt)
+        if move_vector:
+            p.stop(); p.face_move(*move_vector)
+            p.pos = (p.pos[0] + move_vector[0] * 4.3 * dt, p.pos[1] + move_vector[1] * 4.3 * dt)
         elif p.nav:
             d = math.dist(p.pos, p.dest)
             if d <= 0.3: p.stop()
             else:
                 speed = 0.0 if blocked else 4.3 * max(min(d / 1.2, 1.0), 0.35)
                 step = min(speed * dt, d)
+                p.face_move((p.dest[0] - p.pos[0]) / d, (p.dest[1] - p.pos[1]) / d)
                 if step > 0: p.pos = (p.pos[0] + (p.dest[0] - p.pos[0]) / d * step, p.pos[1] + (p.dest[1] - p.pos[1]) / d * step)
                 if speed < 0.25:
                     p.stuck += dt
@@ -119,6 +139,33 @@ for _ in range(2000): p.physics(None, objs)
 assert p.interacted == [] and not p.nav, "stop cancels a pending interaction"
 p = Player(); p.on_stop(); assert not p.nav and p.interacted == [], "stop while idle is harmless"
 
+# facing on arrival (M02.3): accept -> face target -> interact
+def angle_to(p, pos): return math.atan2(pos[0] - p.pos[0], -(pos[1] - p.pos[1]))
+def same_angle(a, b): return abs(math.remainder(a - b, math.tau)) < 1e-9
+p = Player(); p.on_interact_target(objs[0])
+while p.nav: p.physics(None, objs)
+assert p.events[-2:] == [("face", "flower"), ("interact", "flower")], "arrival -> face -> interact"
+assert same_angle(p.facing, angle_to(p, (20.0, 0.0)))
+for label, pos in (("behind", (0.0, 1.5)), ("left", (-1.5, 0.0)), ("right", (1.5, 0.0)), ("ahead", (0.0, -1.5))):
+    p = Player(); p.facing = 0.0; t = {"id": label, "pos": pos, "r": 0.2}
+    p.zone_update([t]); p.on_interact_target(t)
+    assert p.events == [("face", label), ("interact", label)], f"in range ({label}): face before interacting"
+    assert same_angle(p.facing, {"behind": math.pi, "left": -math.pi / 2, "right": math.pi / 2, "ahead": 0.0}[label]), (label, p.facing)
+p = Player(); p.facing = 1.0; t = {"id": "underfoot", "pos": (0.0, 0.0), "r": 0.2}
+p.zone_update([t]); p.on_interact_target(t)
+assert p.facing == 1.0 and not math.isnan(p.facing) and p.events == [("interact", "underfoot")], "no direction: facing kept"
+p = Player(); p.on_interact_target(objs[0]); p.physics(None, objs); p.on_stop()
+for _ in range(2000): p.physics(None, objs)
+assert p.events == [], "a cancelled target is never faced"
+a, b = {"id": "a", "pos": (5.0, 0.0), "r": 0.2}, {"id": "b", "pos": (20.0, 0.0), "r": 0.2}
+p = Player(); p.on_interact_target(a); p.on_interact_target(b)
+while p.nav: p.physics(None, [a, b])
+assert p.events == [("face", "b"), ("interact", "b")], "a replaced target is never faced, even when passed on the way"
+p = Player(); p.on_interact_target(objs[0]); fac = []
+for _ in range(60): p.physics(None, objs); fac.append(p.facing)
+assert all(same_angle(f, math.atan2(1.0, -0.0)) for f in fac) and p.events == [], "walking faces the path, not a target lock"
+print("facing: arrival/in-range/behind/left/right/underfoot/cancel/replace OK")
+
 stats = dict(taps=0, approaches=0, zone_interactions=0, cancels=0, retargets=0)
 for trial in range(2000):
     rnd = random.Random(trial); p = Player(); objs = objects_for(rnd); p.zone_update(objs)
@@ -145,6 +192,12 @@ for trial in range(2000):
             t = approach_before; assert p.in_zone(t), "interaction only once in range"
             stats["zone_interactions"] += 1
         if p.approach is not None: assert p.nav, "an approach target implies an active walk"
+        for i, (kind, oid) in enumerate(p.events):
+            if kind == "face": assert p.events[i + 1] == ("interact", oid), "every face is immediately followed by its interaction"
+        if len(p.interacted) > n_before and not mv:
+            t = next(o for o in objs if o["id"] == p.interacted[-1])
+            if math.dist(p.pos, t["pos"]) >= FACE_MIN:
+                assert p.events[-2:] == [("face", t["id"]), ("interact", t["id"])] and same_angle(p.facing, angle_to(p, t["pos"]))
 print(f"player model: 2000 runs x 600 steps OK; {stats}")
 
 # ------------------------------------------------------------ 3. geometry

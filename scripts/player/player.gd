@@ -43,6 +43,9 @@ const ARRIVAL_MIN_SPEED := 0.35
 const NAVIGATION_STUCK_SECONDS := 1.0
 const NAVIGATION_STUCK_SPEED := 0.25
 const DEAD_ZONE := 0.12
+## Closer than this (horizontally) to the object being interacted with,
+## there's no meaningful direction to face, so the facing is kept.
+const FACE_TARGET_MIN_DISTANCE := 0.05
 
 ## Shapes the raw joystick deflection before it becomes a target speed.
 ## >1 gives finer, easier control near the center of the joystick (slow,
@@ -330,6 +333,7 @@ func _interact_with(target: Interactable) -> void:
 	)
 	if _spent_interactables.has(target) or not target.is_interaction_available():
 		return
+	_face_target(target)
 	# Only stop tracking it if it's actually gone (or about to be) after
 	# this interaction — a one-shot discovery with remove_on_harvest is
 	# dropped before it starts so a second press/tap can't double-harvest
@@ -344,6 +348,19 @@ func _interact_with(target: Interactable) -> void:
 	@warning_ignore("redundant_await")
 	await target.interact()
 	_end_interaction(serial)
+
+## Turn toward the object about to be interacted with — once, at the
+## interaction boundary, never while walking. It only sets the facing that
+## _update_facing() already eases the visual toward, so the turn is the
+## same smooth one as movement, not a snap. From the target's position
+## alone (whatever kind of object it is), horizontal only.
+func _face_target(target: Interactable) -> void:
+	var to_target := target.global_position - global_position
+	to_target.y = 0.0
+	if to_target.length() < FACE_TARGET_MIN_DISTANCE:
+		return
+	# Node3D's local forward is -Z, so solve sin(a)=dx, cos(a)=-dz.
+	_facing_angle = atan2(to_target.x, -to_target.z)
 
 # --- Animation state hook ------------------------------------------------------------
 
