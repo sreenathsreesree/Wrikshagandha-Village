@@ -933,8 +933,12 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           "scripts/camera/follow_camera.gd": "defdcc07193979c4", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
-          "scripts/autoload/farm_manager.gd": "b379309985b0e32f", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
-          "scripts/autoload/save_manager.gd": "2da42b4bc60ce76a", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83"}
+          "scripts/autoload/farm_manager.gd": "5593d2e984680ab2", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          "scripts/autoload/save_manager.gd": "2da42b4bc60ce76a", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
+          # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
+          "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
+          "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
+          "scripts/world_simulation/time_of_day.gd": "4faf06b101abc1ef"}
 for f, h in PINNED.items():
     got = hashlib.sha256(open(f, "rb").read()).hexdigest()[:16] if os.path.exists(f) else None
     if got != h:
@@ -977,11 +981,11 @@ la = func_body(main_src, "load_area") or ""
 if not re.search(r"_swap_area\.call_deferred\(scene, entry_id\)", la) or re.search(r"remove_child|free\(|add_child|place_at", la):
     err(f"{MAIN_GD}: load_area() only defers the swap (never runs inside the unloading area's callback)")
 sw = code_only(func_body(main_src, "_swap_area") or "")
-order = ["FarmManager.cancel_seed_choice()", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
+order = ["FarmManager.cancel_seed_choice()", "FarmManager.release_plots_in(old)", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
          "area.attach_player(player)", "_find_entry(area, entry_id)", "player.place_at(entry.global_transform)", "follow_camera.global_position = player.global_position"]
 idx = [sw.find(k) for k in order]
 if -1 in idx or idx != sorted(idx) or re.search(r"queue_free|await|call_deferred", sw):
-    err(f"{MAIN_GD}: _swap_area() must cancel the picker, remove and free() the old area, then add (first), attach, place and snap — no queue_free/await")
+    err(f"{MAIN_GD}: _swap_area() must cancel the picker, capture the old area's plots, remove and free() it, then add (first), attach, place and snap — no queue_free/await")
 fe = code_only(func_body(main_src, "_find_entry") or "")
 if not all(k in fe for k in ("get_nodes_in_group(AreaEntry.GROUP)", "in_area.is_ancestor_of(entry)", "entry.entry_id == entry_id", "entry.entry_id < first.entry_id")):
     err(f"{MAIN_GD}: _find_entry() picks the named entry of this area, else the lowest id (deterministic)")
@@ -1008,6 +1012,42 @@ if used - {"global_position", "global_transform", "place_at"}:
 for f, s2 in scripts.items():
     if f != PL and re.search(r"\bplayer\._\w+", code_only(s2)):
         err(f"{f}: reaches into Player's private members")
+# ------------------------------------------------------------ farm across area reload (M03.3)
+# Plots are captured by stable id just before their area unloads and
+# restored when their next instance registers — never recounted, never
+# lost from a save made in between.
+FM, FP = "scripts/autoload/farm_manager.gd", "scripts/farming/farm_plot.gd"
+fm_src, fp_src = scripts.get(FM, ""), scripts.get(FP, "")
+rel = code_only(func_body(fm_src, "release_plots_in") or "")
+if not re.search(r"for plot_id: String in _plots\.keys\(\):\s*var plot := _get_plot\(plot_id\)\s*if plot == null:\s*_plots\.erase\(plot_id\)"
+                 r"\s*elif area\.is_ancestor_of\(plot\):\s*_unloaded_plot_states\[plot_id\] = plot\.capture\(\)\s*_plots\.erase\(plot_id\)", rel):
+    err(f"{FM}: release_plots_in() captures every plot of the area by id and forgets every old reference")
+rp = code_only(func_body(fm_src, "register_plot") or "")
+un = re.search(r"if _unloaded_plot_states\.has\(plot\.plot_id\):(.*?)\breturn\b", rp, re.S)
+if not un or rp.find("_plots[plot.plot_id] = plot") > un.start() or un.start() > rp.find("if _saved_plot_states.has(") \
+   or "_unloaded_plot_states.erase(plot.plot_id)" not in un.group(1) or "_ready_by_crop" in un.group(1) \
+   or not re.search(r'var kept: Dictionary = _unloaded_plot_states\[plot\.plot_id\].*plot\.restore\(kept, _find_crop\(String\(kept\.get\("crop", ""\)\)\)\)', un.group(1), re.S):
+    err(f"{FM}: register_plot() tracks the plot, then restores an unloaded state once (erased, not recounted) before the boot-save path")
+gs = code_only(func_body(fm_src, "get_save_data") or "")
+if not re.search(r"plots\.merge\(_unloaded_plot_states\.duplicate\(true\), true\)\s*for plot_id: String in _plots:", gs):
+    err(f"{FM}: get_save_data() must include unloaded plot states (live captures win)")
+if "_unloaded_plot_states.clear()" not in (func_body(fm_src, "apply_save_data") or ""):
+    err(f"{FM}: apply_save_data() starts with no unloaded states")
+users = sorted(fn for fn in re.findall(r"^func (\w+)\(", fm_src, re.M) if "_unloaded_plot_states" in code_only(func_body(fm_src, fn) or ""))
+if users != ["apply_save_data", "get_save_data", "register_plot", "release_plots_in"]:
+    err(f"{FM}: unloaded plot states are touched only by release/register/save/load (found {users})")
+if re.search(r"FarmManager\.(apply_save_data|get_save_data)|\.restore\(|\.capture\(", code_only(main_src)):
+    err(f"{MAIN_GD}: Main never restores farm state itself — plots restore when they register in the new area")
+cap = func_body(fp_src, "capture") or ""
+res = func_body(fp_src, "restore") or ""
+cap_keys = set(re.findall(r'"(\w+)":', cap))
+read_keys = set(re.findall(r'data\.get\("(\w+)"', res)) | set(re.findall(r'(?:kept|data)\.get\("(\w+)"', func_body(fm_src, "register_plot") or ""))
+FARM_FIELDS = {"state", "soil_memory", "crop", "stage", "needs_water", "stage_time_left", "soil", "care", "quality",
+               "longest_thirst", "thirsty_for"}
+if FARM_FIELDS - cap_keys:
+    err(f"{FP}: capture() dropped farm fields {sorted(FARM_FIELDS - cap_keys)} — every field the save supports survives a reload")
+if not cap_keys or cap_keys - read_keys:
+    err(f"{FP}: restore() must read back every field capture() saves (missing {sorted(cap_keys - read_keys)})")
 notes.append(f"area loader: entries {entry_scenes}")
 
 # ------------------------------------------------------------ animation hook

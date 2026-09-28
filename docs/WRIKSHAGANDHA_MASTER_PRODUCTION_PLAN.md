@@ -166,7 +166,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 
 | # | Risk | Resolved in |
 |---|---|---|
-| A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Ownership resolved in M03.1 (in code); area loading M03.2; plot unloading M03.3 |
+| A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Resolved in code: ownership M03.1, area loading M03.2, plot unloading M03.3 (runtime test pending) |
 | A2 | `Interactable` base is discovery-specific | M02.1 (in code; runtime test pending) |
 | A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
@@ -407,14 +407,16 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - tap-to-move paths still work (the navigation mesh bakes); tap-to-interact, cancellation, facing and feedback unchanged;
     - wildlife, vegetation, time of day, environmental events and landmarks still react to the player;
     - discoveries, farm, saving and reloading work as before;
-  - **M03.2 area loader — reload round-trip (use a THROWAWAY save: the farm resets on reload until M03.3):**
+  - **M03.2/M03.3 area loader — reload round-trip (a copy of a real save is fine now; discoveries/events/time of day still reset):**
     - from the Godot remote debugger, call `load_area(load("res://scenes/world/Meadow.tscn"), "meadow_start")` on `/root/Main`;
     - expect: no errors; one Meadow; the player at the start, facing the marker's forward, no walk continuing; the camera snapped (no glide across the map); the HUD intact;
     - tap-to-move works again once the navigation mesh rebuilds; tap-to-interact, feedback and facing work on the new area's objects; wildlife/world simulation reacts to the player;
     - with a walk or an interaction in progress when reloading: it ends cleanly (INTERACT back to IDLE/WALK);
     - with the seed picker open when reloading: it closes;
     - an unknown entry id (e.g. `"nowhere"`): a warning, and the player lands on `meadow_start`;
-    - expected until later milestones: farm plots restart (M03.3); discoveries respawn and one-time events/time of day reset.
+    - **farm (M03.3):** before reloading, set up plots in different states — prepared soil, a thirsty crop, a growing (watered) crop part-way through a stage, a ready crop, a plot mid-harvest; after the reload each is exactly as it was (crop, stage, water/thirst, remaining growth time, quality; soil memory shown by the seed picker's soil rating); growing crops carry on and ripen; the garden's ready-crop wildlife pull is unchanged;
+    - reload twice; then trigger an autosave (plant or harvest, or background the app) and relaunch: the farm is as it was;
+    - expected until later milestones: discoveries respawn and one-time events/time of day reset.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -580,7 +582,7 @@ Goal: persistent Player/Camera/HUD with swappable areas.
 |---|---|---|---|---|
 | M03.1 | Persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1) | Meadow loads as a child area; everything works as before | Full Meadow walk-through | `[~]` |
 | M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[~]` |
-| M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[ ]` |
+| M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[~]` |
 | M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[ ]` |
 | M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[ ]` |
 | M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[ ]` |
@@ -625,6 +627,27 @@ Goal: persistent Player/Camera/HUD with swappable areas.
   - `sim_area_loader.py`: swap order and rules read from source; one area after a swap; all 7 plots re-register (a `queue_free` or add-first order rejects them all — shown); deferred swap keeps the calling area alive through its callback; entries named/fallback/none, stray entries outside the area ignored; placement and camera snap; 2,000 random sequences.
   - Mutation-tested: 28 GDScript/scene/config mutations, all caught by `check_project.py` (15 also by the loader model); 4 of them re-run with the Player pin disabled to prove the `place_at()` content rules alone; 6 mutations of the model itself caught.
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.2 area loader", on a throwaway save).
+- **Commit:** §15.
+
+**M03.3 — Farm plots survive an area reload** `[~]` Implemented — runtime testing pending (M01.6 checklist)
+- **Objective:** an area reload can never wipe farm state; farm plots only (discoveries, events and time of day are out of scope).
+- **Audit:**
+  - Save format: `farm.plots[plot_id]` = `FarmPlot.capture()` — `state`, `soil_memory`, and with a crop `crop`, `stage`, `needs_water`, `stage_time_left`, `thirsty_for`, `longest_thirst`, `soil`, `care`, `quality` (a paid mid-harvest captures as SOIL). `restore()` reads every field back. Unlocking is derived (starter/milestones), not saved.
+  - Lifecycle before M03.3: boot — `SaveManager.load_game()` → `FarmManager.apply_save_data()` fills `_saved_plot_states`; each FarmPlot registers in `_ready` → restored → its entry **erased**; restored READY plots counted into `_ready_by_crop`/garden interest. Autosave (discovery, plant, harvest, found seed, farm milestone, movement mode, app paused/closed) → `get_save_data()` = remaining saved states + captures of **live** plots only. Unload (M03.2) captured nothing: the plots' state existed nowhere, and the next autosave would have written fresh plots.
+  - Minimum change: capture by id just before unload; restore on the next registration without recounting ready crops; include captured-but-unloaded states in saves.
+- **Files:** `scripts/autoload/farm_manager.gd` (pin updated deliberately), `scripts/main.gd` (one call), `tools/check_project.py`, `tools/sims/sim_area_loader.py`, docs; `docs/DESIGN_DECISIONS.md` (open question O-11). FarmPlot, SaveManager, GameState and the save format unchanged.
+- **Implementation:**
+  - `FarmManager.release_plots_in(area)`: every registered plot inside the area → `_unloaded_plot_states[plot_id] = plot.capture()` and forgotten; stale (freed) references purged.
+  - `Main._swap_area()` calls it after closing the seed picker and **before** `remove_child(old)`.
+  - `register_plot()`: after tracking the plot, an `_unloaded_plot_states` entry is restored once (erased) and returns — **not recounted** (the crops never stopped existing, so ready counts and garden interest already include them; they also stay counted while their area is away). Boot-save path unchanged.
+  - `get_save_data()` merges unloaded states (live captures win); `apply_save_data()` clears them.
+  - Time does not pass for an unloaded plot (growth timer and thirst resume where they were) — the same rule as time away from the app; whether it should is open question **O-11**.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: the swap captures plots before removing the old area; `release_plots_in()` captures every plot of the area and drops old references; `register_plot()` tracks, then restores the captured state once, without recounting, before the boot path; saves include unloaded states; boot clears them; only these four functions touch them; Main never restores farm state itself; every farm field is captured and read back; content pins show discovery respawns, environmental events and time of day untouched.
+  - `sim_area_loader.py` (farm section): capture/restore ported with the field list read from `farm_plot.gd`; empty / one / many / partial farms; reload once to three times; away in an area without plots with a save meanwhile; autosave right after a reload identical to before; ready counts unchanged; no duplicates, no old references; 1,500 random runs (with and without a boot save). The no-snapshot and snapshot-after-unload orders are shown to lose the farm.
+  - Mutation-tested: 19 GDScript mutations caught by `check_project.py` (12 also re-run with the farm pins disabled — the content rules alone catch them) plus 7 model mutations.
+- **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.2/M03.3 area loader").
 - **Commit:** §15.
 
 ### PHASE 04 — INVENTORY
@@ -784,8 +807,9 @@ No large world expansion before this gate passes.
 | M02.6 | `c067fe3` |
 | M03.1 | `d000146` |
 | M03.2 | `6991da1` |
+| M03.3 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 03 — Camera / world shell. M03.1–M03.2 implemented (`[~]`, runtime test pending; M03.2 is infrastructure only). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's and M03.2's runtime tests). The next development milestone is **M03.3 — area-safe world state (farm plots first)**, which must land before any real area transition is exposed. Either starts only on the developer's instruction.
+- **Current phase:** 03 — Camera / world shell. M03.1–M03.3 implemented (`[~]`, runtime test pending; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's and M03.2/M03.3's runtime tests). The next development milestone is **M03.4 — camera bounds per area**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

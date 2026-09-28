@@ -55,6 +55,7 @@ blocked (`[!]`) until the developer records a decision here.
 | O-06 | Default movement mode: joystick shown or hidden by default (taps work either way, D-15) | Phase 01 | Decide after the Android movement playtest |
 | O-07 | Is water (the pond) walkable? | Phase 07 (M07.3, slice navigation) | Currently walkable: the pond has no collision. Does not block Phase 01 |
 | O-09 | Each element's distinct gameplay mechanic | Phase 11, per element | Themes are decided (D-04); mechanics are not |
+| O-11 | Should farm time pass while the farm's area is unloaded (e.g. while the player is inside a house)? | M08.1 (first real area transition) | Found in M03.3: an unloaded plot is paused — growth and thirst resume where they were, the same rule as time away from the app. Not decided; changing it is a farm-rules decision (D-11) |
 | O-10 | Which verb names preparing an empty farm plot (tilling)? A new verb, or one of D-09's (e.g. Use)? | When verbs are first shown to the player | Found in M02.2: preparing soil is existing gameplay but no D-09 verb names it, so an EMPTY plot offers no verb yet (a tap still prepares it). Farming is frozen (D-11) |
 
 ## Proposed — production recommendations awaiting approval

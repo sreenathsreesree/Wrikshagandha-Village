@@ -47,7 +47,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - Tree order keeps the old processing order: the area first, then Player, then FollowCamera, then HUD.
 - **Area loader (M03.2) — infrastructure only:** `Main.load_area(scene, entry_id)` defers `_swap_area()`, which: closes the seed picker; removes the old area and `free()`s it at once (a `queue_free()` would leave its plots alive and FarmManager would reject the new plots as duplicates); adds the new area as Main's first child (processing order unchanged); `attach_player()`; places the player on the named `AreaEntry` (else the lowest id, deterministic; else the player stays put) via `Player.place_at()`; snaps the camera. Synchronous, no autoload, no transition. **Nothing in the game calls it** — no door or trigger until M08.1; for the playtest it is called from the Godot remote debugger. Boot is unchanged (the Meadow is still instanced in `Main.tscn`; `meadow_start` sits exactly where the player boots).
   - `AreaEntry` (Marker3D, group `area_entry`): `entry_id` is lower_snake_case and unique within its area; the player faces the marker's −Z.
-- **Known issue (Phase 03):** farm state does not survive an area reload yet — FarmManager only captures live plots, so a reload restarts the plots and the next autosave keeps that (**M03.3, next**). Also reset by a reload (by design until later phases): discovery respawn timers (a reload respawns every discovery, including the non-respawning Ancient Seed — A4/Phase 05), one-time environmental events, time of day.
+- **Farm plots across a reload (M03.3):** `_swap_area()` calls `FarmManager.release_plots_in(old)` before removing the old area: each of its plots is captured by `plot_id` into `_unloaded_plot_states` and forgotten (no reference to freed nodes). When the next instance's plots register, each captured state is restored once — not recounted, since ready counts and garden interest keep including crops whose area is away. Saves include unloaded states, so an autosave at any point keeps the whole farm. An unloaded plot's time is paused (growth timer and thirst resume where they were), like time away from the app (open question O-11).
+- **Still reset by a reload** (by design until later phases): discovery respawn timers (a reload respawns every discovery, including the non-respawning Ancient Seed — A4/Phase 05), one-time environmental events, time of day.
 - **Direction (Phase 03):**
   - Area-safe world state by stable id (M03.3), then player-facing transitions (M08.1 door).
   - Each area owns its NavigationRegion3D.
@@ -180,6 +181,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - Exploration progress (P-02).
   - Full versioned persistence in Phase 15.
 - **Rule:** systems expose `get_save_data()` / `apply_save_data()`; world objects restore by stable id on registration.
+- **Area reloads (M03.3):** farm plot states are captured by id before their area unloads (`FarmManager.release_plots_in`) and restored on re-registration; `farm.plots` in a save = boot states not yet claimed + unloaded states + live captures. Same save format.
 
 ## 12. Area / world architecture (direction — Phase 03)
 - A persistent shell with swappable areas. Named entry markers. Per-area navigation mesh and camera bounds.

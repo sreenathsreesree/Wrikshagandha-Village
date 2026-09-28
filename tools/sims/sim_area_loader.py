@@ -12,8 +12,11 @@
 4. Entries: the named one, else the lowest id (deterministic), else the
    player stays put; placement ends the walk, drops momentum, faces the
    marker; the camera snaps to the player.
-Farm STATE across a reload (M03.3) is deliberately not modelled here: until
-M03.3 a reload restarts the plots.
+5. Farm plots across a reload (M03.3): captured by id before the area goes,
+   restored when the next instance registers — every field capture() saves
+   (read from farm_plot.gd), no recount of ready crops, nothing lost by a save
+   made after the reload or while the area is away; empty / one / many /
+   partial farms, reload twice, old references dropped.
 """
 import math, os, random, re
 
@@ -28,7 +31,7 @@ def _body(src, name):
 MAIN, PLAYER, FARM = _src("scripts", "main.gd"), _src("scripts", "player", "player.gd"), _src("scripts", "autoload", "farm_manager.gd")
 MEADOW, MAIN_TSCN = _src("scenes", "world", "Meadow.tscn"), _src("scenes", "Main.tscn")
 SWAP = _body(MAIN, "_swap_area")
-ORDER = ["FarmManager.cancel_seed_choice()", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
+ORDER = ["FarmManager.cancel_seed_choice()", "FarmManager.release_plots_in(old)", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
          "area.attach_player(player)", "_find_entry(area, entry_id)", "player.place_at(entry.global_transform)",
          "follow_camera.global_position = player.global_position"]
 idx = [SWAP.find(k) for k in ORDER]
@@ -164,4 +167,119 @@ for _ in range(2000):
         assert len(w.children) == 1 and w.children[0] is w.area and not w.rejected
         assert all(p.valid for p in w.plots.values()) and not w.player["nav"]
 print("area loader: deferred swap, entries (named/fallback/none), placement + camera snap, 2000 random sequences OK")
+
+# ---------------------------------------------------------------- 5. farm plots across a reload (M03.3)
+PLOT_SRC = _src("scripts", "farming", "farm_plot.gd")
+CAP_KEYS = sorted(set(re.findall(r'"(\w+)":', _body(PLOT_SRC, "capture"))))
+assert {"state", "soil_memory", "crop", "stage", "needs_water", "stage_time_left", "thirsty_for", "longest_thirst",
+        "soil", "care", "quality"} <= set(CAP_KEYS), CAP_KEYS
+REL, REG, SAVE = _body(FARM, "release_plots_in"), _body(FARM, "register_plot"), _body(FARM, "get_save_data")
+assert "_unloaded_plot_states[plot_id] = plot.capture()" in REL and "_plots.erase(plot_id)" in REL
+assert REG.find("_plots[plot.plot_id] = plot") < REG.find("if _unloaded_plot_states.has(") < REG.find("if _saved_plot_states.has(")
+assert "plots.merge(_unloaded_plot_states.duplicate(true), true)" in SAVE
+STATES = ["EMPTY", "SOIL", "PLANTED", "GROWING", "READY"]
+
+class Plot:
+    def __init__(p, pid):
+        p.pid, p.valid, p.state, p.memory, p.crop, p.f = pid, True, "EMPTY", [], "", {}
+        p.harvesting = p.paid = False
+    def capture(p):  # port of FarmPlot.capture()
+        state, crop = p.state, p.crop
+        if p.harvesting and p.paid: state, crop = "SOIL", ""
+        d = {"state": state, "soil_memory": list(p.memory)}
+        if crop == "": return d
+        d.update({"crop": crop, **{k: p.f[k] for k in CAP_KEYS if k not in ("state", "soil_memory", "crop")}})
+        return d
+    def restore(p, d):  # port of FarmPlot.restore() (fields only)
+        p.memory = list(d.get("soil_memory", []))
+        if d.get("state", "EMPTY") == "EMPTY": return None
+        p.state = d["state"]
+        if p.state == "SOIL" or not d.get("crop"): p.state = "SOIL"; return None
+        p.crop = d["crop"]; p.f = {k: d[k] for k in CAP_KEYS if k not in ("state", "soil_memory", "crop")}
+        return p.crop
+class Farm:  # port of FarmManager's plot registry
+    def __init__(f): f.plots, f.saved, f.unloaded, f.ready, f.rejected = {}, {}, {}, {}, []
+    def register(f, plot):
+        old = f.plots.get(plot.pid)
+        if old is not None and old.valid and old is not plot: f.rejected.append(plot.pid); return
+        f.plots[plot.pid] = plot
+        if plot.pid in f.unloaded: plot.restore(f.unloaded.pop(plot.pid)); return
+        if plot.pid in f.saved:
+            crop = plot.restore(f.saved.pop(plot.pid))
+            if crop and plot.state == "READY": f.ready[crop] = f.ready.get(crop, 0) + 1
+    def release(f, area_plots):
+        for pid in list(f.plots):
+            n = f.plots[pid]
+            if not n.valid: del f.plots[pid]
+            elif n in area_plots: f.unloaded[pid] = n.capture(); del f.plots[pid]
+    def save(f):
+        out = {k: dict(v) for k, v in f.saved.items()}
+        out.update({k: dict(v) for k, v in f.unloaded.items()})
+        for pid, n in f.plots.items():
+            if n.valid: out[pid] = n.capture()
+        return out
+class FarmWorld:  # Main + the farm area; swap in main.gd's order
+    def __init__(fw, boot_save=None, order="real"):
+        fw.farm, fw.order = Farm(), order
+        if boot_save: fw.farm.saved = {k: dict(v) for k, v in boot_save.items()}
+        fw.area = fw.new_area()
+    def new_area(fw, with_plots=True):
+        plots = [Plot(pid) for pid in PLOT_IDS] if with_plots else []
+        for p in plots: fw.farm.register(p)
+        return plots
+    def reload(fw, with_plots=True):
+        old = fw.area
+        if fw.order == "no_snapshot": pass
+        elif fw.order == "after_unload":
+            for n in old: n.valid = False
+            fw.farm.release(old)
+        else: fw.farm.release(old)
+        for n in old: n.valid = False                     # remove_child + free()
+        fw.area = fw.new_area(with_plots)
+def random_plot(rnd, p):
+    p.state = rnd.choice(STATES); p.memory = rnd.sample(["wild_carrot", "meadow_herb", "elderbloom"], rnd.randint(0, 2))
+    if p.state in ("PLANTED", "GROWING", "READY"):
+        p.crop = rnd.choice(["wild_carrot", "meadow_herb", "elderbloom", "golden_sunflower"])
+        p.f = {"stage": rnd.randint(0, 3), "needs_water": p.state != "READY" and rnd.random() < 0.5,
+               "stage_time_left": round(rnd.uniform(0, 60), 3), "soil": rnd.randint(0, 2), "care": rnd.randint(0, 2),
+               "quality": rnd.randint(0, 2), "longest_thirst": round(rnd.uniform(0, 90), 3),
+               "thirsty_for": round(rnd.uniform(0, 30), 3) if rnd.random() < 0.5 else -1.0}
+        p.harvesting = p.state == "READY" and rnd.random() < 0.2; p.paid = p.harvesting and rnd.random() < 0.5
+    else: p.crop, p.f, p.harvesting, p.paid = "", {}, False, False   # EMPTY / SOIL hold no crop
+def by_id(fw): return {p.pid: p for p in fw.area}
+
+fw = FarmWorld(); before = fw.farm.save(); fw.reload()
+assert fw.farm.save() == before and all(p.state == "EMPTY" for p in fw.area), "empty farm survives as empty"
+fw = FarmWorld(); rnd = random.Random(1); p0 = fw.area[0]; random_plot(rnd, p0)
+while p0.state not in ("GROWING", "READY"): random_plot(rnd, p0)
+before = fw.farm.save(); fw.reload()
+assert fw.farm.save() == before and by_id(fw)[p0.pid].capture() == before[p0.pid], "one modified plot: every field back"
+assert not fw.farm.rejected and not fw.farm.unloaded and all(n in fw.area for n in fw.farm.plots.values()), \
+    "no duplicate rejection; no old references; nothing left waiting"
+for bad in ("no_snapshot", "after_unload"):
+    fb = FarmWorld(order=bad); pb = fb.area[0]; pb.state, pb.crop, pb.f = "GROWING", "wild_carrot", {k: 1 for k in CAP_KEYS}
+    saved = fb.farm.save(); fb.reload()
+    assert fb.farm.save() != saved, f"{bad}: the farm would be lost (shown)"
+rnd = random.Random(7)
+for trial in range(1500):
+    boot = None
+    if rnd.random() < 0.3:  # start from a saved game (ready crops counted once at boot)
+        tmp = FarmWorld()
+        for p in tmp.area: random_plot(rnd, p); p.harvesting = p.paid = False
+        boot = tmp.farm.save()
+    fw = FarmWorld(boot)
+    for p in rnd.sample(fw.area, rnd.randint(0, len(fw.area))): random_plot(rnd, p)   # empty .. fully modified
+    ready_before = dict(fw.farm.ready)
+    for _ in range(rnd.randint(1, 3)):                                               # reload once, twice, three times
+        before = fw.farm.save()
+        if rnd.random() < 0.3:                                                       # away in an area without plots,
+            fw.reload(with_plots=False)                                              # autosave meanwhile keeps them
+            assert fw.farm.save() == before and not fw.farm.plots, "saved while the farm area is away: nothing lost"
+        fw.reload()
+        assert fw.farm.save() == before, "autosave right after a reload: identical farm"
+        assert not fw.farm.rejected and not fw.farm.unloaded
+        assert all(n.valid and n in fw.area for n in fw.farm.plots.values()), "no reference to an old area survives"
+        assert fw.farm.ready == ready_before, "ready crops are not counted again"
+print(f"farm across reload: fields {CAP_KEYS}; empty/one/many/partial, reload x1-3, away-then-back, "
+      "autosave after reload, 1500 random runs OK (no-snapshot / snapshot-after-unload shown to lose the farm)")
 print("ALL AREA LOADER SIMULATIONS PASSED")

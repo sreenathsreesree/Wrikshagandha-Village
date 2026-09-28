@@ -9,8 +9,8 @@ extends Node3D
 ##
 ## Area loading (M03.2) is infrastructure only: nothing in the game calls
 ## load_area() yet (no door or transition until M08.1, and area-safe farm
-## state is M03.3 — until then a reload restarts the farm plots). For the
-## playtest it is called from the Godot remote debugger.
+## state is M03.3: farm plots survive a reload). For the playtest it is
+## called from the Godot remote debugger.
 
 @onready var player: Player = $Player
 @onready var follow_camera: FollowCamera = $FollowCamera
@@ -30,10 +30,12 @@ func load_area(scene: PackedScene, entry_id: String) -> void:
 		return
 	_swap_area.call_deferred(scene, entry_id)
 
-## The old area leaves the tree and is freed at once — before the new one
-## is added — so its groups, plot ids and navigation region are gone when
-## the new area's nodes register. The new area goes first among Main's
-## children, keeping the processing order (area, player, camera, HUD).
+## The old area's farm plots are captured first (FarmManager, M03.3) —
+## while they still exist — then it leaves the tree and is freed at once,
+## before the new one is added, so its groups, plot ids and navigation
+## region are gone when the new area's nodes register (and restore). The
+## new area goes first among Main's children, keeping the processing order
+## (area, player, camera, HUD).
 func _swap_area(scene: PackedScene, entry_id: String) -> void:
 	var instance := scene.instantiate()
 	var next := instance as MeadowArea
@@ -43,6 +45,7 @@ func _swap_area(scene: PackedScene, entry_id: String) -> void:
 		return
 	FarmManager.cancel_seed_choice()
 	var old := area
+	FarmManager.release_plots_in(old)
 	remove_child(old)
 	old.free()
 	area = next

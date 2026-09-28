@@ -138,6 +138,11 @@ var _pending_plot: FarmPlot
 ## loaded by an autoload, before the world scene exists). Carried forward
 ## into the next save untouched if a plot never shows up.
 var _saved_plot_states: Dictionary = {}
+## Plot states captured when their area unloaded (M03.3), by plot_id. The
+## crops still exist, so the derived counts (ready crops, garden interest)
+## already include them and keep doing so; the area's next instance restores
+## them on registration without counting them again.
+var _unloaded_plot_states: Dictionary = {}
 
 func _ready() -> void:
 	_load_crops()
@@ -297,6 +302,12 @@ func register_plot(plot: FarmPlot) -> void:
 		_starter_plot_ids.append(plot.plot_id)
 	elif not plot.unlocked and plot.unlock_on_milestone != "" and _milestones_reached.has(plot.unlock_on_milestone):
 		plot.set_unlocked(true)
+	if _unloaded_plot_states.has(plot.plot_id):
+		# Back from an area reload: exactly as it was when the area unloaded.
+		var kept: Dictionary = _unloaded_plot_states[plot.plot_id]
+		_unloaded_plot_states.erase(plot.plot_id)
+		plot.restore(kept, _find_crop(String(kept.get("crop", ""))))
+		return
 	if _saved_plot_states.has(plot.plot_id):
 		var data: Dictionary = _saved_plot_states[plot.plot_id]
 		_saved_plot_states.erase(plot.plot_id)
@@ -308,6 +319,19 @@ func register_plot(plot: FarmPlot) -> void:
 			_ready_by_crop[restored.crop_id] = int(_ready_by_crop.get(restored.crop_id, 0)) + 1
 			_last_ripened_msec = maxi(_last_ripened_msec, 0)
 			_update_garden_interest()
+
+## Called by Main just before an area is unloaded (M03.3): every plot inside
+## it is captured by its stable id and forgotten, so nothing points at the
+## freed nodes, a save made meanwhile still has them, and the area's next
+## instance restores them when its plots register.
+func release_plots_in(area: Node) -> void:
+	for plot_id: String in _plots.keys():
+		var plot := _get_plot(plot_id)
+		if plot == null:
+			_plots.erase(plot_id)
+		elif area.is_ancestor_of(plot):
+			_unloaded_plot_states[plot_id] = plot.capture()
+			_plots.erase(plot_id)
 
 ## The one entry point a future expansion would use — no UI or cost here.
 func unlock_plot(plot_id: String) -> void:
@@ -474,6 +498,7 @@ func get_activity_counts() -> Dictionary:
 ## (ready counts, garden interest, unlocked plots) is rebuilt, never saved.
 func get_save_data() -> Dictionary:
 	var plots := _saved_plot_states.duplicate(true)
+	plots.merge(_unloaded_plot_states.duplicate(true), true)
 	for plot_id: String in _plots:
 		var plot := _get_plot(plot_id)
 		if plot:
@@ -533,6 +558,7 @@ func apply_save_data(data: Dictionary) -> void:
 		_harvested_plot_ids.append(String(plot_id))
 	_garden_found = bool(data.get("garden_found", false))
 	_saved_plot_states = data.get("plots", {}).duplicate(true)
+	_unloaded_plot_states.clear()
 	_update_garden_interest()
 	seeds_changed.emit()
 	produce_changed.emit()
