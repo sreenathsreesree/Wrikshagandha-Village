@@ -7,21 +7,54 @@ class_name Interactable
 ## scene has a child named "Indicator" it is shown/hidden automatically as
 ## the player enters/leaves range, reused for the harvest burst, and given
 ## its rarity presentation — no per-item code needed for any of that.
+##
+## Harvest also gets a brief category-flavored "windup" before the pop —
+## driven entirely by DiscoveryDefinition.category/.rarity through the two
+## data tables below, never by a per-item script.
 
 const HarvestBurstScene := preload("res://scenes/interactables/HarvestBurst.tscn")
+
+## Each category's personality: a target scale shape and a small upward
+## lift, applied briefly before the shared pop-and-shrink. "flower" blooms
+## wide, "fungus" squashes, "mineral" gathers itself (paired with the
+## existing indicator sparkle burst), everything else gets a gentle lift.
+const CATEGORY_WINDUP := {
+	"flower": {"scale": Vector3(1.15, 1.3, 1.15), "lift": 0.02},
+	"fungus": {"scale": Vector3(1.2, 0.7, 1.2), "lift": 0.0},
+	"mineral": {"scale": Vector3(0.92, 0.92, 0.92), "lift": 0.0},
+	"plant": {"scale": Vector3(1.05, 1.15, 1.05), "lift": 0.06},
+	"insect": {"scale": Vector3(1.1, 1.1, 1.1), "lift": 0.04},
+	"animal": {"scale": Vector3(1.1, 1.1, 1.1), "lift": 0.04},
+	"mystery": {"scale": Vector3(1.1, 1.1, 1.1), "lift": 0.05},
+}
+const DEFAULT_WINDUP := {"scale": Vector3(1.05, 1.15, 1.05), "lift": 0.06}
+
+## How much stronger the windup reads at higher rarity — still restrained,
+## never a different animation, just a bit more of the same one.
+const RARITY_INTENSITY := {
+	"common": 1.0,
+	"uncommon": 1.1,
+	"rare": 1.2,
+	"very_rare": 1.3,
+	"legendary": 1.4,
+}
+
+const WINDUP_DURATION := 0.09
 
 signal harvested(discovery_id: String)
 
 @export var discovery_id: String = ""
 @export var remove_on_harvest: bool = true
 
+var _definition: DiscoveryDefinition
+
 func _ready() -> void:
-	var definition := DiscoveryDatabase.get_definition(discovery_id)
-	if definition == null:
+	_definition = DiscoveryDatabase.get_definition(discovery_id)
+	if _definition == null:
 		return
 	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
 	if indicator:
-		indicator.set_rarity(definition.rarity)
+		indicator.set_rarity(_definition.rarity)
 
 func set_highlighted(active: bool) -> void:
 	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
@@ -77,8 +110,12 @@ func _hide_indicator(indicator: DiscoveryIndicator) -> void:
 	indicator.visible = false
 	indicator.scale = Vector3.ONE
 
+## APPROACH -> interact() -> (this) tiny anticipation/personality windup ->
+## pop -> burst/particles/sound -> shrink away. Kept fast throughout — the
+## windup is under a tenth of a second — so it never feels slow on mobile.
 func _play_harvest_feedback() -> void:
 	monitorable = false
+	await _play_category_windup()
 	_play_collected_burst()
 	_spawn_harvest_particles()
 	_play_harvest_sound()
@@ -87,6 +124,25 @@ func _play_harvest_feedback() -> void:
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(self, "scale", Vector3.ZERO, 0.2) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	await tween.finished
+
+func _play_category_windup() -> void:
+	var category: String = _definition.category if _definition else "plant"
+	var rarity: String = _definition.rarity if _definition else "common"
+	var preset: Dictionary = CATEGORY_WINDUP.get(category, DEFAULT_WINDUP)
+	var intensity: float = RARITY_INTENSITY.get(rarity, 1.0)
+
+	var preset_scale: Vector3 = preset["scale"]
+	var windup_scale := Vector3.ONE + (preset_scale - Vector3.ONE) * intensity
+	var lift: float = preset["lift"] * intensity
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(self, "scale", windup_scale, WINDUP_DURATION) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	if lift > 0.0:
+		tween.tween_property(self, "position:y", position.y + lift, WINDUP_DURATION) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	await tween.finished
 
 ## A quick sparkle "pop" on the shared indicator gem — reuses an object

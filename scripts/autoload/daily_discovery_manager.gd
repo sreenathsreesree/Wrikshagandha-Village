@@ -16,7 +16,10 @@ var completed_date: String = ""
 
 func _ready() -> void:
 	_ensure_today_target()
+	# A repeat harvest of today's target still completes it — first-time
+	# vs repeat only matters for Journal/Collection/session-exploration.
 	DiscoveryManager.discovery_made.connect(_on_discovery_made)
+	DiscoveryManager.discovery_repeated.connect(_on_discovery_made)
 
 func is_completed_today() -> bool:
 	return completed_date == _today_string()

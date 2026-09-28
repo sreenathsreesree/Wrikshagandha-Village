@@ -1,7 +1,10 @@
 extends Node
 
 ## Tracks which discoveries the player has already made this game and
-## coordinates awarding points the first time something is discovered.
+## always awards points on harvest — first-time or repeat. First-time and
+## repeat are still distinguished (via which signal fires) so Journal/
+## Collection/session-exploration bookkeeping only cares about first-time,
+## while points and Daily Discovery completion work identically either way.
 
 signal discovery_made(definition: DiscoveryDefinition)
 signal discovery_repeated(definition: DiscoveryDefinition)
@@ -13,13 +16,18 @@ func discover(id: String) -> bool:
 	if definition == null:
 		push_warning("DiscoveryManager: unknown discovery id '%s'" % id)
 		return false
-	if discovered_ids.has(id):
-		discovery_repeated.emit(definition)
-		return false
-	discovered_ids.append(id)
+
+	var is_first_time := not discovered_ids.has(id)
+	if is_first_time:
+		discovered_ids.append(id)
+
 	PointsManager.add_points(definition.points_value)
 	AmbientAudioManager.play_discovery_sound()
-	discovery_made.emit(definition)
+
+	if is_first_time:
+		discovery_made.emit(definition)
+	else:
+		discovery_repeated.emit(definition)
 	return true
 
 func is_discovered(id: String) -> bool:

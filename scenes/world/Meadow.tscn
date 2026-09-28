@@ -422,6 +422,9 @@ rotation_degrees = Vector3(0, 200, 0)
 [node name="UnusualFlowerPatchNearHiddenHerb" parent="Clues" instance=ExtResource("27")]
 position = Vector3(-8.3, 0, -16.4)
 
+[node name="GlowingMotesNearHiddenHerb" parent="Clues" instance=ExtResource("24")]
+position = Vector3(-9.4, 0.1, -17.5)
+
 [node name="UnusualFlowerPatchNearGoldenLeaf" parent="Clues" instance=ExtResource("27")]
 position = Vector3(2.3, 0, 15.8)
 

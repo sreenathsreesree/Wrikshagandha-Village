@@ -55,7 +55,7 @@ func set_proximity(t: float) -> void:
 	_proximity = clamp(t, 0.0, 1.0)
 	var material := _get_gem_material()
 	if material:
-		material.emission_energy_multiplier = _base_emission_energy * (1.0 + _proximity * 1.2)
+		material.emission_energy_multiplier = _base_emission_energy * (1.0 + _proximity * 1.0)
 	if _proximity >= CHIME_THRESHOLD and not _chime_played:
 		_chime_played = true
 		AmbientAudioManager.play_proximity_chime()
@@ -65,10 +65,10 @@ func set_proximity(t: float) -> void:
 func _process(delta: float) -> void:
 	if visible:
 		_time += delta
-		var speed_boost := 1.0 + _proximity * 0.8
+		var speed_boost := 1.0 + _proximity * 0.5
 		position.y = _base_y + sin(_time * bob_speed * speed_boost) * bob_height
 		rotate_y(spin_speed * speed_boost * delta)
-		scale = Vector3.ONE * (1.0 + _proximity * 0.25)
+		scale = Vector3.ONE * (1.0 + _proximity * 0.18)
 		return
 
 	if rarity != "very_rare" and rarity != "legendary":
