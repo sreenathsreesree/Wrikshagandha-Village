@@ -32,6 +32,7 @@ func _ready() -> void:
 	ExplorationManager.curiosity_bonus_awarded.connect(_on_curiosity_bonus_awarded)
 	ExplorationManager.session_summary_ready.connect(_on_session_summary_ready)
 	DailyDiscoveryManager.daily_completed.connect(_on_daily_completed)
+	FarmManager.crop_harvested.connect(_on_crop_harvested)
 
 	interact_button.pivot_offset = interact_button.size / 2.0
 	interact_button.pressed.connect(_on_interact_button_pressed)
@@ -87,6 +88,13 @@ func _on_daily_completed(definition: DiscoveryDefinition, bonus_points: int) -> 
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	notification.show_message("✓ Daily Discovery Complete", definition.display_name, "+%d Wriksha Points" % bonus_points)
+
+## Reuses the exact same notification card as a discovery harvest — a
+## crop is presented the same way, not a separate farming UI.
+func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("✦ Harvested ✦", crop_definition.display_name, "+%d Wriksha Points" % points_awarded)
 
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()

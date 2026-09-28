@@ -45,6 +45,7 @@ const PLACES := [
 	{"id": "secluded_pond_nook", "display_name": "Secluded Pond Nook"},
 	{"id": "mystery_grove_tree", "display_name": "Mystery Grove Tree"},
 	{"id": "hidden_flower_pocket", "display_name": "Hidden Flower Pocket"},
+	{"id": "quiet_farm", "display_name": "Quiet Farm"},
 ]
 
 ## A secret location paired with the "intended" discovery near it. If the

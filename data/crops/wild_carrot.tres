@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="CropDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/farming/crop_definition.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/farming/crops/WildCarrot.tscn" id="2"]
+
+[resource]
+script = ExtResource("1")
+crop_id = "wild_carrot"
+display_name = "Wild Carrot"
+category = "plant"
+rarity = "common"
+points_value = 12
+seed_duration = 0.0
+sprout_duration = 10.0
+growing_duration = 20.0
+visual_scene = ExtResource("2")

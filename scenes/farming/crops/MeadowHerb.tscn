@@ -1,0 +1,39 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/farming/crop_visual.gd" id="1"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_stem"]
+top_radius = 0.008
+bottom_radius = 0.016
+height = 0.26
+
+[sub_resource type="StandardMaterial3D" id="Material_herb"]
+albedo_color = Color(0.42, 0.44, 0.2, 1)
+roughness = 0.85
+
+[node name="MeadowHerb" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Stem1" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.13, 0)
+rotation_degrees = Vector3(0, 0, 0)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_herb")
+
+[node name="Stem2" type="MeshInstance3D" parent="."]
+position = Vector3(0.05, 0.12, 0.03)
+rotation_degrees = Vector3(8, 30, -12)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_herb")
+
+[node name="Stem3" type="MeshInstance3D" parent="."]
+position = Vector3(-0.04, 0.12, -0.03)
+rotation_degrees = Vector3(-6, -35, 10)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_herb")
+
+[node name="Stem4" type="MeshInstance3D" parent="."]
+position = Vector3(0.01, 0.12, -0.05)
+rotation_degrees = Vector3(-8, 90, 6)
+mesh = SubResource("CylinderMesh_stem")
+surface_material_override/0 = SubResource("Material_herb")

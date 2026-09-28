@@ -145,4 +145,11 @@ func _on_interact_requested() -> void:
 		return
 	var target: Interactable = _nearby_interactables[0]
 	target.interact()
-	_nearby_interactables.erase(target)
+	# Only stop tracking it if it's actually gone (or about to be) after
+	# this interaction — a one-shot discovery with remove_on_harvest still
+	# gets dropped immediately so a second press can't double-harvest it
+	# mid-animation, but a persistent multi-state interactable (e.g. a
+	# FarmPlot cycling through prepare/plant/water/harvest) must stay
+	# tracked so the next press keeps landing on it.
+	if target.remove_on_harvest:
+		_nearby_interactables.erase(target)

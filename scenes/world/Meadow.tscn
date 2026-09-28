@@ -1,4 +1,4 @@
-[gd_scene load_steps=44 format=3]
+[gd_scene load_steps=48 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -37,6 +37,10 @@
 [ext_resource type="PackedScene" path="res://scenes/world/props/Reed.tscn" id="35"]
 [ext_resource type="Script" path="res://scripts/world_simulation/environmental_event.gd" id="36"]
 [ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark.gd" id="37"]
+[ext_resource type="PackedScene" path="res://scenes/farming/FarmPlot.tscn" id="38"]
+[ext_resource type="Resource" path="res://data/crops/wild_carrot.tres" id="39"]
+[ext_resource type="Resource" path="res://data/crops/meadow_herb.tres" id="40"]
+[ext_resource type="Resource" path="res://data/crops/golden_sunflower.tres" id="41"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -534,11 +538,52 @@ position = Vector3(18.0, 0, -3.0)
 [node name="HiddenFlowerPocketGrass" parent="SecretSpots" instance=ExtResource("13")]
 position = Vector3(17.3, 0, -2.0)
 
+[node name="Farm" type="Node3D" parent="."]
+
+[node name="FarmPlot1" parent="Farm" instance=ExtResource("38")]
+position = Vector3(11.0, 0, 0.5)
+crop_definition = ExtResource("39")
+
+[node name="FarmPlot2" parent="Farm" instance=ExtResource("38")]
+position = Vector3(13.2, 0, 0.9)
+rotation_degrees = Vector3(0, 25, 0)
+crop_definition = ExtResource("39")
+
+[node name="FarmPlot3" parent="Farm" instance=ExtResource("38")]
+position = Vector3(10.8, 0, 2.8)
+rotation_degrees = Vector3(0, -15, 0)
+crop_definition = ExtResource("40")
+
+[node name="FarmPlot4" parent="Farm" instance=ExtResource("38")]
+position = Vector3(13.5, 0, 3.0)
+rotation_degrees = Vector3(0, 10, 0)
+crop_definition = ExtResource("40")
+
+[node name="FarmPlot5" parent="Farm" instance=ExtResource("38")]
+position = Vector3(12.0, 0, 4.0)
+rotation_degrees = Vector3(0, -30, 0)
+crop_definition = ExtResource("41")
+
+[node name="FarmGrass1" parent="Farm" instance=ExtResource("13")]
+position = Vector3(10.2, 0, 0.2)
+
+[node name="FarmGrass2" parent="Farm" instance=ExtResource("13")]
+position = Vector3(14.2, 0, 3.4)
+
+[node name="FarmRock1" parent="Farm" instance=ExtResource("12")]
+position = Vector3(10.2, 0, 3.4)
+scale = Vector3(0.6, 0.6, 0.6)
+rotation_degrees = Vector3(0, 50, 0)
+
+[node name="FarmTree1" parent="Farm" instance=ExtResource("9")]
+position = Vector3(14.5, 0, 1.2)
+rotation_degrees = Vector3(0, 100, 0)
+
 [node name="Wildlife" type="Node3D" parent="."]
 
 [node name="Rabbit1" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(5, 0.15, 4)
-interest_points = [Vector3(2.5, 0.15, -1)]
+interest_points = [Vector3(2.5, 0.15, -1), Vector3(12.1, 0.15, 2.0)]
 
 [node name="Rabbit2" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(-16, 0.15, 8)
@@ -688,6 +733,13 @@ position = Vector3(-9, 0, -12)
 location_id = "ancient_grove"
 kind = 0
 radius = 5.0
+
+[node name="QuietFarmLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(12.1, 0, 2.2)
+location_id = "quiet_farm"
+kind = 0
+radius = 3.5
 
 [node name="WorldSimulation" parent="." instance=ExtResource("28")]
 
