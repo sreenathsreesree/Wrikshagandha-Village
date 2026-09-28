@@ -606,6 +606,69 @@ if refs:
     err(f"game content must not reference tools/: {refs}")
 notes.append(f"interaction contract: {len(subclasses)} Interactable implementations {sub_names + ['(probe)']}")
 
+# ------------------------------------------------------------ interaction verbs
+# Verbs are data (decision D-09, M02.2): one enum, Interactable.Verb, whose
+# names come from D-09; objects offer verbs for their current state through
+# one guarded query; Player/InputManager never name a specific verb; verbs
+# are never spelled as strings.
+d09 = re.search(r"^\| D-09 \|[^|]*capabilities:\s*([^.]*)\.", open("docs/DESIGN_DECISIONS.md", encoding="utf-8").read(), re.M)
+D09_VERBS = {v.strip().upper() for v in d09.group(1).split(",")} if d09 else set()
+if not D09_VERBS:
+    err("docs/DESIGN_DECISIONS.md: D-09 verb list not found")
+verb_enums = [(f, m) for f, s2 in scripts.items() for m in re.finditer(r"^enum\s+(\w*Verb\w*)\s*\{([^}]*)\}", s2, re.M)]
+if len(verb_enums) != 1 or verb_enums[0][0] != BASE or verb_enums[0][1].group(1) != "Verb":
+    err(f"interaction verbs: expected exactly one 'enum Verb' in {BASE}, found {[(f, m.group(1)) for f, m in verb_enums]}")
+    VERBS = {}
+else:
+    VERBS = {}
+    for item in [x.strip() for x in verb_enums[0][1].group(2).split(",") if x.strip()]:
+        m = re.fullmatch(r"([A-Z_]+)\s*=\s*(\d+)", item)
+        if not m:
+            err(f"{BASE}: Verb.{item} needs an explicit, stable value")
+            continue
+        VERBS[m.group(1)] = int(m.group(2))
+    if len(set(VERBS.values())) != len(VERBS):
+        err(f"{BASE}: Verb values must be unique {VERBS}")
+    for name in sorted(set(VERBS) - D09_VERBS):
+        err(f"{BASE}: Verb.{name} is not a decided verb (D-09: {sorted(D09_VERBS)})")
+gav = func_body(base_src, "get_available_interaction_verbs") or ""
+if not re.search(r"if is_interaction_available\(\):\s*verbs = _get_interaction_verbs\(\)", gav):
+    err(f"{BASE}: get_available_interaction_verbs() must offer nothing while unavailable")
+iwv = func_body(base_src, "interact_with_verb") or ""
+if not re.search(r"if not get_available_interaction_verbs\(\)\.has\(verb\):\s*return false.*_perform_interaction_verb\(verb\)", iwv, re.S):
+    err(f"{BASE}: interact_with_verb() must perform only a currently offered verb")
+if "interact()" not in (func_body(base_src, "_perform_interaction_verb") or ""):
+    err(f"{BASE}: _perform_interaction_verb() must default to interact() (existing behaviour)")
+for f in subclasses:
+    for fn in ("get_available_interaction_verbs", "interact_with_verb"):
+        if func_body(scripts[f], fn) is not None:
+            err(f"{f}: overrides {fn}() — override _get_interaction_verbs()/_perform_interaction_verb() instead")
+EXPECTED_VERBS = {"scripts/interactables/discovery_interactable.gd": {"COLLECT"},
+                  "scripts/farming/farm_plot.gd": {"PLANT", "WATER", "HARVEST"}}
+for f, want in EXPECTED_VERBS.items():
+    body = func_body(scripts.get(f, ""), "_get_interaction_verbs") or ""
+    have = set(re.findall(r"\bVerb\.([A-Z_]+)", body))
+    if have != want:
+        err(f"{f}: _get_interaction_verbs() offers {sorted(have)}, expected {sorted(want)} (from its existing behaviour)")
+for f in (PL, IM):
+    m = re.search(r"\bVerb\.[A-Z_]+", code_only(scripts.get(f, "")))
+    if m:
+        err(f"{f}: names a specific verb '{m.group(0)}' — Player/InputManager stay verb-agnostic")
+# (Lower-case words such as the "plant" discovery category are nouns, not
+# verbs: a string counts as a verb when it's spelled in upper case, or on a
+# line that is about verbs.)
+for f, s2 in scripts.items():
+    for line in code_only(s2).splitlines():
+        for m in re.finditer(r"\"([A-Za-z_]+)\"", line):
+            word = m.group(1)
+            if word.upper() in D09_VERBS | set(VERBS) and (word.isupper() or re.search(r"verb", line, re.I)):
+                err(f"{f}: verb spelled as a string \"{word}\" — use Interactable.Verb")
+    if f != BASE:
+        for m in re.finditer(r"\bVerb\.([A-Za-z_]+)", code_only(s2)):
+            if m.group(1) not in VERBS:
+                err(f"{f}: unknown verb Verb.{m.group(1)}")
+notes.append(f"interaction verbs: {sorted(VERBS, key=VERBS.get)} (D-09 subset)")
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).

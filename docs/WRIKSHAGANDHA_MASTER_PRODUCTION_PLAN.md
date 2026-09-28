@@ -390,7 +390,7 @@ Goal: one generic interaction architecture for everything touchable.
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
 | M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[~]` |
-| M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[ ]` |
+| M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[~]` |
 | M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[ ]` |
 | M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
@@ -421,6 +421,32 @@ Goal: one generic interaction architecture for everything touchable.
   - Farm plot: prepare, plant, water and harvest as before; a locked plot and a plot mid-harvest can't be tapped.
   - Walk-to-interact, tap cancellation and the INTERACT state behave as in M01.3–M01.5.
   - Save, quit and reload: discoveries, points and farm restored as before.
+- **Commit:** §15.
+
+**M02.2 — Generic interaction verbs as data** `[~]` Implemented — runtime testing pending
+- **Objective:** an interactable advertises the verbs it offers in its current state, as data, without Player or InputManager knowing its type. Contract only: no verb UI, no new behaviour.
+- **Audit:**
+  - No verb representation existed, and no verb strings anywhere. The repository's convention for small closed sets is a class-scoped enum (`PlotState`, `AnimState`, `MovementMode`); `Interactable` is the one type every interactable and Player already share.
+  - Discovery `interact()` does one thing, collect, and succeeds exactly when `DiscoveryDatabase.has_definition(discovery_id)`.
+  - `FarmPlot.interact()` does one thing per state: EMPTY → prepare soil; SOIL → seed picker (plant, guarded by `can_plant()`); PLANTED/GROWING while thirsty → water; READY → harvest (guarded by a crop and not harvesting). Plus a 450 ms action cooldown.
+  - Preparing soil is existing gameplay that no D-09 verb names (recorded as O-10).
+  - `interact() -> bool` works and is the tap path; it stays the low-level execution API.
+- **Decision:** `enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4 }` on `Interactable`.
+  - Typed and shared by every interactable with no new file, autoload or resource. Deterministic; explicit, never-reused values keep it stable if ever saved; future UI can map a verb to a label.
+  - Only the D-09 verbs existing objects perform; the rest are added with their behaviours. A Resource per verb was rejected as heavier than a closed set needs; strings were rejected as easy to misspell.
+- **Files:** `scripts/interactables/interactable.gd`, `scripts/interactables/discovery_interactable.gd`, `scripts/farming/farm_plot.gd` (one read-only query added), `tools/check_project.py`, `tools/sims/sim_interaction.py`, docs. Player and InputManager unchanged.
+- **Implementation:**
+  - `get_available_interaction_verbs() -> Array[Verb]`: the current verbs; empty whenever the object is unavailable. Subclasses override `_get_interaction_verbs()`, never the guarded wrapper.
+  - `interact_with_verb(verb) -> bool`: a selected verb passed back generically; performed only if offered now, through `_perform_interaction_verb()`, which defaults to the existing `interact()`. Nothing calls it yet.
+  - Discovery offers `COLLECT` when its definition exists. FarmPlot offers `PLANT` (SOIL, `can_plant()`), `WATER` (PLANTED/GROWING while thirsty) or `HARVEST` (READY with a crop, not harvesting), otherwise nothing. The probe fixture offers nothing (a valid empty list).
+  - The tap path is unchanged: Player still calls `interact()`.
+- **Intentionally deferred:** the verb for preparing soil (O-10); the cooldown isn't reflected in verbs; routing a UI-selected verb through Player's guarded path (INTERACT state, one-shot guard) arrives with the UI that needs it; several verbs at once per object; verb labels/UI.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - Verb checks: one `enum Verb` in the base, names from D-09, explicit unique values; nothing offered while unavailable; only offered verbs performed, via `interact()`; no subclass overrides the guarded functions; each object offers the verbs of its existing behaviour; Player/InputManager name no verb; no verb spelled as a string; no unknown `Verb.X`.
+  - `sim_interaction.py`: FarmPlot's `interact()` and verb query are read from the GDScript and cross-checked state by state (same action, same guard); all 80 plot condition combinations; discovery available/unavailable; empty lists; changing verbs; the generic ask → choose → pass-back path.
+  - Mutation-tested: 21 GDScript and 7 model mutations caught.
+- **Runtime test:** none needed on its own (no behaviour change); covered by M02.1's checklist at the playtest gate.
 - **Commit:** §15.
 
 ### PHASE 03 — CAMERA / WORLD SHELL
@@ -585,8 +611,9 @@ No large world expansion before this gate passes.
 | M01.4 | `443503f` |
 | M01.5 | `9ec60f1` |
 | M02.1 | `1a6b2cd` |
+| M02.2 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's runtime test). In Phase 02 the next is **M02.2 — generic verbs as data**. Either starts only on the developer's instruction.
+- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.2 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's runtime test). In Phase 02 the next is **M02.3 — facing the object on arrival**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

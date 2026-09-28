@@ -116,6 +116,10 @@ Main (Node3D)                       scenes/Main.tscn
   - `is_interaction_available()`: availability, backed by `monitorable`, so the InteractionZone and tap rays agree. Implementations change it by toggling `monitorable`.
   - `interact() -> bool`: the one entry point. It may await; the Player's INTERACT state lasts until it returns.
   - `remove_on_harvest`: one-shot (gone after a successful interaction) or persistent.
+  - **Verbs as data (M02.2):** `enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4 }` (D-09 names; explicit values, never reused; never strings).
+    - `get_available_interaction_verbs()`: what the object offers in its current state; empty while unavailable. Implementations override `_get_interaction_verbs()`.
+    - `interact_with_verb(verb)`: a selected verb passed back; performed only if offered, via `_perform_interaction_verb()` (default: `interact()`). Nothing calls it yet.
+    - Today each object offers at most one verb: the action `interact()` performs. Discovery: `COLLECT`. FarmPlot: `PLANT` / `WATER` / `HARVEST` by state; an EMPTY plot offers none (O-10). The tap path still calls `interact()`.
   - `get_interaction_metadata()`: optional read-only facts, empty by default; nothing reads it yet.
   - `set_highlighted()` / `update_proximity()`: in-range presentation on the `Indicator` child.
   - Shared presentation: `HarvestBurstScene`, `RARITY_INTENSITY`, `_play_harvest_sound()`.
@@ -123,8 +127,8 @@ Main (Node3D)                       scenes/Main.tscn
   - `DiscoveryInteractable` (`discovery_interactable.gd`): collects a discovery through `DiscoveryManager`, emits `harvested` (used by `DiscoverySpawnPoint` to respawn), plays the category/rarity windup and removes itself.
   - `FarmPlot`: the farming state machine, persistent.
   - A non-game probe (`tools/fixtures/generic_interactable_probe.gd`, never imported by Godot) proves the contract works for an object that is neither.
-- **Rules (toolkit-enforced):** Player and InputManager use only the contract and never name an implementation; `interact()` has one call site (`Player._interact_with`); the base holds no object-specific code; no second interaction hierarchy.
-- **Direction (Phase 02):** verbs as data (M02.2, decision D-09); further behaviours (NPC talk, door enter/exit, container open, read, give, feed…) are new implementations of the same contract.
+- **Rules (toolkit-enforced):** Player and InputManager use only the contract and never name an implementation or a specific verb; `interact()` has one call site (`Player._interact_with`); the base holds no object-specific code; no second interaction hierarchy.
+- **Direction (Phase 02):** a verb UI and routing its choice through Player's guarded path come later; further behaviours (NPC talk, door enter/exit, container open, read, give, feed…) are new implementations of the same contract.
 
 ## 8. Farming — FarmManager (frozen, decision D-11)
 - **Current:**

@@ -215,6 +215,24 @@ func interact() -> bool:
 		_last_action_msec = now
 	return true
 
+## The verb interact() would perform in the current state — a read-only
+## description, it changes nothing. Preparing an EMPTY plot has no verb yet
+## (open question O-10), so it offers none; the short action cooldown isn't
+## reflected. Locked or mid-harvest plots are unavailable, so offer nothing.
+func _get_interaction_verbs() -> Array[Verb]:
+	var verbs: Array[Verb] = []
+	match plot_state:
+		PlotState.SOIL:
+			if can_plant():
+				verbs.append(Verb.PLANT)
+		PlotState.PLANTED, PlotState.GROWING:
+			if _needs_water:
+				verbs.append(Verb.WATER)
+		PlotState.READY:
+			if crop_definition != null and not _is_harvesting:
+				verbs.append(Verb.HARVEST)
+	return verbs
+
 ## Worn grass gives way to a freshly turned mound that settles into dry
 ## soil, with a small puff of soil dust.
 func _prepare_soil() -> void:

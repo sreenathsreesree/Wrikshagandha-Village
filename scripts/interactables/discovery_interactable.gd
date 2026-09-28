@@ -55,6 +55,14 @@ func interact() -> bool:
 			queue_free()
 	return success
 
+## Collecting is what interact() does, and it succeeds exactly when the
+## discovery's definition exists (see DiscoveryManager.discover()).
+func _get_interaction_verbs() -> Array[Verb]:
+	var verbs: Array[Verb] = []
+	if DiscoveryDatabase.has_definition(discovery_id):
+		verbs.append(Verb.COLLECT)
+	return verbs
+
 func get_interaction_metadata() -> Dictionary:
 	return {"discovery_id": discovery_id}
 

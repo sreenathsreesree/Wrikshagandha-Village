@@ -11,8 +11,13 @@
 3. Random sequences: no one-shot object is ever interacted with twice, no
    unavailable object is ever interacted with, INTERACT is open exactly while
    an interaction runs.
+4. Verbs as data (M02.2): each object offers exactly the verb its interact()
+   would perform in its current state (FarmPlot's two match statements are
+   read from the GDScript and cross-checked state by state); nothing while
+   unavailable; an empty list is valid; a verb passed back generically is
+   performed only if offered.
 """
-import os, random, re
+import itertools, os, random, re
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 def _src(*p): return open(os.path.join(REPO, *p), encoding="utf-8").read()
@@ -121,4 +126,80 @@ for trial in range(2000):
     for o in objs:
         if o.one_shot: assert o.calls <= 1, "one-shot object interacted with twice"
 print("interaction contract: discovery / farm plot / probe through one Player path; 2000 random sequences OK")
+
+# ---------------------------------------------------------------- 4. verbs
+VERB = {n: int(v) for n, v in re.findall(r"(\w+) = (\d+)", re.search(r"^enum Verb \{([^}]*)\}", BASE, re.M).group(1))}
+assert VERB and len(set(VERB.values())) == len(VERB), VERB
+GAV = _body(BASE, "get_available_interaction_verbs")
+assert re.search(r"if is_interaction_available\(\):\s*verbs = _get_interaction_verbs\(\)", GAV), "no verbs while unavailable"
+IWV = _body(BASE, "interact_with_verb")
+assert IWV.find("get_available_interaction_verbs().has(verb)") < IWV.find("_perform_interaction_verb(verb)"), "only offered verbs run"
+assert "interact()" in _body(BASE, "_perform_interaction_verb"), "a verb runs the existing interact()"
+
+def arms(body):  # PlotState arms of the one match statement in a function body
+    out = {}
+    for m in re.finditer(r"^\t\t((?:PlotState\.\w+,?\s*)+):\n(.*?)(?=^\t\tPlotState|\Z)", body, re.M | re.S):
+        for st in re.findall(r"PlotState\.(\w+)", m.group(1)): out[st] = m.group(2)
+    return out
+ACTIONS = {"_prepare_soil": None, "request_seed_choice": "PLANT", "_water_crop": "WATER", "_harvest_crop": "HARVEST"}
+GUARD = {"PLANT": ["can_plant()"], "WATER": ["_needs_water"], "HARVEST": ["_is_harvesting", "crop_definition"]}
+DO, OFFER = arms(_body(PLOT, "interact")), arms(_body(PLOT, "_get_interaction_verbs"))
+STATES = re.search(r"^enum PlotState \{([^}]*)\}", PLOT, re.M).group(1).replace(" ", "").split(",")
+assert set(DO) == set(STATES), f"interact() handles every plot state {DO.keys()}"
+for st in STATES:
+    action = next((a for a in ACTIONS if a + "(" in DO[st]), None)
+    assert action, f"{st}: unknown farm action"
+    offered = re.findall(r"Verb\.(\w+)", OFFER.get(st, ""))
+    want = ACTIONS[action]
+    assert offered == ([want] if want else []), f"{st}: offers {offered}, but interact() does {action}"
+    for g in GUARD.get(want, []):
+        assert g in OFFER[st], f"{st}: Verb.{want} must be offered under the same condition as {action} ({g})"
+assert re.findall(r"Verb\.(\w+)", _body(DISC, "_get_interaction_verbs")) == ["COLLECT"]
+assert "DiscoveryDatabase.has_definition(discovery_id)" in _body(DISC, "_get_interaction_verbs"), \
+    "COLLECT exactly when DiscoveryManager.discover() would succeed"
+assert "_get_interaction_verbs" not in PROBE, "the probe keeps the base default: no verbs"
+
+# Ports (Python) of the three objects' current-state verbs and actions.
+def plot_offer(st, unlocked, harvesting, thirsty, has_crop):
+    if not (unlocked and not harvesting): return []                   # monitorable = unlocked and not harvesting
+    if st == "SOIL": return ["PLANT"]                                  # can_plant(): unlocked, SOIL, not harvesting
+    if st in ("PLANTED", "GROWING"): return ["WATER"] if thirsty else []
+    if st == "READY": return ["HARVEST"] if has_crop and not harvesting else []
+    return []                                                          # EMPTY: preparing has no verb (O-10)
+def plot_action(st, unlocked, harvesting, thirsty, has_crop):
+    if st == "EMPTY": return "prepare"
+    if st == "SOIL": return "PLANT" if unlocked and not harvesting else None
+    if st in ("PLANTED", "GROWING"): return "WATER" if thirsty else None
+    if st == "READY": return "HARVEST" if has_crop and not harvesting else None
+for st, unlocked, harvesting, thirsty, has_crop in itertools.product(STATES, *[(False, True)] * 4):
+    offer = plot_offer(st, unlocked, harvesting, thirsty, has_crop)
+    action = plot_action(st, unlocked, harvesting, thirsty, has_crop)
+    assert len(offer) <= 1
+    if unlocked and not harvesting:
+        assert offer == ([action] if action in VERB else []), (st, offer, action)
+    else:
+        assert offer == [], "an unavailable plot offers nothing"
+
+class VObj:  # the generic Player-side view: verbs + interact_with_verb, no type knowledge
+    def __init__(o, offer): o.offer, o.available, o.done = offer, True, []
+    def verbs(o): return list(o.offer) if o.available else []
+    def interact_with_verb(o, v):
+        if v not in o.verbs(): return False
+        o.done.append(v); return True
+def player_request(obj):  # future UI path: ask, choose, pass back — nothing type-specific
+    offered = obj.verbs()
+    return obj.interact_with_verb(offered[0]) if offered else False
+disc = VObj(["COLLECT"]); assert player_request(disc) and disc.done == ["COLLECT"]
+disc.available = False; assert disc.verbs() == [] and not player_request(disc), "harvesting discovery offers nothing"
+assert not disc.interact_with_verb("COLLECT") and disc.done == ["COLLECT"], "an unoffered verb is refused"
+unknown = VObj([]); assert unknown.verbs() == [] and not player_request(unknown), "empty verb list is valid"
+probe = VObj([]); assert not player_request(probe)
+plot = VObj([])
+for st, exp in (("EMPTY", []), ("SOIL", ["PLANT"]), ("GROWING", ["WATER"]), ("GROWING", []), ("READY", ["HARVEST"])):
+    plot.offer = plot_offer(st, True, False, exp == ["WATER"], True)
+    assert plot.verbs() == exp, (st, plot.verbs())
+    assert not plot.interact_with_verb("COLLECT"), "a verb the plot doesn't offer is refused"
+    if exp: assert player_request(plot) and plot.done[-1] == exp[0]
+assert plot.done == ["PLANT", "WATER", "HARVEST"], "verbs follow the plot's changing state"
+print(f"verbs: {sorted(VERB, key=VERB.get)}; plot states cross-checked against interact(): {STATES}")
 print("ALL INTERACTION SIMULATIONS PASSED")
