@@ -109,6 +109,16 @@ position = Vector3(12.2, 0.6, 11.7)
 scale = Vector3(0.7, 0.7, 0.7)
 rotation_degrees = Vector3(0, 100, 0)
 
+[node name="ApproachStepRock1" parent="Terrain" instance=ExtResource("12")]
+position = Vector3(9, 0, 8)
+scale = Vector3(0.5, 0.5, 0.5)
+rotation_degrees = Vector3(0, 20, 0)
+
+[node name="ApproachStepRock2" parent="Terrain" instance=ExtResource("12")]
+position = Vector3(11, 0, 9.6)
+scale = Vector3(0.55, 0.55, 0.55)
+rotation_degrees = Vector3(0, -15, 0)
+
 [node name="Path" type="Node3D" parent="Terrain"]
 
 [node name="Patch1" type="MeshInstance3D" parent="Terrain/Path"]
@@ -400,7 +410,7 @@ position = Vector3(3, 0, 0.5)
 discovery_scene = ExtResource("3")
 
 [node name="WildMintSpawn" parent="Discoverables" instance=ExtResource("19")]
-position = Vector3(8.5, 0, -7.5)
+position = Vector3(9.5, 0, -10.8)
 discovery_scene = ExtResource("4")
 
 [node name="SmallMushroomSpawn" parent="Discoverables" instance=ExtResource("19")]
@@ -451,6 +461,17 @@ position = Vector3(2.3, 0, 15.8)
 
 [node name="ButterflyNearAncientSeed" parent="Clues" instance=ExtResource("25")]
 position = Vector3(-18.5, 0, 11)
+
+[node name="GrassClumpNearGoldenLeaf" parent="Clues" instance=ExtResource("13")]
+position = Vector3(2.7, 0, 16.3)
+
+[node name="FootprintsTowardStoneRingCluster" parent="Clues" instance=ExtResource("26")]
+position = Vector3(7, 0, -3.1)
+rotation_degrees = Vector3(0, 80, 0)
+
+[node name="FootprintsTowardSecludedPondNook" parent="Clues" instance=ExtResource("26")]
+position = Vector3(9, 0, -8.5)
+rotation_degrees = Vector3(0, 131, 0)
 
 [node name="SecretSpots" type="Node3D" parent="."]
 
@@ -530,6 +551,12 @@ position = Vector3(8, 0.12, -11.5)
 [node name="WildlifeButterfly5" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(17.8, 0.4, -2.5)
 
+[node name="PondNookButterfly" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(13.6, 0.4, -11.8)
+
+[node name="SmallBird4" parent="Wildlife" instance=ExtResource("30")]
+position = Vector3(10, 0.12, -3.5)
+
 [node name="Ambient" type="Node3D" parent="."]
 
 [node name="DriftingLeaf1" parent="Ambient" instance=ExtResource("32")]
@@ -543,6 +570,9 @@ position = Vector3(0, 0, 8)
 
 [node name="GlowingMotesOpen2" parent="Ambient" instance=ExtResource("24")]
 position = Vector3(-2, 0, -4)
+
+[node name="DriftingLeaf3" parent="Ambient" instance=ExtResource("32")]
+position = Vector3(-8, 3, -9)
 
 [node name="WorldSimulation" parent="." instance=ExtResource("28")]
 
