@@ -1,4 +1,4 @@
-[gd_scene load_steps=39 format=3]
+[gd_scene load_steps=42 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -32,6 +32,9 @@
 [ext_resource type="PackedScene" path="res://scenes/wildlife/SmallBird.tscn" id="30"]
 [ext_resource type="PackedScene" path="res://scenes/wildlife/WildlifeButterfly.tscn" id="31"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/DriftingLeaf.tscn" id="32"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/StoneMonolith.tscn" id="33"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/LilyPad.tscn" id="34"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/Reed.tscn" id="35"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -94,6 +97,10 @@ position = Vector3(-11, 0, 7)
 [node name="MoundNorthEast" parent="Terrain" instance=ExtResource("18")]
 position = Vector3(13, 0, 11)
 
+[node name="OverlookMonolith" parent="Terrain" instance=ExtResource("33")]
+position = Vector3(13, 0.6, 11)
+rotation_degrees = Vector3(0, 25, 0)
+
 [node name="Path" type="Node3D" parent="Terrain"]
 
 [node name="Patch1" type="MeshInstance3D" parent="Terrain/Path"]
@@ -148,6 +155,40 @@ surface_material_override/0 = SubResource("Material_path")
 
 [node name="Pond" parent="Water" instance=ExtResource("17")]
 position = Vector3(10, 0, -9)
+
+[node name="LilyPad1" parent="Water" instance=ExtResource("34")]
+position = Vector3(9, 0.055, -8.2)
+rotation_degrees = Vector3(0, 15, 0)
+
+[node name="LilyPad2" parent="Water" instance=ExtResource("34")]
+position = Vector3(11.4, 0.055, -9.6)
+rotation_degrees = Vector3(0, 60, 0)
+
+[node name="LilyPad3" parent="Water" instance=ExtResource("34")]
+position = Vector3(9.6, 0.055, -10.4)
+scale = Vector3(0.8, 0.8, 0.8)
+rotation_degrees = Vector3(0, 100, 0)
+
+[node name="LilyPad4" parent="Water" instance=ExtResource("34")]
+position = Vector3(11.2, 0.055, -7.6)
+scale = Vector3(0.75, 0.75, 0.75)
+rotation_degrees = Vector3(0, 200, 0)
+
+[node name="Reed1" parent="Water" instance=ExtResource("35")]
+position = Vector3(13.6, 0, -9.2)
+rotation_degrees = Vector3(0, 20, 0)
+
+[node name="Reed2" parent="Water" instance=ExtResource("35")]
+position = Vector3(12.9, 0, -6.4)
+rotation_degrees = Vector3(0, -30, 0)
+
+[node name="Reed3" parent="Water" instance=ExtResource("35")]
+position = Vector3(6.5, 0, -9.6)
+rotation_degrees = Vector3(0, 80, 0)
+
+[node name="Reed4" parent="Water" instance=ExtResource("35")]
+position = Vector3(7.2, 0, -12.2)
+rotation_degrees = Vector3(0, 140, 0)
 
 [node name="Vegetation" type="Node3D" parent="."]
 
@@ -279,6 +320,32 @@ position = Vector3(12, 0, -2)
 [node name="GrassClump14" parent="Vegetation" instance=ExtResource("13")]
 position = Vector3(-12, 0, -9)
 
+[node name="AncientGroveTree1" parent="Vegetation" instance=ExtResource("9")]
+position = Vector3(-11, 0, -11)
+scale = Vector3(1.6, 1.6, 1.6)
+rotation_degrees = Vector3(0, 70, 0)
+
+[node name="AncientGroveTree2" parent="Vegetation" instance=ExtResource("9")]
+position = Vector3(-6.5, 0, -12.5)
+scale = Vector3(1.4, 1.4, 1.4)
+rotation_degrees = Vector3(0, -40, 0)
+
+[node name="AncientGroveLog" parent="Vegetation" instance=ExtResource("15")]
+position = Vector3(-9, 0, -12.5)
+rotation_degrees = Vector3(0, 15, 0)
+
+[node name="AncientGroveMushrooms" parent="Vegetation" instance=ExtResource("16")]
+position = Vector3(-9.8, 0, -10.2)
+
+[node name="WildflowerClearingGrass1" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(4.5, 0, 4.5)
+
+[node name="WildflowerClearingGrass2" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(6, 0, 5.5)
+
+[node name="WildflowerClearingPatch" parent="Vegetation" instance=ExtResource("27")]
+position = Vector3(5.2, 0, 6.8)
+
 [node name="Discoverables" type="Node3D" parent="."]
 
 [node name="MeadowFlowerSpawn" parent="Discoverables" instance=ExtResource("19")]
@@ -357,6 +424,12 @@ position = Vector3(9, 0.4, -6)
 
 [node name="WildlifeButterfly3" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(-4, 0.4, 9)
+
+[node name="WildlifeButterfly4" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(5, 0.4, 5.5)
+
+[node name="SmallBird3" parent="Wildlife" instance=ExtResource("30")]
+position = Vector3(8, 0.12, -11.5)
 
 [node name="Ambient" type="Node3D" parent="."]
 

@@ -1,0 +1,44 @@
+[gd_scene load_steps=7 format=3]
+
+[sub_resource type="BoxMesh" id="BoxMesh_tier1"]
+size = Vector3(0.5, 1.2, 0.4)
+
+[sub_resource type="StandardMaterial3D" id="Material_mossy"]
+albedo_color = Color(0.4, 0.45, 0.38, 1)
+roughness = 0.95
+
+[sub_resource type="BoxMesh" id="BoxMesh_tier2"]
+size = Vector3(0.4, 1.0, 0.35)
+
+[sub_resource type="StandardMaterial3D" id="Material_stone"]
+albedo_color = Color(0.45, 0.47, 0.52, 1)
+roughness = 0.85
+
+[sub_resource type="BoxMesh" id="BoxMesh_tier3"]
+size = Vector3(0.3, 0.8, 0.28)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_monolith"]
+size = Vector3(0.55, 2.7, 0.45)
+
+[node name="StoneMonolith" type="StaticBody3D"]
+
+[node name="Tier1" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.6, 0)
+mesh = SubResource("BoxMesh_tier1")
+surface_material_override/0 = SubResource("Material_mossy")
+
+[node name="Tier2" type="MeshInstance3D" parent="."]
+position = Vector3(0.04, 1.5, -0.02)
+rotation_degrees = Vector3(0, 8, 1.5)
+mesh = SubResource("BoxMesh_tier2")
+surface_material_override/0 = SubResource("Material_stone")
+
+[node name="Tier3" type="MeshInstance3D" parent="."]
+position = Vector3(-0.03, 2.3, 0.02)
+rotation_degrees = Vector3(0, -6, -2)
+mesh = SubResource("BoxMesh_tier3")
+surface_material_override/0 = SubResource("Material_stone")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 1.35, 0)
+shape = SubResource("BoxShape3D_monolith")

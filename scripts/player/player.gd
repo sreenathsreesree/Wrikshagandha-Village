@@ -3,16 +3,20 @@ extends CharacterBody3D
 ## Moves the player from InputManager.move_vector (written by the on-screen
 ## joystick), with acceleration/deceleration and a smoothly-turning visual
 ## body. Resolves interaction against whatever Interactable is currently
-## inside InteractionZone, and toggles that Interactable's indicator as it
-## enters/leaves range.
+## inside InteractionZone, toggles that Interactable's indicator as it
+## enters/leaves range, and feeds it a live proximity value while nearby so
+## approaching something builds anticipation before the harvest itself.
 
-const MAX_SPEED := 4.2
-const ACCELERATION := 16.0
-const DECELERATION := 20.0
+const MAX_SPEED := 4.5
+const ACCELERATION := 18.0
+const DECELERATION := 22.0
 const TURN_SPEED := 10.0
 const GRAVITY := 12.0
 const BOB_HEIGHT := 0.045
 const BOB_SPEED := 9.0
+const SQUASH_AMOUNT := 0.06
+const FOOTSTEP_INTERVAL := 0.32
+const INTERACTION_RADIUS := 2.2
 
 @onready var interaction_zone: Area3D = $InteractionZone
 @onready var visual: Node3D = $Visual
@@ -20,6 +24,7 @@ const BOB_SPEED := 9.0
 var _nearby_interactables: Array[Interactable] = []
 var _facing_angle: float = 0.0
 var _bob_time: float = 0.0
+var _footstep_timer: float = 0.0
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
@@ -50,8 +55,11 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
+	var speed := horizontal_velocity.length()
 	_update_facing(direction, delta)
-	_update_walk_bob(delta, horizontal_velocity.length())
+	_update_walk_bob(delta, speed)
+	_update_footsteps(delta, speed)
+	_update_nearby_proximity()
 
 func _update_facing(direction: Vector3, delta: float) -> void:
 	if direction.length_squared() > 0.01:
@@ -60,12 +68,46 @@ func _update_facing(direction: Vector3, delta: float) -> void:
 	visual.rotation.y = lerp_angle(visual.rotation.y, _facing_angle, TURN_SPEED * delta)
 
 func _update_walk_bob(delta: float, speed: float) -> void:
+	var speed_ratio := clamp(speed / MAX_SPEED, 0.0, 1.0)
 	if speed > 0.1:
-		_bob_time += delta * BOB_SPEED * (speed / MAX_SPEED)
+		_bob_time += delta * BOB_SPEED * speed_ratio
 		visual.position.y = abs(sin(_bob_time)) * BOB_HEIGHT
 	else:
 		_bob_time = 0.0
 		visual.position.y = lerp(visual.position.y, 0.0, 10.0 * delta)
+
+	# Subtle squash/stretch: a touch shorter and wider while accelerating
+	# hard, a touch taller and thinner at full speed — smoothed so it never
+	# snaps.
+	var target_stretch := speed_ratio * SQUASH_AMOUNT
+	var target_scale := Vector3(1.0 - target_stretch * 0.5, 1.0 + target_stretch, 1.0 - target_stretch * 0.5)
+	visual.scale = visual.scale.lerp(target_scale, 8.0 * delta)
+
+func _update_footsteps(delta: float, speed: float) -> void:
+	if speed <= 0.3:
+		_footstep_timer = 0.0
+		return
+	_footstep_timer -= delta * (speed / MAX_SPEED)
+	if _footstep_timer <= 0.0:
+		_footstep_timer = FOOTSTEP_INTERVAL
+		AmbientAudioManager.play_footstep_sound()
+
+func _update_nearby_proximity() -> void:
+	if _nearby_interactables.is_empty():
+		return
+	var nearest: Interactable = null
+	var nearest_distance := INF
+	for interactable in _nearby_interactables:
+		if not is_instance_valid(interactable):
+			continue
+		var distance := global_position.distance_to(interactable.global_position)
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest = interactable
+	if nearest == null:
+		return
+	var t := 1.0 - clamp(nearest_distance / INTERACTION_RADIUS, 0.0, 1.0)
+	nearest.update_proximity(t)
 
 func _on_interaction_zone_area_entered(area: Area3D) -> void:
 	if not (area is Interactable):

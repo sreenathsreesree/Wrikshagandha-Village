@@ -19,6 +19,11 @@ signal state_changed(state: String)
 @export var flee_speed: float = 3.0
 @export var turn_speed: float = 6.0
 
+## Beyond flee_distance but inside this radius, the creature doesn't run —
+## it just turns to watch the player while idling/paused. Gives a sense of
+## noticing the player before actually reacting.
+@export var alert_distance: float = 4.0
+
 ## Set by WildlifeController once, after every actor in the scene exists —
 ## never touched by the actor itself.
 var player: Node3D
@@ -34,12 +39,17 @@ func _ready() -> void:
 	_enter_idle()
 
 func _process(delta: float) -> void:
-	if player and state != "flee" and position.distance_to(player.global_position) < flee_distance:
-		_enter_flee()
-		return
+	var player_distance := INF
+	if player:
+		player_distance = position.distance_to(player.global_position)
+		if state != "flee" and player_distance < flee_distance:
+			_enter_flee()
+			return
 
 	match state:
 		"idle", "pause":
+			if player_distance < alert_distance:
+				_face_player(delta)
 			_state_timer -= delta
 			if _state_timer <= 0.0:
 				_enter_wander()
@@ -52,6 +62,16 @@ func _process(delta: float) -> void:
 			_state_timer -= delta
 			if _state_timer <= 0.0 and (player == null or position.distance_to(player.global_position) > flee_distance * 1.5):
 				_enter_idle()
+
+func _face_player(delta: float) -> void:
+	if player == null:
+		return
+	var direction := player.global_position - position
+	direction.y = 0.0
+	if direction.length() <= 0.05:
+		return
+	var facing := atan2(direction.x, -direction.z)
+	rotation.y = lerp_angle(rotation.y, facing, turn_speed * 0.5 * delta)
 
 func _move_toward(target: Vector3, speed: float, delta: float) -> void:
 	var direction := target - position

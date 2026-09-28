@@ -12,6 +12,8 @@ extends Node
 @export var discovery_sound: AudioStream
 @export var harvest_sound: AudioStream
 @export var ui_feedback_sound: AudioStream
+@export var footstep_sound: AudioStream
+@export var proximity_chime_sound: AudioStream
 
 @onready var _ambience_player: AudioStreamPlayer = _make_player()
 @onready var _sfx_player: AudioStreamPlayer = _make_player()
@@ -38,6 +40,12 @@ func play_harvest_sound() -> void:
 
 func play_ui_feedback() -> void:
 	_play_once(ui_feedback_sound)
+
+func play_footstep_sound() -> void:
+	_play_once(footstep_sound)
+
+func play_proximity_chime() -> void:
+	_play_once(proximity_chime_sound)
 
 func _play_once(stream: AudioStream) -> void:
 	if stream == null:
