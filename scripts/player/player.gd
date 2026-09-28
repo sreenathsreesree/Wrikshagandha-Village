@@ -2,10 +2,11 @@ extends CharacterBody3D
 
 ## Moves the player from InputManager.move_vector (written by the on-screen
 ## joystick), with acceleration/deceleration and a smoothly-turning visual
-## body. Resolves interaction against whatever Interactable is currently
-## inside InteractionZone, toggles that Interactable's indicator as it
-## enters/leaves range, and feeds it a live proximity value while nearby so
-## approaching something builds anticipation before the harvest itself.
+## body. Interaction is touch-to-interact: InputManager raycasts a tap and
+## names the Interactable that was touched; the player interacts with it if
+## it's within TAP_REACH. InteractionZone still toggles each Interactable's
+## indicator as it enters/leaves range and feeds it a live proximity value,
+## so approaching something builds anticipation before the harvest itself.
 
 const MAX_SPEED := 4.3
 const ACCELERATION := 15.0
@@ -17,6 +18,9 @@ const BOB_SPEED := 8.5
 const SQUASH_AMOUNT := 0.045
 const FOOTSTEP_INTERVAL := 0.32
 const INTERACTION_RADIUS := 2.2
+## How far away a tapped object can be and still respond: the thing you
+## touch, not the nearest thing, but not from across the meadow either.
+const TAP_REACH := 8.0
 const DEAD_ZONE := 0.12
 
 ## Shapes the raw joystick deflection before it becomes a target speed.
@@ -32,11 +36,16 @@ var _nearby_interactables: Array[Interactable] = []
 var _facing_angle: float = 0.0
 var _bob_time: float = 0.0
 var _footstep_timer: float = 0.0
+## One-shot interactables (discoveries) already harvested and animating
+## away — a second tap on the same one mid-animation must not harvest it
+## twice. Dropped automatically once the object is freed.
+var _spent_interactables: Array[Interactable] = []
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
 	interaction_zone.area_exited.connect(_on_interaction_zone_area_exited)
 	InputManager.interact_requested.connect(_on_interact_requested)
+	InputManager.interact_target_requested.connect(_on_interact_target_requested)
 	_facing_angle = visual.rotation.y
 
 func _physics_process(delta: float) -> void:
@@ -156,12 +165,30 @@ func _on_interact_requested() -> void:
 	var target := _find_nearest_interactable()
 	if target == null:
 		return
+	_interact_with(target)
+
+## A tap landed on this exact Interactable (see InputManager).
+func _on_interact_target_requested(target: Interactable) -> void:
+	if not is_instance_valid(target):
+		return
+	if global_position.distance_to(target.global_position) > TAP_REACH:
+		return
+	_interact_with(target)
+
+## The one place interact() is called, whichever way it was asked for.
+func _interact_with(target: Interactable) -> void:
+	_spent_interactables = _spent_interactables.filter(
+		func(spent: Interactable) -> bool: return is_instance_valid(spent)
+	)
+	if _spent_interactables.has(target):
+		return
 	target.interact()
 	# Only stop tracking it if it's actually gone (or about to be) after
 	# this interaction — a one-shot discovery with remove_on_harvest still
-	# gets dropped immediately so a second press can't double-harvest it
-	# mid-animation, but a persistent multi-state interactable (e.g. a
+	# gets dropped immediately so a second press/tap can't double-harvest
+	# it mid-animation, but a persistent multi-state interactable (e.g. a
 	# FarmPlot cycling through prepare/plant/water/harvest) must stay
-	# tracked so the next press keeps landing on it.
+	# tracked so the next tap keeps landing on it.
 	if target.remove_on_harvest:
 		_nearby_interactables.erase(target)
+		_spent_interactables.append(target)

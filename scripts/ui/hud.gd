@@ -1,8 +1,9 @@
 extends CanvasLayer
 
-## Wires the on-screen HUD (points, discovery count, interact button,
-## discovery popups, and the Collection/Journal/Daily Discovery screens) to
-## the autoload systems. Holds no gameplay state itself.
+## Wires the on-screen HUD (points, discovery count, discovery popups, and
+## the Collection/Journal/Daily Discovery/Basket screens) to the autoload
+## systems. Holds no gameplay state itself. There is no Interact button:
+## the player taps the world (see InputManager).
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
 ## A seed that introduces a new crop is shown a beat after the discovery
@@ -11,7 +12,6 @@ const NEW_CROP_CARD_DELAY := 1.1
 
 @onready var points_label: Label = $MarginContainer/TopBar/HBoxContainer/PointsLabel
 @onready var discoveries_label: Label = $MarginContainer/TopBar/HBoxContainer/DiscoveriesLabel
-@onready var interact_button: Button = $InteractButton
 @onready var notification_root: Control = $NotificationRoot
 
 @onready var collection_button: Button = $ScreenButtons/CollectionButton
@@ -43,11 +43,6 @@ func _ready() -> void:
 	FarmManager.seed_found.connect(_on_seed_found)
 	FarmManager.produce_changed.connect(_update_basket_button)
 
-	interact_button.pivot_offset = interact_button.size / 2.0
-	interact_button.pressed.connect(_on_interact_button_pressed)
-	interact_button.button_down.connect(_on_interact_button_down)
-	interact_button.button_up.connect(_on_interact_button_up)
-
 	collection_button.pressed.connect(collection_screen.open)
 	journal_button.pressed.connect(journal_screen.open)
 	daily_button.pressed.connect(daily_screen.open)
@@ -59,21 +54,6 @@ func _ready() -> void:
 
 func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total
-
-func _on_interact_button_pressed() -> void:
-	AmbientAudioManager.play_ui_feedback()
-	InputManager.request_interact()
-
-## Immediate press/release tactile feedback — a mobile button should never
-## feel like it might not have registered.
-func _on_interact_button_down() -> void:
-	var tween := create_tween()
-	tween.tween_property(interact_button, "scale", Vector2.ONE * 0.9, 0.05)
-
-func _on_interact_button_up() -> void:
-	var tween := create_tween()
-	tween.tween_property(interact_button, "scale", Vector2.ONE, 0.12) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func _on_discovery_made(definition: DiscoveryDefinition) -> void:
 	_update_discoveries_label()

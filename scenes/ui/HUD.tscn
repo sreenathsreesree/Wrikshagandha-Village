@@ -71,19 +71,6 @@ anchor_bottom = 1.0
 
 [node name="Joystick" parent="MobileControls" instance=ExtResource("2")]
 
-[node name="InteractButton" type="Button" parent="."]
-anchors_preset = 3
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -170.0
-offset_top = -170.0
-offset_right = -40.0
-offset_bottom = -60.0
-theme_override_font_sizes/font_size = 22
-text = "Interact"
-
 [node name="ScreenButtons" type="VBoxContainer" parent="."]
 modulate = Color(1, 1, 1, 0.55)
 anchors_preset = 1
