@@ -99,6 +99,7 @@ Main (Node3D)                       scenes/Main.tscn
      - Unavailable ones (`is_interaction_available()` false: locked plots, items mid-harvest) are skipped.
   4. **Otherwise,** a ray against `world` gives the tapped ground point.
      - If an active Interactable lies within `TAP_SELECT_TOLERANCE` (0.45 m) of it, that object is selected. This covers small flowers and mushrooms.
+       - Several candidates: the one whose collision shape is nearest the tap (`_tap_distance`; round shapes count their radius), ties by instance id. The same rule for every object (M02.4).
      - Otherwise the point is snapped to the nearest navigation-mesh point within 1 m → `move_target_requested(destination)`. Farther means the top of an obstacle or off the edge: ignored.
      - Before the mesh exists, the tapped point is used directly.
   5. **Tapping the player** is the deliberate stop. That's its body (on the `world` layer, so the ground ray can hit it) or the ground within `PLAYER_TAP_RADIUS` (0.6 m) of its feet → `stop_requested`. The Player (group `InputManager.PLAYER_GROUP`) cancels the walk and any pending interaction. This is checked after the exact interactable ray and before small-object selection and movement.
@@ -124,6 +125,7 @@ Main (Node3D)                       scenes/Main.tscn
     - Today each object offers at most one verb: the action `interact()` performs. Discovery: `COLLECT`. FarmPlot: `PLANT` / `WATER` / `HARVEST` by state; an EMPTY plot offers none (O-10). The tap path still calls `interact()`.
   - `get_interaction_metadata()`: optional read-only facts, empty by default; nothing reads it yet.
   - `set_highlighted()` / `update_proximity()`: in-range presentation on the `Indicator` child.
+  - `set_tap_selected()` (M02.4): tap feedback on the same Indicator — shown at once with its existing `pulse()`, even out of range; never for an unavailable object. The Indicator is visible while in range OR tap-selected. Player's `_set_selected_target()` selects on the tap and releases on stop, retarget or when the interaction starts.
   - Shared presentation: `HarvestBurstScene`, `RARITY_INTENSITY`, `_play_harvest_sound()`.
 - **Implementations:**
   - `DiscoveryInteractable` (`discovery_interactable.gd`): collects a discovery through `DiscoveryManager`, emits `harvested` (used by `DiscoverySpawnPoint` to respawn), plays the category/rarity windup and removes itself.
@@ -221,4 +223,5 @@ Main (Node3D)                       scenes/Main.tscn
   - 3 world controllers + TimeOfDay;
   - Player, Camera, Joystick.
 - **Rules:** prefer signals and shared controller loops; no per-object polling; no physics bodies for decoration.
+- The exact set of scripts with `_process`/`_physics_process` (13) is pinned in `tools/check_project.py`; adding one is a deliberate change to that list.
 - On-device profiling is part of Phase 01/16 testing.

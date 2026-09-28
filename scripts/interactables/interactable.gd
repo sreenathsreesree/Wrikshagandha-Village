@@ -20,6 +20,8 @@ class_name Interactable
 ##   - get_interaction_metadata(): optional read-only description; nothing
 ##     reads it yet.
 ##   - set_highlighted() / update_proximity(): in-range presentation.
+##   - set_tap_selected(): a tap chose this object — the same Indicator shows
+##     at once (even out of range) with a small acknowledging pulse.
 ##
 ## Object behaviour lives in subclasses: DiscoveryInteractable (collect a
 ## discovery), FarmPlot (the farming state machine). If the scene has a
@@ -46,6 +48,14 @@ const RARITY_INTENSITY := {
 enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4 }
 
 @export var remove_on_harvest: bool = true
+
+## The acknowledging swell a tap gives the Indicator (DiscoveryIndicator.pulse).
+const TAP_ACK_PULSE := 0.35
+
+## The Indicator shows while the player is in range OR a tap has chosen this
+## object and the player is on the way.
+var _highlighted: bool = false
+var _tap_selected: bool = false
 
 ## Availability is monitorable: an object that isn't monitorable is invisible
 ## to the player's InteractionZone and to tap rays alike, so both ways of
@@ -94,9 +104,26 @@ func get_interaction_metadata() -> Dictionary:
 	return {}
 
 func set_highlighted(active: bool) -> void:
+	_highlighted = active
+	_refresh_indicator()
+
+## Immediate "your tap was recognised": the object's own Indicator, shown
+## from the tap (before any walking) with a brief pulse, until the Player
+## deselects it (interaction starting, walk cancelled or replaced). An
+## unavailable object is never selected.
+func set_tap_selected(active: bool) -> void:
+	if active and not is_interaction_available():
+		return
+	_tap_selected = active
+	_refresh_indicator()
+	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
+	if active and indicator:
+		indicator.pulse(TAP_ACK_PULSE)
+
+func _refresh_indicator() -> void:
 	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
 	if indicator:
-		indicator.visible = active
+		indicator.visible = _highlighted or _tap_selected
 
 ## t in 0..1: how close the player currently is within interaction range.
 ## Called every frame by Player while this item is nearby, so approaching

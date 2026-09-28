@@ -389,7 +389,17 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - no sideways movement or new spinning;
     - cancel before arrival → no turn toward the cancelled target;
     - replace the target while walking → only the final target is faced;
-    - the M01.5 INTERACT state still works; joystick and keyboard takeover unchanged.
+    - the M01.5 INTERACT state still works; joystick and keyboard takeover unchanged;
+  - **M02.4 tap feedback:**
+    - tap a flower → its indicator shows and pulses at once; tap a farm plot → the same, immediately;
+    - tap an unavailable object (a plot mid-harvest, a locked plot) → no misleading feedback; the ground behaviour is unchanged;
+    - tap an object → walk → the indicator stays on it until the interaction starts (sensible throughout);
+    - cancel (tap the player, joystick, keyboard) → the old indicator clears (unless the player is standing in its range);
+    - retarget → only the current target shows;
+  - **M02.4 small objects:**
+    - exact flower tap; slightly off-centre; just outside the collision; between two nearby objects; beside a rock; an unavailable object next to an available one;
+    - no unexpected target is ever selected; note any miss on mushrooms/flowers (tolerance 0.45 m);
+  - after M02.4: M02.3 facing, the M01.5 INTERACT state and M01.4 player-tap cancellation still work.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -402,7 +412,7 @@ Goal: one generic interaction architecture for everything touchable.
 | M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[~]` |
 | M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[~]` |
 | M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[~]` |
-| M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
+| M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[~]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
 | M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
 
@@ -478,6 +488,34 @@ Goal: one generic interaction architecture for everything touchable.
   - 12 facing contracts: the order accept → face → INTERACT → `interact()`; the target position, horizontal, with a zero-distance guard; no movement direction, type, verb, snap or waiting in the facing; called only from `_interact_with()`; `_facing_angle` written only by `_ready`/`_update_facing`/`_face_target`; no target facing in the physics step; stop and retarget drop the approach target; arrival interacts only with the current target; no `_process` in Player.
   - Movement model: ordered face/interact events; far arrival, in range, behind/left/right, underfoot; cancel and replace never face the old target; walking faces the path; 2,000 random runs where every face is immediately followed by its interaction.
   - Mutation-tested: 15 GDScript mutations (all caught by `check_project.py`) and 6 model mutations caught.
+- **Commit:** §15.
+
+**M02.4 — Interaction feedback on tap + small-object tolerance** `[~]` Implemented — runtime testing pending (M01.6 checklist)
+- **Objective:** a recognised tap on an interactable gets immediate feedback on the object's existing indicator; small-object selection is audited and tuned.
+- **Audit — feedback:**
+  - The indicator (`DiscoveryIndicator`, `indicator_bob.gd`; one scene used by all 9 discoveries and the farm plots, tinted/scaled per use) is already generic. It has a `pulse()` acknowledgement (used by FarmPlot after actions) and a proximity reaction.
+  - It was shown only by `set_highlighted()`, called when an object enters/leaves the 2.2 m InteractionZone. A tap on a distant object gave **no feedback until arrival** (delayed); a tap in range had no tap-specific acknowledgement. `update_proximity()` runs on the nearest object in range only.
+  - So the indicator was sufficient; only its trigger/timing needed changing. No second mechanism needed.
+- **Audit — selection:**
+  - `_handle_tap`: (1) an exact ray hit on an available interactable wins; (2) otherwise the ground point, then a player tap (M01.4 stop); (3) otherwise `_interactable_near`: a 0.45 m sphere at the ground point, available candidates only, **ranked by distance to the object's centre**; (4) otherwise ground movement.
+  - Shapes: discoveries are spheres of 0.18–0.2 m, farm plots cylinders of 0.55 m. At the default camera (11 m arm, FOV 50) a typical fingertip miss is roughly 0.3–0.45 m on the ground, so 0.45 m matches it.
+  - Meadow spacing: the closest pairs are farm plots 1.70–2.3 m apart (0.6 m gaps), so their tolerance zones overlap (≈0.7% of simulated taps near objects fall in an overlap). The closest discoveries are 2.0 m apart (no overlap).
+  - Risk found: centre ranking prefers a small object over a large one whose edge is nearer the tap (e.g. 5 cm off a plot's edge but a flower's centre closer). Equal sizes are unaffected. Query-order ties were possible.
+- **Files:** `scripts/interactables/interactable.gd`, `scripts/player/player.gd`, `scripts/autoload/input_manager.gd`, `tools/check_project.py`, `tools/sims/sim_interaction.py`, docs. No scenes/resources.
+- **Implementation — feedback:**
+  - `Interactable.set_tap_selected(active)`: refuses unavailable objects; shows the same Indicator (visibility = in range OR tap-selected, one rule in `_refresh_indicator()`) with the existing `pulse()` (`TAP_ACK_PULSE` 0.35). `set_highlighted()` now feeds that same rule.
+  - Player `_set_selected_target()`: releases the old selection and acknowledges the new. Called in `_on_interact_target_requested` at once (in range: before interacting; far: as the walk starts); released by `_stop_navigation()` (player tap, joystick/keyboard, mode change, target gone), `_start_navigation()` (retarget, ground tap) and at the start of `_interact_with()`. Re-tapping acknowledges again.
+  - Generic: no object types, verbs or new UI/assets/sounds; InputManager untouched for feedback.
+- **Implementation — selection:** tolerance **kept at 0.45 m** and generic. Near-miss candidates are now ranked by `_tap_distance()`: horizontal distance to the object's own collision shape (round shapes count their radius; others their centre), with ties broken by instance id. Exact hits still win; unavailable objects still never qualify; ground movement is still the fallback.
+- **Known notes:**
+  - A discovery's spawn glow ends by hiding its indicator (existing discovery behaviour, unchanged): a tap during that ~0.5 s respawn glow loses the highlight early. Left for a later polish pass.
+  - The occasional stuck/spinning navigation is still left for the movement-polish pass.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - 18 feedback/selection contracts, including: tolerance and interaction range pinned to `ARCHITECTURE.md` (2.2 m in Player.tscn, `INTERACTION_RADIUS` and the docs); one indicator/pulse mechanism; `set_tap_selected` driven only by Player; immediate feedback, never at arrival; release on stop/start/interaction; exact → near → ground order; shape distance; deterministic ties; generic selection (no object kind or state).
+  - A new rule pins the project's whole set of per-frame callbacks (13), so any new loop fails.
+  - `sim_interaction.py`: the selection port (exact, off-centre, just outside, tolerance edge, between two, ties, unavailable, large vs small); 40,000 taps on the real Meadow layout (never a farther or unavailable object, order-independent); the feedback lifecycle (far, in range, arrival, cancel, retarget, ground tap, repeat, unavailable, 3,000 random runs).
+  - Mutation-tested: 19 GDScript/scene mutations and 6 model mutations, all caught by the suite.
 - **Commit:** §15.
 
 ### PHASE 03 — CAMERA / WORLD SHELL
@@ -644,8 +682,9 @@ No large world expansion before this gate passes.
 | M02.1 | `1a6b2cd` |
 | M02.2 | `3a26ee4` |
 | M02.3 | `0f0dded` |
+| M02.4 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.3 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's and M02.3's runtime tests). In Phase 02 the next is **M02.4 — interaction feedback on tap; tune the small-object tolerance**. Either starts only on the developer's instruction.
+- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.4 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's and M02.4's runtime tests). In Phase 02 the next is **M02.5 — remove or bind the unused `interact_requested` path (A6)**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

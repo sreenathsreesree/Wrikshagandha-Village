@@ -45,7 +45,9 @@ const RAY_LENGTH := 100.0
 const WALKABLE_SNAP_HORIZONTAL := 1.0
 const WALKABLE_SNAP_VERTICAL := 0.6
 ## Small objects (flowers, mushrooms) have small collision shapes; a tap
-## that lands on the ground within this distance of one selects it.
+## that lands on the ground within this distance of one selects it. About a
+## fingertip's typical miss on the ground at the default camera; the same
+## for every object (M02.4 audit: kept).
 const TAP_SELECT_TOLERANCE := 0.45
 ## Tapping the ground this close to the player's feet counts as tapping
 ## the player (a deliberate stop), not as a one-step walk.
@@ -212,8 +214,11 @@ func _is_player_tap(collider: Node, point: Vector3) -> bool:
 	var offset := point - player.global_position
 	return Vector2(offset.x, offset.z).length() <= PLAYER_TAP_RADIUS
 
-## The closest currently-interactable object whose shape lies within
-## TAP_SELECT_TOLERANCE of a tapped ground point, or null.
+## The currently-interactable object whose shape lies within
+## TAP_SELECT_TOLERANCE of a tapped ground point and is closest to it
+## (_tap_distance: to its shape, not its centre; ties by instance id so the
+## choice never depends on query order), or null. Only used when no
+## interactable was hit exactly.
 func _interactable_near(space: PhysicsDirectSpaceState3D, point: Vector3) -> Interactable:
 	if _tap_select_shape == null:
 		_tap_select_shape = SphereShape3D.new()
@@ -230,11 +235,37 @@ func _interactable_near(space: PhysicsDirectSpaceState3D, point: Vector3) -> Int
 		var candidate := _find_interactable(result.get("collider") as Node)
 		if candidate == null:
 			continue
-		var offset := candidate.global_position - point
-		var distance := Vector2(offset.x, offset.z).length()
-		if distance < best_distance:
+		var distance := _tap_distance(candidate, point)
+		if distance < best_distance or (distance == best_distance and best != null \
+				and candidate.get_instance_id() < best.get_instance_id()):
 			best_distance = distance
 			best = candidate
+	return best
+
+## Horizontal distance from a tapped point to an object's own collision
+## shape — so a large object isn't out-ranked by a small one only because
+## its centre is farther away. Round shapes (sphere, cylinder, capsule)
+## count their radius; any other shape counts from its centre. Generic: it
+## reads the shapes, never the kind of object.
+func _tap_distance(candidate: Interactable, point: Vector3) -> float:
+	var best := INF
+	for child in candidate.get_children():
+		var shape_node := child as CollisionShape3D
+		if shape_node == null or shape_node.shape == null or shape_node.disabled:
+			continue
+		var reach := 0.0
+		if shape_node.shape is SphereShape3D:
+			reach = (shape_node.shape as SphereShape3D).radius
+		elif shape_node.shape is CylinderShape3D:
+			reach = (shape_node.shape as CylinderShape3D).radius
+		elif shape_node.shape is CapsuleShape3D:
+			reach = (shape_node.shape as CapsuleShape3D).radius
+		reach *= absf(shape_node.global_basis.get_scale().x)
+		var offset := shape_node.global_position - point
+		best = minf(best, maxf(Vector2(offset.x, offset.z).length() - reach, 0.0))
+	if best == INF:
+		var offset := candidate.global_position - point
+		best = Vector2(offset.x, offset.z).length()
 	return best
 
 ## The navigation-mesh point for a tapped world point, or null if there is

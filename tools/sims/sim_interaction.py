@@ -16,8 +16,13 @@
    read from the GDScript and cross-checked state by state); nothing while
    unavailable; an empty list is valid; a verb passed back generically is
    performed only if offered.
+5. Tap selection and feedback (M02.4): exact hit > nearest available object
+   within the tolerance (distance to its shape, deterministic ties) > ground;
+   checked on the real Meadow layout. The tapped object's Indicator shows at
+   once and is released when its interaction starts or the walk is cancelled
+   or replaced; unavailable objects never get it.
 """
-import itertools, os, random, re
+import itertools, math, os, random, re
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 def _src(*p): return open(os.path.join(REPO, *p), encoding="utf-8").read()
@@ -202,4 +207,149 @@ for st, exp in (("EMPTY", []), ("SOIL", ["PLANT"]), ("GROWING", ["WATER"]), ("GR
     if exp: assert player_request(plot) and plot.done[-1] == exp[0]
 assert plot.done == ["PLANT", "WATER", "HARVEST"], "verbs follow the plot's changing state"
 print(f"verbs: {sorted(VERB, key=VERB.get)}; plot states cross-checked against interact(): {STATES}")
+
+# ---------------------------------------------------------------- 5. selection + feedback
+def _const_f(src, name): return float(re.search(rf"^const {name} := ([0-9.]+)", src, re.M).group(1))
+TOL = _const_f(IM, "TAP_SELECT_TOLERANCE")
+HT, NEAR, TD = _body(IM, "_handle_tap"), _body(IM, "_interactable_near"), _body(IM, "_tap_distance")
+assert HT.find("interact_target_requested.emit(target)") < HT.find("_interactable_near(") < HT.find("move_target_requested.emit"), \
+    "exact hit, then near miss, then ground"
+assert "_find_interactable(" in NEAR and "get_instance_id() < best.get_instance_id()" in NEAR, "available only; deterministic ties"
+assert "Vector2(offset.x, offset.z).length() - reach" in TD, "distance to the shape, not the centre"
+def _shape_r(scene):
+    txt = _src("scenes", *scene.split("/"))
+    return float(re.search(r'\[sub_resource type="(?:Sphere|Cylinder)Shape3D"[^\]]*\]\s*radius = ([0-9.]+)', txt).group(1))
+R_FLOWER, R_PLOT = _shape_r("interactables/MeadowFlower.tscn"), _shape_r("farming/FarmPlot.tscn")
+
+class Cand:
+    def __init__(c, cid, x, z, r, available=True): c.id, c.x, c.z, c.r, c.available = cid, x, z, r, available
+    def surface(c, t): return max(math_hypot(c.x - t[0], c.z - t[1]) - c.r, 0.0)
+from math import hypot as math_hypot
+def select(tap, cands, exact=None):  # port of _handle_tap's interactable part
+    if exact is not None and exact.available: return exact.id
+    near = [c for c in cands if c.available and math_hypot(c.x - tap[0], c.z - tap[1]) - c.r <= TOL]
+    return min(near, key=lambda c: (c.surface(tap), c.id)).id if near else "ground"
+
+f = Cand(1, 0.0, 0.0, R_FLOWER)
+assert select((0.0, 0.0), [f], exact=f) == 1, "exact tap"
+assert select((0.1, 0.05), [f], exact=f) == 1, "off-centre, still on the shape"
+assert select((R_FLOWER + 0.1, 0.0), [f]) == 1, "just outside the shape"
+assert select((R_FLOWER + TOL - 0.01, 0.0), [f]) == 1 and select((R_FLOWER + TOL + 0.01, 0.0), [f]) == "ground", "tolerance edge"
+g = Cand(2, 1.0, 0.0, R_FLOWER)
+assert select((0.4, 0.0), [f, g]) == 1 and select((0.6, 0.0), [f, g]) == 2, "between two flowers: the nearer one"
+assert select((0.5, 0.0), [f, g]) == select((0.5, 0.0), [g, f]) == 1, "exact tie: deterministic, not query order"
+assert select((0.3, 0.0), [f]) == 1, "near a flower beside a rock (rocks are world, never candidates)"
+f_off = Cand(1, 0.0, 0.0, R_FLOWER, available=False)
+assert select((0.3, 0.0), [f_off]) == "ground" and select((0.0, 0.0), [f_off], exact=f_off) == "ground", "unavailable: ground"
+g2 = Cand(2, 0.6, 0.0, R_FLOWER)
+assert select((0.1, 0.0), [f_off, g2]) == 2 and select((0.0, 0.0), [f_off, g2], exact=f_off) == 2, \
+    "an available object beats a nearer (even exactly hit) unavailable one"
+plot = Cand(3, 0.0, 0.0, R_PLOT); fl = Cand(4, R_PLOT + 0.05 + R_FLOWER + 0.3, 0.0, R_FLOWER)
+tap = (R_PLOT + 0.05, 0.0)
+assert select(tap, [plot, fl]) == 3, "a tap 5 cm off a large plot picks the plot, not a flower whose edge is 30 cm away"
+assert math_hypot(fl.x - tap[0], 0) < math_hypot(plot.x - tap[0], 0), "(centre ranking would have picked the flower)"
+assert select((R_PLOT + 0.2, 0.0), [plot], exact=None) == 3 and select((0.0, 0.0), [plot, fl], exact=plot) == 3, "large objects: same system"
+assert select((0.3, 0.0), [plot, fl], exact=fl) == 4, "an exact hit beats a nearer approximate candidate"
+
+# The real Meadow layout: discoveries and farm plots, including their spawn points.
+MEADOW = _src("scenes", "world", "Meadow.tscn")
+ext = {m.group(2): m.group(1) for m in re.finditer(r'\[ext_resource type="PackedScene" path="([^"]+)" id="([^"]+)"\]', MEADOW)}
+nodes = {}
+for chunk in MEADOW.split("\n[")[1:]:
+    if not chunk.startswith("node "): continue
+    head = chunk.split("\n")[0]
+    name = re.search(r'name="([^"]+)"', head).group(1); parent = (re.search(r'parent="([^"]+)"', head) or [None, None])[1]
+    inst = re.search(r'instance=ExtResource\("([^"]+)"\)', head); ds = re.search(r'discovery_scene = ExtResource\("([^"]+)"\)', chunk)
+    pm = re.search(r'\nposition = Vector3\(([^)]*)\)', chunk)
+    path = name if parent in (None, ".") else parent + "/" + name
+    nodes[path] = (parent, [float(v) for v in pm.group(1).split(",")] if pm else [0.0] * 3,
+                   ext.get(ds.group(1)) if ds else (ext.get(inst.group(1)) if inst else None))
+def gpos(path):
+    parent, pos, _ = nodes[path]
+    if parent in (None, "."): return pos
+    q = gpos(parent); return [pos[i] + q[i] for i in range(3)]
+cands = []
+for path, (_, _, scene) in nodes.items():
+    if scene and "FarmPlot.tscn" in scene: r = R_PLOT
+    elif scene and re.search(r"interactables/(?!DiscoverySpawnPoint|DiscoveryIndicator|HarvestBurst)\w+\.tscn", scene): r = _shape_r(scene.replace("res://scenes/", ""))
+    else: continue
+    x, _, z = gpos(path); cands.append(Cand(len(cands), x, z, r))
+assert len(cands) >= 10, len(cands)
+rnd = random.Random(3); overlap = 0; picked = 0
+for _ in range(40000):
+    c0 = rnd.choice(cands); a = rnd.uniform(0, 6.2832); d = rnd.uniform(0, c0.r + TOL + 0.3)
+    tap = (c0.x + d * math.cos(a), c0.z + d * math.sin(a))
+    for c in cands: c.available = rnd.random() > 0.15
+    choice = select(tap, cands)
+    inside = [c for c in cands if c.available and math_hypot(c.x - tap[0], c.z - tap[1]) - c.r <= TOL]
+    overlap += len(inside) > 1
+    if choice == "ground":
+        assert not inside, "ground only when no available candidate is within the tolerance"
+        continue
+    picked += 1
+    best = next(c for c in cands if c.id == choice)
+    assert best.available and all(best.surface(tap) <= c.surface(tap) for c in inside), "never a farther or unavailable object"
+    assert select(tap, list(reversed(cands))) == choice, "independent of query order"
+print(f"selection: tolerance {TOL} m, flower r {R_FLOWER}, plot r {R_PLOT}; Meadow {len(cands)} objects, "
+      f"40000 taps ({picked} selected, {overlap} in overlapping tolerance zones) OK")
+
+# Feedback lifecycle — port of Player._set_selected_target and its callers.
+PL_OITR = _body(PL, "_on_interact_target_requested")
+assert re.search(r"_stop_navigation\(\)\s*_set_selected_target\(target\)\s*_interact_with\(target\)", PL_OITR)
+assert re.search(r"_approach_target = target\s*_set_selected_target\(target\)", PL_OITR)
+assert all("_set_selected_target(null)" in _body(PL, fn) for fn in ("_start_navigation", "_stop_navigation", "_interact_with"))
+assert re.search(r"if active and not is_interaction_available\(\):\s*return", _body(BASE, "set_tap_selected"))
+class FObj:
+    def __init__(o, oid): o.id, o.available, o.highlighted, o.selected, o.pulses = oid, True, False, False, 0
+    def set_tap_selected(o, active):
+        if active and not o.available: return
+        o.selected = active
+        if active: o.pulses += 1
+    @property
+    def visible(o): return o.highlighted or o.selected
+class FPlayer:
+    def __init__(p): p.sel, p.approach, p.nearby, p.log = None, None, set(), []
+    def select(p, t):
+        if t is None and p.sel is None: return
+        if p.sel is not None: p.sel.set_tap_selected(False)
+        p.sel = t
+        if t is not None: t.set_tap_selected(True)
+    def stop(p): p.approach = None; p.select(None)
+    def start(p): p.approach = None; p.select(None)
+    def interact_with(p, t): p.select(None); p.log.append(t.id)
+    def tap(p, t):
+        if not t.available: return  # InputManager never names an unavailable object
+        if t in p.nearby: p.stop(); p.select(t); p.interact_with(t); return
+        p.start(); p.approach = t; p.select(t)
+    def arrive(p, t):
+        p.nearby.add(t); t.highlighted = True
+        if t is p.approach: p.stop(); p.interact_with(t)
+    def leave(p, t): p.nearby.discard(t); t.highlighted = False
+a, b = FObj("a"), FObj("b"); p = FPlayer()
+p.tap(a); assert a.visible and a.pulses == 1 and p.log == [], "far tap: feedback at once, before walking/arrival"
+p.arrive(a); assert p.log == ["a"] and not a.selected and a.visible, "arrival: selection released, in-range highlight stays"
+p = FPlayer(); a, b = FObj("a"), FObj("b")
+p.tap(a); p.stop(); assert not a.visible, "cancel (player tap / joystick / keyboard): feedback cleared"
+p.tap(a); p.tap(b); assert not a.visible and b.visible, "retarget: only the current target shows"
+p.start(); assert not b.visible, "ground tap after an object tap clears it"
+p.tap(b); p.tap(b); assert b.pulses == 3 and b.visible, "tapping the same object again acknowledges again"
+c = FObj("c"); p = FPlayer(); p.arrive(c); p.tap(c)
+assert c.pulses == 1 and not c.selected and c.visible and p.log == ["c"], "in range: feedback, then interaction"
+u = FObj("u"); u.available = False; p = FPlayer(); p.tap(u); u.set_tap_selected(True)
+assert not u.visible and u.pulses == 0, "an unavailable object never shows available-object feedback"
+rnd = random.Random(5)
+for _ in range(3000):
+    objs = [FObj(i) for i in range(4)]; p = FPlayer()
+    for _ in range(80):
+        o = rnd.choice(objs); ev = rnd.random()
+        if ev < 0.35: p.tap(o)
+        elif ev < 0.5: p.arrive(o)
+        elif ev < 0.6: p.leave(o)
+        elif ev < 0.75: p.stop()
+        elif ev < 0.85: p.start()
+        else: o.available = rnd.random() < 0.7
+        sel = [x for x in objs if x.selected]
+        assert len(sel) <= 1 and (not sel or sel[0] is p.sel), "at most one object shows tap feedback: the current one"
+        assert p.sel is None or p.sel is p.approach, "feedback only while its walk is on"
+print("feedback: far/in-range/arrival/cancel/retarget/ground/repeat/unavailable + 3000 random runs OK")
 print("ALL INTERACTION SIMULATIONS PASSED")

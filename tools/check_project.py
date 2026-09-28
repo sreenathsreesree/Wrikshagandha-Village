@@ -711,6 +711,79 @@ if re.search(r"^func _process\(", pl_src, re.M):
     err(f"{PL}: no _process() in Player — its one per-frame step is the existing _physics_process()")
 notes.append("facing contracts checked: 12")
 
+# ------------------------------------------------------------ tap feedback + selection
+# M02.4: a recognised tap shows the object's own Indicator at once (with the
+# existing pulse) until its interaction starts or the walk is cancelled or
+# replaced; near-miss selection ranks available candidates by distance to
+# their shape; exact hits win; tolerance and range are pinned to the docs.
+im_src = scripts.get(IM, "")
+arch = open("docs/ARCHITECTURE.md", encoding="utf-8").read()
+def const_val(src, name):
+    m = re.search(rf"^const {name} := ([0-9.]+)", src, re.M)
+    return float(m.group(1)) if m else None
+doc_tol = re.search(r"`TAP_SELECT_TOLERANCE` \(([0-9.]+) m\)", arch)
+if not doc_tol or const_val(im_src, "TAP_SELECT_TOLERANCE") != float(doc_tol.group(1)):
+    err(f"{IM}: TAP_SELECT_TOLERANCE {const_val(im_src, 'TAP_SELECT_TOLERANCE')} differs from docs/ARCHITECTURE.md — a tolerance change must be deliberate and documented")
+doc_range = re.search(r"`InteractionZone` \(([0-9.]+) m Area3D\)", arch)
+zone = re.search(r'SphereShape3D_interact"\]\s*radius = ([0-9.]+)', open("scenes/player/Player.tscn", encoding="utf-8").read())
+if not doc_range or not zone or {float(zone.group(1)), const_val(pl_src, "INTERACTION_RADIUS")} != {float(doc_range.group(1))}:
+    err("interaction range: Player.tscn InteractionZone radius, Player.INTERACTION_RADIUS and docs/ARCHITECTURE.md must agree (2.2 m)")
+sts = func_body(base_src, "set_tap_selected") or ""
+g = re.search(r"if active and not is_interaction_available\(\):\s*return", sts)
+if not g or g.start() > sts.find("_tap_selected = active") or "indicator.pulse(" not in sts or "_refresh_indicator()" not in sts:
+    err(f"{BASE}: set_tap_selected() must refuse unavailable objects, then show the Indicator with its pulse")
+if "indicator.visible = _highlighted or _tap_selected" not in (func_body(base_src, "_refresh_indicator") or "") or \
+   not re.search(r"_highlighted = active\s*_refresh_indicator\(\)", func_body(base_src, "set_highlighted") or ""):
+    err(f"{BASE}: the Indicator shows while in range OR tap-selected (one visibility rule)")
+for f in subclasses:
+    for fn in ("set_tap_selected", "_refresh_indicator"):
+        if func_body(scripts[f], fn) is not None:
+            err(f"{f}: overrides {fn}() — tap feedback stays generic")
+pulse_defs = [f for f, s2 in scripts.items() if re.search(r"^func pulse\(", s2, re.M)]
+ind_classes = [f for f, s2 in scripts.items() if re.search(r"^class_name \w*(Indicator|Highlight|Feedback|Marker)\w*", s2, re.M)]
+if pulse_defs != ["scripts/interactables/indicator_bob.gd"] or ind_classes != ["scripts/interactables/indicator_bob.gd"]:
+    err(f"one indicator/feedback mechanism only (found pulse in {pulse_defs}, classes {ind_classes})")
+sel_calls = [(f, len(re.findall(r"\.set_tap_selected\(", code_only(s2)))) for f, s2 in scripts.items()]
+if [c for c in sel_calls if c[1]] != [(PL, 2)] or ".set_tap_selected(" in code_only(func_body(pl_src, "_on_interact_target_requested") or "x"):
+    err(f"set_tap_selected() is driven only by Player._set_selected_target (found {[c for c in sel_calls if c[1]]})")
+oitr = func_body(pl_src, "_on_interact_target_requested") or ""
+near_branch = oitr[:oitr.find("_start_navigation(")]
+far_branch = oitr[oitr.find("_start_navigation("):]
+if not re.search(r"_stop_navigation\(\)\s*_set_selected_target\(target\)\s*_interact_with\(target\)", near_branch) or \
+   not re.search(r"_approach_target = target\s*_set_selected_target\(target\)", far_branch) or "await" in oitr:
+    err(f"{PL}: a tapped object must get its feedback immediately (in range: before interacting; far: when the walk starts)")
+if "_set_selected_target(" in (func_body(pl_src, "_on_interaction_zone_area_entered") or ""):
+    err(f"{PL}: tap feedback must not wait for arrival")
+for fn in ("_start_navigation", "_stop_navigation"):
+    if "_set_selected_target(null)" not in (func_body(pl_src, fn) or ""):
+        err(f"{PL}: {fn}() must release the tap selection (no stale feedback after cancel/replace)")
+iw = func_body(pl_src, "_interact_with") or ""
+if not re.match(r"func _interact_with\([^)]*\) -> void:\s*_set_selected_target\(null\)", iw):
+    err(f"{PL}: _interact_with() must release the tap selection as the interaction starts")
+sst = func_body(pl_src, "_set_selected_target") or ""
+if not re.search(r"_selected_target\.set_tap_selected\(false\).*_selected_target = target.*target\.set_tap_selected\(true\)", sst, re.S):
+    err(f"{PL}: _set_selected_target() must release the old selection before acknowledging the new one")
+ht = func_body(im_src, "_handle_tap") or ""
+if not (0 <= ht.find("interact_target_requested.emit(target)") < ht.find("_interactable_near(") < ht.find("move_target_requested.emit")):
+    err(f"{IM}: exact interactable hit, then near-miss selection, then ground movement")
+near = code_only(func_body(im_src, "_interactable_near") or "")
+if not all(k in near for k in ("_find_interactable(", "_tap_distance(candidate, point)", "distance < best_distance",
+                               "get_instance_id() < best.get_instance_id()", "_tap_select_shape.radius = TAP_SELECT_TOLERANCE")):
+    err(f"{IM}: near-miss selection must skip unavailable objects and pick the nearest (to its shape, deterministic ties) within TAP_SELECT_TOLERANCE")
+td = code_only(func_body(im_src, "_tap_distance") or "")
+if not td or re.search(r"\bis\s+(?!\w*Shape3D\b)\w+", td) or set(re.findall(r"candidate\.(\w+)", near + td)) - {"get_children", "global_position", "get_instance_id"}:
+    err(f"{IM}: selection distance must be generic (shapes only, never the kind of object or its state)")
+if "Vector2(offset.x, offset.z).length() - reach" not in td:
+    err(f"{IM}: _tap_distance() must measure to the object's shape (minus its radius), not its centre")
+# Per-frame loops: this is the whole set. A new one is a deliberate,
+# reviewed change to this list (docs/ARCHITECTURE.md §17), never a side effect.
+PER_FRAME = [('scripts/camera/follow_camera.gd', '_physics_process'), ('scripts/interactables/indicator_bob.gd', '_process'), ('scripts/player/player.gd', '_physics_process'), ('scripts/ui/virtual_joystick.gd', '_process'), ('scripts/world/butterfly.gd', '_process'), ('scripts/world/drifting_leaf.gd', '_process'), ('scripts/world/floating_motes.gd', '_process'), ('scripts/world_simulation/environmental_event_controller.gd', '_process'), ('scripts/world_simulation/exploration_landmark_controller.gd', '_process'), ('scripts/world_simulation/time_of_day.gd', '_process'), ('scripts/world_simulation/vegetation_controller.gd', '_process'), ('scripts/world_simulation/wildlife_actor.gd', '_process'), ('scripts/world_simulation/wildlife_butterfly.gd', '_process')]
+found = sorted((f, m) for f, s2 in scripts.items() if not f.startswith("tools/")
+               for m in re.findall(r"^func (_process|_physics_process)\(", s2, re.M))
+if found != sorted(tuple(x) for x in PER_FRAME):
+    err(f"per-frame callbacks changed: added {sorted(set(found) - set(map(tuple, PER_FRAME)))}, removed {sorted(set(map(tuple, PER_FRAME)) - set(found))}")
+notes.append("tap feedback + selection contracts checked: 18; per-frame callbacks: %d" % len(PER_FRAME))
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).

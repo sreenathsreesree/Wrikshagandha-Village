@@ -86,6 +86,9 @@ var _animation_state: AnimState = AnimState.IDLE
 ## finished or superseded interaction can't end a newer one.
 var _interaction_target: Interactable
 var _interaction_serial: int = 0
+## The object a tap chose, showing its Indicator as feedback from the tap
+## until its interaction starts or the walk is cancelled or replaced.
+var _selected_target: Interactable
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
@@ -236,10 +239,12 @@ func _on_interact_target_requested(target: Interactable) -> void:
 		return
 	if _nearby_interactables.has(target):
 		_stop_navigation()
+		_set_selected_target(target)
 		_interact_with(target)
 		return
 	_start_navigation(target.global_position)
 	_approach_target = target
+	_set_selected_target(target)
 
 func _on_move_target_requested(destination: Vector3) -> void:
 	_start_navigation(destination)
@@ -260,6 +265,7 @@ func _on_stop_requested() -> void:
 ## wherever the player is now, mid-walk or not.
 func _start_navigation(destination: Vector3) -> void:
 	_approach_target = null
+	_set_selected_target(null)
 	nav_agent.target_position = destination
 	_navigating = true
 	_navigation_stuck_time = 0.0
@@ -267,6 +273,7 @@ func _start_navigation(destination: Vector3) -> void:
 func _stop_navigation() -> void:
 	_navigating = false
 	_approach_target = null
+	_set_selected_target(null)
 	_navigation_stuck_time = 0.0
 
 ## Direction toward the next corner of the agent's path, scaled down over
@@ -328,6 +335,7 @@ func _spawn_destination_marker(destination: Vector3) -> void:
 ## Awaited only to know when the interaction ends (for the INTERACT
 ## state); callers never wait on it.
 func _interact_with(target: Interactable) -> void:
+	_set_selected_target(null)
 	_spent_interactables = _spent_interactables.filter(
 		func(spent: Interactable) -> bool: return is_instance_valid(spent)
 	)
@@ -348,6 +356,18 @@ func _interact_with(target: Interactable) -> void:
 	@warning_ignore("redundant_await")
 	await target.interact()
 	_end_interaction(serial)
+
+## Tap feedback on the object's own Indicator (Interactable.set_tap_selected):
+## the old choice is released, the new one acknowledged. Re-tapping the same
+## object acknowledges it again. Generic — any Interactable.
+func _set_selected_target(target: Interactable) -> void:
+	if target == null and _selected_target == null:
+		return
+	if _selected_target != null and is_instance_valid(_selected_target):
+		_selected_target.set_tap_selected(false)
+	_selected_target = target
+	if target != null:
+		target.set_tap_selected(true)
 
 ## Turn toward the object about to be interacted with — once, at the
 ## interaction boundary, never while walking. It only sets the facing that
