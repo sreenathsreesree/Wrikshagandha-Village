@@ -24,6 +24,7 @@ func _spawn() -> void:
 	var instance: Interactable = discovery_scene.instantiate()
 	instance.harvested.connect(_on_harvested)
 	add_child(instance)
+	instance.play_spawn_animation()
 
 func _on_harvested(discovery_id: String) -> void:
 	var definition := DiscoveryDatabase.get_definition(discovery_id)

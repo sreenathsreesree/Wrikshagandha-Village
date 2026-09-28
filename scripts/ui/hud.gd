@@ -37,6 +37,7 @@ func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total
 
 func _on_interact_button_pressed() -> void:
+	AmbientAudioManager.play_ui_feedback()
 	InputManager.request_interact()
 
 func _on_discovery_made(definition: DiscoveryDefinition) -> void:

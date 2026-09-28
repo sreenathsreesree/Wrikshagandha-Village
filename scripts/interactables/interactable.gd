@@ -5,16 +5,26 @@ class_name Interactable
 ## interact with (plants, herbs, mushrooms, stones, mysteries...). Placed on
 ## an Area3D so proximity is detected without blocking movement. If the
 ## scene has a child named "Indicator" it is shown/hidden automatically as
-## the player enters/leaves range, and reused for the harvest burst — no
-## per-item code needed.
+## the player enters/leaves range, reused for the harvest burst, and given
+## its rarity presentation — no per-item code needed for any of that.
+
+const HarvestBurstScene := preload("res://scenes/interactables/HarvestBurst.tscn")
 
 signal harvested(discovery_id: String)
 
 @export var discovery_id: String = ""
 @export var remove_on_harvest: bool = true
 
+func _ready() -> void:
+	var definition := DiscoveryDatabase.get_definition(discovery_id)
+	if definition == null:
+		return
+	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
+	if indicator:
+		indicator.set_rarity(definition.rarity)
+
 func set_highlighted(active: bool) -> void:
-	var indicator := get_node_or_null("Indicator") as Node3D
+	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
 	if indicator:
 		indicator.visible = active
 
@@ -30,9 +40,35 @@ func interact() -> bool:
 			queue_free()
 	return success
 
+## Called by DiscoverySpawnPoint right after instantiating a fresh copy —
+## a small scale-up plus a brief glow on the shared indicator, then back to
+## normal. Existing discovery logic is untouched; this is presentation only.
+func play_spawn_animation() -> void:
+	scale = Vector3.ZERO
+	var tween := create_tween()
+	tween.tween_property(self, "scale", Vector3.ONE, 0.35) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_play_spawn_glow()
+
+func _play_spawn_glow() -> void:
+	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
+	if indicator == null:
+		return
+	indicator.visible = true
+	indicator.scale = Vector3.ZERO
+	var glow_tween := create_tween()
+	glow_tween.tween_property(indicator, "scale", Vector3.ONE * 1.2, 0.25).set_trans(Tween.TRANS_SINE)
+	glow_tween.tween_property(indicator, "scale", Vector3.ZERO, 0.3).set_trans(Tween.TRANS_SINE)
+	glow_tween.tween_callback(_hide_indicator.bind(indicator))
+
+func _hide_indicator(indicator: DiscoveryIndicator) -> void:
+	indicator.visible = false
+	indicator.scale = Vector3.ONE
+
 func _play_harvest_feedback() -> void:
 	monitorable = false
 	_play_collected_burst()
+	_spawn_harvest_particles()
 	_play_harvest_sound()
 	var tween := create_tween()
 	tween.tween_property(self, "scale", Vector3.ONE * 1.25, 0.1) \
@@ -41,11 +77,11 @@ func _play_harvest_feedback() -> void:
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	await tween.finished
 
-## A quick sparkle "pop" on the shared indicator gem — the closest thing to
-## a particle burst this milestone needs, reusing an object that already
-## exists on every interactable instead of spawning a new particle system.
+## A quick sparkle "pop" on the shared indicator gem — reuses an object
+## that already exists on every interactable instead of spawning a whole
+## second effect for the same purpose.
 func _play_collected_burst() -> void:
-	var indicator := get_node_or_null("Indicator") as Node3D
+	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
 	if indicator == null:
 		return
 	indicator.visible = true
@@ -55,8 +91,19 @@ func _play_collected_burst() -> void:
 	burst.tween_property(indicator, "scale", Vector3.ZERO, 0.18) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 
-## Placeholder hook for a real harvest SFX. Left deliberately silent — no
-## audio asset exists yet, and referencing a missing one would break the
-## project. Wire an AudioStreamPlayer3D here once real sound is added.
+## A handful of small glowing dots scattering outward — the "small
+## particles" moment. Spawned as a sibling (not a child of self) so it
+## isn't squashed by this node's own shrink-to-zero tween.
+func _spawn_harvest_particles() -> void:
+	var parent := get_parent()
+	if parent == null:
+		return
+	var burst: Node3D = HarvestBurstScene.instantiate()
+	parent.add_child(burst)
+	burst.global_position = global_position
+
+## Placeholder hook for a real harvest SFX, routed through the shared audio
+## manager. If no sound asset is assigned there yet, this is a safe no-op —
+## the game runs identically either way.
 func _play_harvest_sound() -> void:
-	pass
+	AmbientAudioManager.play_harvest_sound()

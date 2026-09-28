@@ -18,6 +18,7 @@ func discover(id: String) -> bool:
 		return false
 	discovered_ids.append(id)
 	PointsManager.add_points(definition.points_value)
+	AmbientAudioManager.play_discovery_sound()
 	discovery_made.emit(definition)
 	return true
 

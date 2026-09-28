@@ -22,6 +22,7 @@ JournalManager="*res://scripts/autoload/journal_manager.gd"
 CollectionManager="*res://scripts/autoload/collection_manager.gd"
 DailyDiscoveryManager="*res://scripts/autoload/daily_discovery_manager.gd"
 ExplorationManager="*res://scripts/autoload/exploration_manager.gd"
+AmbientAudioManager="*res://scripts/autoload/ambient_audio_manager.gd"
 SaveManager="*res://scripts/autoload/save_manager.gd"
 GameState="*res://scripts/autoload/game_state.gd"
 InputManager="*res://scripts/autoload/input_manager.gd"
@@ -47,3 +48,10 @@ pointing/emulate_touch_from_mouse=true
 
 renderer/rendering_method="mobile"
 textures/vram_compression/import_etc2_astc=true
+
+[shader_globals]
+
+wg_player_position={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}

@@ -1,0 +1,36 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/wildlife_actor.gd" id="1"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_body"]
+radius = 0.07
+height = 0.12
+
+[sub_resource type="StandardMaterial3D" id="Material_feather"]
+albedo_color = Color(0.42, 0.34, 0.28, 1)
+roughness = 0.85
+
+[sub_resource type="PrismMesh" id="PrismMesh_beak"]
+size = Vector3(0.03, 0.03, 0.06)
+
+[node name="SmallBird" type="Node3D" groups=["wildlife_actor"]]
+script = ExtResource("1")
+wander_radius = 1.2
+move_speed = 0.5
+idle_time_min = 2.0
+idle_time_max = 5.0
+flee_distance = 1.8
+flee_speed = 4.0
+turn_speed = 8.0
+
+[node name="Body" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.09, 0)
+scale = Vector3(1, 0.9, 1.3)
+mesh = SubResource("SphereMesh_body")
+surface_material_override/0 = SubResource("Material_feather")
+
+[node name="Beak" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.09, 0.09)
+rotation_degrees = Vector3(90, 0, 0)
+mesh = SubResource("PrismMesh_beak")
+surface_material_override/0 = SubResource("Material_feather")

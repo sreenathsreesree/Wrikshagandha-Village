@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/bird_flyover_spawner.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/BirdSilhouette.tscn" id="2"]
+
+[node name="BirdFlyoverSpawner" type="Node3D"]
+script = ExtResource("1")
+bird_scene = ExtResource("2")

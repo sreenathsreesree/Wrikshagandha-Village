@@ -1,4 +1,4 @@
-[gd_scene load_steps=34 format=3]
+[gd_scene load_steps=39 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -27,6 +27,11 @@
 [ext_resource type="PackedScene" path="res://scenes/world/props/Butterfly.tscn" id="25"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/Footprints.tscn" id="26"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/UnusualFlowerPatch.tscn" id="27"]
+[ext_resource type="PackedScene" path="res://scenes/world_simulation/WorldSimulation.tscn" id="28"]
+[ext_resource type="PackedScene" path="res://scenes/wildlife/Rabbit.tscn" id="29"]
+[ext_resource type="PackedScene" path="res://scenes/wildlife/SmallBird.tscn" id="30"]
+[ext_resource type="PackedScene" path="res://scenes/wildlife/WildlifeButterfly.tscn" id="31"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/DriftingLeaf.tscn" id="32"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -329,6 +334,45 @@ position = Vector3(2.3, 0, 15.8)
 
 [node name="ButterflyNearAncientSeed" parent="Clues" instance=ExtResource("25")]
 position = Vector3(-18.5, 0, 11)
+
+[node name="Wildlife" type="Node3D" parent="."]
+
+[node name="Rabbit1" parent="Wildlife" instance=ExtResource("29")]
+position = Vector3(5, 0.15, 4)
+
+[node name="Rabbit2" parent="Wildlife" instance=ExtResource("29")]
+position = Vector3(-16, 0.15, 8)
+
+[node name="SmallBird1" parent="Wildlife" instance=ExtResource("30")]
+position = Vector3(7, 0.12, 8.5)
+
+[node name="SmallBird2" parent="Wildlife" instance=ExtResource("30")]
+position = Vector3(-14, 0.12, -3)
+
+[node name="WildlifeButterfly1" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(4, 0.4, 1)
+
+[node name="WildlifeButterfly2" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(9, 0.4, -6)
+
+[node name="WildlifeButterfly3" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(-4, 0.4, 9)
+
+[node name="Ambient" type="Node3D" parent="."]
+
+[node name="DriftingLeaf1" parent="Ambient" instance=ExtResource("32")]
+position = Vector3(2, 3, 5)
+
+[node name="DriftingLeaf2" parent="Ambient" instance=ExtResource("32")]
+position = Vector3(-6, 3, -8)
+
+[node name="GlowingMotesOpen1" parent="Ambient" instance=ExtResource("24")]
+position = Vector3(0, 0, 8)
+
+[node name="GlowingMotesOpen2" parent="Ambient" instance=ExtResource("24")]
+position = Vector3(-2, 0, -4)
+
+[node name="WorldSimulation" parent="." instance=ExtResource("28")]
 
 [node name="PlayerSpawn" type="Marker3D" parent="."]
 position = Vector3(0, 0, 5)
