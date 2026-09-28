@@ -783,7 +783,7 @@ No large world expansion before this gate passes.
 | M02.5 | `f0003dd` |
 | M02.6 | `c067fe3` |
 | M03.1 | `d000146` |
-| M03.2 | *(recorded after commit)* |
+| M03.2 | `6991da1` |
 
 ## 16. Current position
 - **Current phase:** 03 — Camera / world shell. M03.1–M03.2 implemented (`[~]`, runtime test pending; M03.2 is infrastructure only). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
