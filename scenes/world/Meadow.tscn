@@ -404,7 +404,7 @@ position = Vector3(8.5, 0, -7.5)
 discovery_scene = ExtResource("4")
 
 [node name="SmallMushroomSpawn" parent="Discoverables" instance=ExtResource("19")]
-position = Vector3(-9, 0, -5)
+position = Vector3(0.3, 0, -2.6)
 discovery_scene = ExtResource("5")
 
 [node name="HealingHerbSpawn" parent="Discoverables" instance=ExtResource("19")]
@@ -452,6 +452,52 @@ position = Vector3(2.3, 0, 15.8)
 [node name="ButterflyNearAncientSeed" parent="Clues" instance=ExtResource("25")]
 position = Vector3(-18.5, 0, 11)
 
+[node name="SecretSpots" type="Node3D" parent="."]
+
+[node name="StoneRing1" parent="SecretSpots" instance=ExtResource("12")]
+position = Vector3(15.1, 0, -2.0)
+
+[node name="StoneRing2" parent="SecretSpots" instance=ExtResource("12")]
+position = Vector3(14.3, 0, -0.9)
+rotation_degrees = Vector3(0, 60, 0)
+
+[node name="StoneRing3" parent="SecretSpots" instance=ExtResource("12")]
+position = Vector3(12.9, 0, -1.3)
+rotation_degrees = Vector3(0, 130, 0)
+
+[node name="StoneRing4" parent="SecretSpots" instance=ExtResource("12")]
+position = Vector3(13.2, 0, -2.9)
+rotation_degrees = Vector3(0, 200, 0)
+
+[node name="StoneRing5" parent="SecretSpots" instance=ExtResource("12")]
+position = Vector3(14.7, 0, -3.1)
+rotation_degrees = Vector3(0, 280, 0)
+
+[node name="SecludedPondNookReed" parent="SecretSpots" instance=ExtResource("35")]
+position = Vector3(14.0, 0, -12.0)
+rotation_degrees = Vector3(0, 45, 0)
+
+[node name="SecludedPondNookRock" parent="SecretSpots" instance=ExtResource("12")]
+position = Vector3(14.8, 0, -11.5)
+scale = Vector3(0.6, 0.6, 0.6)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="SecludedPondNookGrass" parent="SecretSpots" instance=ExtResource("13")]
+position = Vector3(13.3, 0, -12.6)
+
+[node name="MysteryGroveTree" parent="SecretSpots" instance=ExtResource("9")]
+position = Vector3(-3, 0, 14)
+rotation_degrees = Vector3(0, 160, 0)
+
+[node name="MysteryGroveMotes" parent="SecretSpots" instance=ExtResource("24")]
+position = Vector3(-2.6, 0.1, 14.3)
+
+[node name="HiddenFlowerPocketPatch" parent="SecretSpots" instance=ExtResource("27")]
+position = Vector3(18.0, 0, -3.0)
+
+[node name="HiddenFlowerPocketGrass" parent="SecretSpots" instance=ExtResource("13")]
+position = Vector3(17.3, 0, -2.0)
+
 [node name="Wildlife" type="Node3D" parent="."]
 
 [node name="Rabbit1" parent="Wildlife" instance=ExtResource("29")]
@@ -480,6 +526,9 @@ position = Vector3(5, 0.4, 5.5)
 
 [node name="SmallBird3" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(8, 0.12, -11.5)
+
+[node name="WildlifeButterfly5" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(17.8, 0.4, -2.5)
 
 [node name="Ambient" type="Node3D" parent="."]
 
