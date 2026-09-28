@@ -414,7 +414,7 @@ Goal: one generic interaction architecture for everything touchable.
 | M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[~]` |
 | M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[~]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[~]` |
-| M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
+| M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[~]` |
 
 **M02.1 — Generic interaction foundation** `[~]` Implemented — runtime testing pending
 - **Objective:** make the existing `Interactable` a small generic contract, with all discovery behaviour moved into a discovery implementation, unchanged.
@@ -533,6 +533,29 @@ Goal: one generic interaction architecture for everything touchable.
   - `tools/run_all.sh` passes (all simulations included).
   - New checks: the removed names never return in scripts, scenes or `project.godot`; InputManager has exactly one interaction request signal (`interact_target_requested`), emitted by `_handle_tap` and connected in Player `_ready`; `_interact_with()` is entered only from `_on_interact_target_requested` and `_on_interaction_zone_area_entered`; one-shot protection (refuse spent; register one-shot objects before interacting) is now checked directly.
   - Mutation-tested: 18 GDScript mutations and 1 model mutation caught (restoring the dead path in full, just the signal, or a nearest-object entry under a new name; removing the target-request connection or emit; a second `interact()` call site; bypassing availability or one-shot protection, registration after interacting; interacting before facing; removing the INTERACT wrap; breaking the verb API; removing tap feedback; a new per-frame loop; a timer; a numeric mask).
+- **Commit:** §15.
+
+**M02.6 — Placeholder Inspect / Open / Read interactables (architecture proof)** `[~]` Implemented and verified in code — an architecture proof, **not** player-facing gameplay
+- **Objective:** prove new interactable types work through the generic architecture with no Player change.
+- **Audit:**
+  - Player and InputManager reference no concrete type or verb (one code comment mentions FarmPlot) — they use only the `Interactable` contract: availability, `interact()`, highlight/proximity/tap selection, `remove_on_harvest`, and the target's position.
+  - `Verb` held only COLLECT, PLANT, WATER, HARVEST. INSPECT, OPEN and READ are D-09 verbs that M02.2 deferred "until the behaviours that need them" — these fixtures are those behaviours. No other verb is needed.
+  - Fixture infrastructure already existed: `tools/fixtures/` (ignored by Godot through `tools/.gdignore`; analysed by the toolkit) with the M02.1 probe.
+- **Player/InputManager:** **no change needed and none made** — byte-for-byte identical (SHA-1 `45728f0…` / `4273df8…` before and after).
+- **Files:** `scripts/interactables/interactable.gd` (enum only), new `tools/fixtures/inspect_fixture.gd`, `open_fixture.gd`, `read_fixture.gd`, `tools/check_project.py`, `tools/sims/sim_interaction.py`, docs.
+- **Implementation:**
+  - `Verb` gains `INSPECT = 5, OPEN = 6, READ = 7` (appended; existing values unchanged).
+  - Three fixtures, each `extends Interactable`, no `class_name`, persistent, availability through `set_available()` → `monitorable`, deterministic record (counters, `last_action`), no UI/assets/signals/globals:
+    - inspect: offers INSPECT; each interaction counts.
+    - open: offers OPEN while closed, nothing once open (a state-following verb list).
+    - read: **multi-verb** — offers INSPECT and READ at once; a tap (`interact()`) reads; `interact_with_verb(INSPECT)` inspects through the `_perform_interaction_verb()` override.
+  - Not placed in any scene; no game code can reference them (checked).
+- **Verification (in code):**
+  - `tools/run_all.sh` passes; the GDScript analyzer compiles the fixtures against the real contract.
+  - New checks: expected verbs per fixture; every `Verb` member is offered by some object or fixture (no speculative verbs); fixtures extend `Interactable`, have no `class_name`, switch availability only via `monitorable`, never override the guarded verb functions, never call `interact()` or reach into Player/InputManager; the multi-verb fixture dispatches the selected verb; Player/InputManager name no fixture or INSPECT/OPEN/READ and use no reflection (`has_method`, `get_script`, `call`, `get`/`get_meta` on objects); game code never loads a fixture; the per-frame baseline covers fixtures.
+  - `sim_interaction.py`: the three fixtures, a discovery and a farm plot through one Player path (identical steps); repeated interaction; open → nothing more; unavailable and re-enabled; the multi-verb dispatch (read from the fixture's source).
+  - Mutation-tested: 23 GDScript and 6 model mutations caught.
+- **Runtime:** none — the fixtures are never loaded by Godot. The plan's "Godot: tap each fixture" would need a scene placing them; that is not done here (not needed for the proof, and out of scope).
 - **Commit:** §15.
 
 ### PHASE 03 — CAMERA / WORLD SHELL
@@ -701,8 +724,9 @@ No large world expansion before this gate passes.
 | M02.3 | `0f0dded` |
 | M02.4 | `0dfbdbe` |
 | M02.5 | `f0003dd` |
+| M02.6 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.5 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's and M02.4's runtime tests). In Phase 02 the next is **M02.6 — placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes**. Either starts only on the developer's instruction.
+- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 02's milestone table is complete. Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's and M02.4's runtime tests). Phase 02's table ends at M02.6; the next development milestone is **M03.1 — persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1)**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

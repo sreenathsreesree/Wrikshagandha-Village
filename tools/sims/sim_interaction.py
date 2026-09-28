@@ -21,6 +21,11 @@
    checked on the real Meadow layout. The tapped object's Indicator shows at
    once and is released when its interaction starts or the walk is cancelled
    or replaced; unavailable objects never get it.
+6. New object types with no Player change (M02.6): the INSPECT / OPEN /
+   READ verification fixtures (tools/fixtures/), a discovery and a farm plot
+   all go through the same generic Player path; the READ fixture offers two
+   verbs at once and performs the one passed back. Verbs and the multi-verb
+   dispatch are read from the fixtures' GDScript.
 """
 import itertools, math, os, random, re
 
@@ -352,4 +357,83 @@ for _ in range(3000):
         assert len(sel) <= 1 and (not sel or sel[0] is p.sel), "at most one object shows tap feedback: the current one"
         assert p.sel is None or p.sel is p.approach, "feedback only while its walk is on"
 print("feedback: far/in-range/arrival/cancel/retarget/ground/repeat/unavailable + 3000 random runs OK")
+
+# ---------------------------------------------------------------- 6. new object types (fixtures)
+FX = {k: _src("tools", "fixtures", f"{k}_fixture.gd") for k in ("inspect", "open", "read")}
+def offered_in(src): return re.findall(r"Verb\.(\w+)", _body(src, "_get_interaction_verbs"))
+assert offered_in(FX["inspect"]) == ["INSPECT"] and offered_in(FX["open"]) == ["OPEN"] and offered_in(FX["read"]) == ["INSPECT", "READ"]
+assert "if not is_open:" in _body(FX["open"], "_get_interaction_verbs"), "OPEN only while closed"
+for k, src in FX.items():
+    assert re.search(r"func set_available\(value: bool\) -> void:\s*monitorable = value", src), f"{k}: availability via the contract"
+    assert "remove_on_harvest = false" in _body(src, "_ready"), f"{k}: persistent"
+    assert not re.search(r"^func (get_available_interaction_verbs|interact_with_verb)\(", src, re.M), f"{k}: uses the guarded base"
+def records(src, fn): return re.search(r"last_action = Verb\.(\w+)", _body(src, fn)).group(1)
+PERF = _body(FX["read"], "_perform_interaction_verb")
+READ_DISPATCH = {v: records(FX["read"], "_" + fn) for v, fn in re.findall(r"if verb == Verb\.(\w+):\s*return _(\w+)\(\)", PERF)}
+READ_DEFAULT = records(FX["read"], "_" + re.findall(r"return _(\w+)\(\)\s*$", PERF.strip())[-1])
+READ_TAP = records(FX["read"], "_" + re.search(r"return _(\w+)\(\)", _body(FX["read"], "interact")).group(1))
+
+class GObj:  # the Interactable contract, as Player sees it — Player never reads .kind
+    one_shot = False
+    def __init__(o): o.monitorable, o.log = True, []
+    def available(o): return o.monitorable
+    def verbs(o): return o._verbs() if o.available() else []        # get_available_interaction_verbs
+    def interact_with_verb(o, v):                                    # base: only offered verbs
+        return o.perform(v) if v in o.verbs() else False
+    def perform(o, v): return o.interact()                           # default: the tap action
+class Inspect(GObj):
+    def _verbs(o): return ["INSPECT"]
+    def interact(o): o.log.append(records(FX["inspect"], "interact")); return True
+class Open(GObj):
+    def __init__(o): super().__init__(); o.is_open = False
+    def _verbs(o): return [] if o.is_open else ["OPEN"]
+    def interact(o):
+        if o.is_open: return False
+        o.is_open = True; o.log.append(records(FX["open"], "interact")); return True
+class Read(GObj):
+    def _verbs(o): return ["INSPECT", "READ"]
+    def interact(o): o.log.append(READ_TAP); return True
+    def perform(o, v): o.log.append(READ_DISPATCH.get(v, READ_DEFAULT)); return True
+class Disc(GObj):
+    one_shot = True
+    def _verbs(o): return ["COLLECT"]
+    def interact(o): o.log.append("COLLECT"); o.monitorable = False; return True
+class Plot(GObj):
+    def __init__(o): super().__init__(); o.state = "SOIL"
+    def _verbs(o): return plot_offer(o.state, True, False, o.state == "GROWING", True)
+    def interact(o):
+        act = plot_action(o.state, True, False, o.state == "GROWING", True)
+        o.log.append(act); o.state = {"SOIL": "GROWING", "GROWING": "READY", "READY": "SOIL"}.get(o.state, o.state); return True
+
+class GPlayer:  # port of Player._interact_with: the same steps for every object
+    def __init__(p): p.spent, p.steps = [], []
+    def interact_with(p, o):
+        if o in p.spent or not o.available(): return False
+        if o.one_shot: p.spent.append(o)
+        seq = ["face", "INTERACT"]; o.interact(); seq.append("end")
+        p.steps.append(seq); return True
+
+objs = {"inspect": Inspect(), "open": Open(), "read": Read(), "discovery": Disc(), "plot": Plot()}
+p = GPlayer()
+for name, o in objs.items():
+    assert p.interact_with(o), name
+assert all(seq == ["face", "INTERACT", "end"] for seq in p.steps) and len(p.steps) == 5, "one path for every object"
+assert objs["inspect"].log == ["INSPECT"] and objs["open"].log == ["OPEN"] and objs["read"].log == ["READ"]
+assert objs["discovery"].log == ["COLLECT"] and objs["plot"].log == ["PLANT"]
+for _ in range(3): p.interact_with(objs["inspect"])
+assert objs["inspect"].log == ["INSPECT"] * 4, "repeated interaction"
+assert objs["open"].verbs() == [] and p.interact_with(objs["open"]) and objs["open"].log == ["OPEN"], "open: nothing more to do, no double open"
+assert not p.interact_with(objs["discovery"]), "a one-shot discovery is still never interacted with twice"
+p.interact_with(objs["plot"]); p.interact_with(objs["plot"]); assert objs["plot"].log == ["PLANT", "WATER", "HARVEST"]
+r = objs["read"]
+assert r.verbs() == ["INSPECT", "READ"], "multi-verb: two verbs offered at once"
+assert r.interact_with_verb("INSPECT") and r.log[-1] == "INSPECT", "the verb passed back is the one performed"
+assert r.interact_with_verb("READ") and r.log[-1] == "READ"
+assert not r.interact_with_verb("OPEN") and r.log[-1] == "READ", "an unoffered verb is refused"
+for name in ("inspect", "open", "read"):
+    o = objs[name]; o.monitorable = False; before = list(o.log)
+    assert o.verbs() == [] and not p.interact_with(o) and not o.interact_with_verb("INSPECT") and o.log == before, f"{name}: unavailable"
+    o.monitorable = True
+assert p.interact_with(objs["inspect"]) and objs["inspect"].log[-1] == "INSPECT", "re-enabled: works again, no Player change"
+print(f"fixtures: INSPECT/OPEN/READ + discovery + plot through one Player path; multi-verb {r.verbs()} dispatch {READ_DISPATCH}, tap -> {READ_TAP}")
 print("ALL INTERACTION SIMULATIONS PASSED")

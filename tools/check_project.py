@@ -668,8 +668,11 @@ for f in subclasses:
     for fn in ("get_available_interaction_verbs", "interact_with_verb"):
         if func_body(scripts[f], fn) is not None:
             err(f"{f}: overrides {fn}() — override _get_interaction_verbs()/_perform_interaction_verb() instead")
+FIXTURES = {"tools/fixtures/inspect_fixture.gd": {"INSPECT"},
+            "tools/fixtures/open_fixture.gd": {"OPEN"},
+            "tools/fixtures/read_fixture.gd": {"INSPECT", "READ"}}
 EXPECTED_VERBS = {"scripts/interactables/discovery_interactable.gd": {"COLLECT"},
-                  "scripts/farming/farm_plot.gd": {"PLANT", "WATER", "HARVEST"}}
+                  "scripts/farming/farm_plot.gd": {"PLANT", "WATER", "HARVEST"}, **FIXTURES}
 for f, want in EXPECTED_VERBS.items():
     body = func_body(scripts.get(f, ""), "_get_interaction_verbs") or ""
     have = set(re.findall(r"\bVerb\.([A-Z_]+)", body))
@@ -692,7 +695,48 @@ for f, s2 in scripts.items():
         for m in re.finditer(r"\bVerb\.([A-Za-z_]+)", code_only(s2)):
             if m.group(1) not in VERBS:
                 err(f"{f}: unknown verb Verb.{m.group(1)}")
-notes.append(f"interaction verbs: {sorted(VERBS, key=VERBS.get)} (D-09 subset)")
+offered = set()
+for f in subclasses:
+    offered |= set(re.findall(r"\bVerb\.([A-Z_]+)", func_body(scripts[f], "_get_interaction_verbs") or ""))
+for name in sorted(set(VERBS) - offered):
+    err(f"{BASE}: Verb.{name} is offered by no object or fixture — verbs arrive with the behaviour that needs them")
+
+# M02.6: INSPECT / OPEN / READ verification fixtures — new object types on
+# the generic contract with zero Player/InputManager knowledge of them.
+for f, want in FIXTURES.items():
+    src = scripts.get(f)
+    if src is None or f not in subclasses or re.search(r"^class_name", src, re.M):
+        err(f"{f}: a fixture must exist, extend Interactable and have no class_name (never game content)")
+        continue
+    fcode = code_only(src)
+    if not re.search(r"func set_available\(value: bool\) -> void:\s*monitorable = value", src):
+        err(f"{f}: a fixture switches availability only through the generic contract (monitorable)")
+    if re.search(r"\bInputManager\b|\bPlayer\b|_interact_with|get_tree\(|get_first_node_in_group|(?<!func )\binteract\(\)", fcode):
+        err(f"{f}: a fixture must not reach into Player/InputManager or call interact() itself (one path: Player)")
+    for fn in ("get_available_interaction_verbs", "interact_with_verb", "is_interaction_available"):
+        if func_body(src, fn) is not None:
+            err(f"{f}: overrides {fn}() — fixtures use the guarded base contract")
+rf = scripts.get("tools/fixtures/read_fixture.gd", "")
+perf = func_body(rf, "_perform_interaction_verb") or ""
+if len(FIXTURES["tools/fixtures/read_fixture.gd"]) < 2 or not re.search(r"if verb == Verb\.INSPECT:\s*return _inspect\(\)\s*return _read\(\)", perf) \
+   or "return _read()" not in (func_body(rf, "interact") or ""):
+    err("tools/fixtures/read_fixture.gd: the multi-verb fixture must offer INSPECT and READ and perform the selected one (READ by default)")
+for f in (PL, IM):
+    m = re.search(r"\b(INSPECT|OPEN|READ|[Ff]ixture\w*|probe\w*|res://tools)\b", code_only(scripts.get(f, "")))
+    if m:
+        err(f"{f}: knows about '{m.group(1)}' — Player/InputManager stay unaware of fixtures and specific verbs")
+for f in (PL, IM):
+    code = code_only(scripts.get(f, ""))
+    objs = set(re.findall(r"\b(\w+)\s*:\s*(?:Interactable|Node|Node3D|Area3D)\b", code)) | \
+           set(re.findall(r"\bvar\s+(\w+)\s*:?=\s*[^\n]*\bas (?:Interactable|Node)\b", code))
+    m = re.search(r"\b(has_method|get_script|is_class|has_signal)\(|\.(call|callv|call_deferred)\(", code) or \
+        (objs and re.search(rf"\b(?:{'|'.join(sorted(objs))})\.(get|get_meta|has_meta)\(", code))
+    if m:
+        err(f"{f}: reflection ('{m.group(0)}') — Player/InputManager must not tell objects apart by their methods or script")
+for f, s2 in scripts.items():
+    if not f.startswith("tools/") and re.search(r"res://tools/|_fixture\b|fixtures/", code_only(s2)):
+        err(f"{f}: game code must not load or reference the verification fixtures")
+notes.append(f"interaction verbs: {sorted(VERBS, key=VERBS.get)} (D-09 subset); fixtures: {len(FIXTURES)}")
 
 # ------------------------------------------------------------ facing on arrival
 # M02.3: the player turns toward an object once, at the generic interaction
@@ -803,7 +847,7 @@ if "Vector2(offset.x, offset.z).length() - reach" not in td:
 # Per-frame loops: this is the whole set. A new one is a deliberate,
 # reviewed change to this list (docs/ARCHITECTURE.md §17), never a side effect.
 PER_FRAME = [('scripts/camera/follow_camera.gd', '_physics_process'), ('scripts/interactables/indicator_bob.gd', '_process'), ('scripts/player/player.gd', '_physics_process'), ('scripts/ui/virtual_joystick.gd', '_process'), ('scripts/world/butterfly.gd', '_process'), ('scripts/world/drifting_leaf.gd', '_process'), ('scripts/world/floating_motes.gd', '_process'), ('scripts/world_simulation/environmental_event_controller.gd', '_process'), ('scripts/world_simulation/exploration_landmark_controller.gd', '_process'), ('scripts/world_simulation/time_of_day.gd', '_process'), ('scripts/world_simulation/vegetation_controller.gd', '_process'), ('scripts/world_simulation/wildlife_actor.gd', '_process'), ('scripts/world_simulation/wildlife_butterfly.gd', '_process')]
-found = sorted((f, m) for f, s2 in scripts.items() if not f.startswith("tools/")
+found = sorted((f, m) for f, s2 in scripts.items() if not f.startswith("tools/") or f.startswith("tools/fixtures/")
                for m in re.findall(r"^func (_process|_physics_process)\(", s2, re.M))
 if found != sorted(tuple(x) for x in PER_FRAME):
     err(f"per-frame callbacks changed: added {sorted(set(found) - set(map(tuple, PER_FRAME)))}, removed {sorted(set(map(tuple, PER_FRAME)) - set(found))}")

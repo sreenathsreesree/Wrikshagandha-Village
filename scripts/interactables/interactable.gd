@@ -41,11 +41,13 @@ const RARITY_INTENSITY := {
 	"legendary": 1.4,
 }
 
-## The generic interaction verbs (decision D-09): only those an existing
-## object performs today; the rest are added with the behaviours that need
-## them. Values are explicit and never reused or renumbered, so they stay
-## stable if they are ever saved. Never spelled as strings anywhere.
-enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4 }
+## The generic interaction verbs (decision D-09): only those an object
+## performs today — game objects, or the verification fixtures in
+## tools/fixtures/ (INSPECT, OPEN, READ; M02.6) — the rest are added with
+## the behaviours that need them. Values are explicit and never reused or
+## renumbered (new ones are appended), so they stay stable if they are ever
+## saved. Never spelled as strings anywhere.
+enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7 }
 
 @export var remove_on_harvest: bool = true
 
