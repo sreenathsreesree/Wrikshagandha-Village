@@ -25,8 +25,10 @@ class_name FarmPlot
 ##
 ## The soil remembers: each harvest's crop id is kept (the last
 ## FarmManager.SOIL_MEMORY of them), and FarmManager rates the next
-## planting from that memory. The rated quality travels with the crop —
-## a slightly smaller or larger mature crop, and its harvest points.
+## planting's soil from that memory. The plot also notes how long its crop
+## waited thirsty each time (timestamps only — no polling); at ripening
+## FarmManager turns soil + care into the crop's quality, which shows as a
+## slightly smaller or larger mature crop and scales its harvest points.
 
 enum PlotState { EMPTY, SOIL, PLANTED, GROWING, READY }
 
@@ -40,11 +42,19 @@ enum PlotState { EMPTY, SOIL, PLANTED, GROWING, READY }
 ## Gradual garden: the FarmManager milestone id that opens this plot while
 ## it starts locked (e.g. "first_harvest"). Empty = only unlock_plot().
 @export var unlock_on_milestone: String = ""
+## Optional wild growth standing where the plot will be while it's locked
+## (e.g. a few grass clumps and wildflowers under this plot) — it gives
+## way when the plot opens, so the new bed is cleared out of the meadow
+## rather than appearing from nothing.
+@export var overgrowth_path: NodePath
 
 ## The crop currently in the ground — set by plant(), cleared on harvest.
 var crop_definition: CropDefinition
-## The quality this crop is growing at (FarmManager.QUALITY_*), rated when
-## it was planted.
+## The soil rating this crop was planted into, its care rating and final
+## quality (FarmManager's 0..2 scales). care and quality are decided when
+## it ripens; until then quality reads Good.
+var crop_soil: int = 1
+var crop_care: int = 2
 var crop_quality: int = 1
 
 const SOIL_COLOR_FRESH := Color(0.5, 0.4, 0.27, 1.0)
@@ -78,6 +88,10 @@ var _ripple_material: StandardMaterial3D
 var _last_action_msec: int = -ACTION_COOLDOWN_MSEC
 ## Crop ids of this plot's past harvests, oldest first.
 var _recent_crop_ids: Array[String] = []
+## When the current wait for water began (-1 = not thirsty), and the
+## longest single wait so far for the crop in the ground.
+var _thirsty_since_msec: int = -1
+var _longest_thirst_seconds: float = 0.0
 
 ## Guards _run_harvest_sequence()'s awaited animation. A FarmPlot stays in
 ## the player's nearby-interactables list (remove_on_harvest is false), so a
@@ -122,11 +136,24 @@ func set_unlocked(value: bool) -> void:
 ## A newly opened plot: the worn patch spreads out of the grass with a
 ## small puff of dust — seen if the player is nearby, harmless if not.
 func _play_unlock_reveal() -> void:
+	var overgrowth := _get_overgrowth()
+	var delay := 0.0
+	if overgrowth and overgrowth.visible:
+		var clear := create_tween()
+		clear.tween_property(overgrowth, "scale", Vector3(0.05, 0.05, 0.05), 0.45) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		clear.tween_callback(overgrowth.hide)
+		delay = 0.3
 	patch_mesh.scale = Vector3(0.2, 1.0, 0.2)
 	var tween := create_tween()
-	tween.tween_property(patch_mesh, "scale", Vector3.ONE, 0.6) \
+	tween.tween_property(patch_mesh, "scale", Vector3.ONE, 0.6).set_delay(delay) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_spawn_burst(DUST_TINT, 0.45, 0.45, 0.04)
+
+func _get_overgrowth() -> Node3D:
+	if overgrowth_path == NodePath():
+		return null
+	return get_node_or_null(overgrowth_path) as Node3D
 
 ## The soil's memory, oldest first — read by FarmManager to rate a planting.
 func get_recent_crop_ids() -> Array[String]:
@@ -138,6 +165,14 @@ func _apply_unlocked() -> void:
 	monitorable = unlocked and not _is_harvesting
 	if plot_state == PlotState.EMPTY:
 		patch_mesh.visible = unlocked
+	var overgrowth := _get_overgrowth()
+	if overgrowth and not unlocked:
+		overgrowth.visible = true
+		overgrowth.scale = Vector3.ONE
+	elif overgrowth and not is_node_ready():
+		# Opened before it ever showed (e.g. its milestone was already
+		# reached when it loaded): no clearing moment, just no overgrowth.
+		overgrowth.visible = false
 
 ## Leaving range also closes this plot's seed picker if it's the one open,
 ## so a picker can never outlive the player standing at its plot.
@@ -193,12 +228,12 @@ func _prepare_soil() -> void:
 	_pulse_indicator(0.25)
 	AmbientAudioManager.play_soil_sound()
 
-## Called by FarmManager with the player's chosen seed and the quality it
-## rated for this soil, after it has verified a seed is available (it
+## Called by FarmManager with the player's chosen seed and the soil rating
+## it gave this plot, after it has verified a seed is available (it
 ## consumes the seed only if this returns true). A seed in the crop's
 ## identity color drops into the soil; when it lands, the mound rises with
 ## a small puff and the seedling emerges.
-func plant(crop: CropDefinition, quality: int) -> bool:
+func plant(crop: CropDefinition, soil: int) -> bool:
 	if not can_plant() or crop == null or crop.visual_scene == null:
 		return false
 	var node := crop.visual_scene.instantiate()
@@ -209,17 +244,21 @@ func plant(crop: CropDefinition, quality: int) -> bool:
 		return false
 
 	crop_definition = crop
-	crop_quality = quality
+	crop_soil = soil
+	crop_care = FarmManager.CARE_CAREFUL
+	crop_quality = FarmManager.QUALITY_GOOD
+	_longest_thirst_seconds = 0.0
 	plot_state = PlotState.PLANTED
 	_stage_index = 0
 	_needs_water = true
+	_start_thirst()
 	# Planting comes from a seed-picker tap, not interact(), so start the
 	# action cooldown here too: an immediate Interact can't water before the
 	# seed has landed and the seedling has appeared (the drop is shorter
 	# than the cooldown).
 	_last_action_msec = Time.get_ticks_msec()
 	_crop_visual = visual
-	_crop_visual.configure(crop, FarmManager.get_quality_size(quality))
+	_crop_visual.configure(crop)
 	crop_root.add_child(_crop_visual)
 	crop_root.visible = true
 
@@ -269,6 +308,7 @@ func _on_seed_landed() -> void:
 ## already-watered, still-growing plot ignores further presses.
 func _water_crop() -> void:
 	_needs_water = false
+	_end_thirst()
 	plot_state = PlotState.GROWING
 	_tween_soil_color(SOIL_COLOR_WET, SOIL_ABSORB_SECONDS)
 	_spawn_burst(WATER_TINT, 0.28, -0.9, 0.5)
@@ -318,9 +358,20 @@ func _on_growth_timer_timeout() -> void:
 		_become_ready()
 	else:
 		_needs_water = true
+		_start_thirst()
 		_tween_soil_color(SOIL_COLOR_DRY, 1.2)
 		if _crop_visual:
 			_crop_visual.set_thirsty(true)
+
+func _start_thirst() -> void:
+	_thirsty_since_msec = Time.get_ticks_msec()
+
+func _end_thirst() -> void:
+	if _thirsty_since_msec < 0:
+		return
+	var waited := (Time.get_ticks_msec() - _thirsty_since_msec) / 1000.0
+	_longest_thirst_seconds = maxf(_longest_thirst_seconds, waited)
+	_thirsty_since_msec = -1
 
 ## Ripening: a few soft motes in the crop's own color drift up once, and
 ## FarmManager hears about it (the garden's "something is ready" state).
@@ -329,6 +380,10 @@ func _become_ready() -> void:
 	_needs_water = false
 	_tween_soil_color(SOIL_COLOR_DRY, 1.2)
 	if crop_definition:
+		crop_care = FarmManager.rate_care(crop_definition, _longest_thirst_seconds)
+		crop_quality = FarmManager.combine_quality(crop_soil, crop_care)
+		if _crop_visual:
+			_crop_visual.set_size_factor(FarmManager.get_quality_size(crop_quality))
 		_spawn_burst(crop_definition.identity_color, 0.16, 1.4, 0.25)
 		FarmManager.notify_crop_ready(crop_definition)
 
@@ -357,7 +412,7 @@ func _run_harvest_sequence() -> void:
 	var points_awarded := FarmManager.get_harvest_points(crop_definition, crop_quality)
 	PointsManager.add_points(points_awarded)
 	_remember_harvest(crop_definition.crop_id)
-	FarmManager.notify_crop_harvested(plot_id, crop_definition, points_awarded, crop_quality)
+	FarmManager.notify_crop_harvested(plot_id, crop_definition, points_awarded, crop_quality, crop_care)
 
 	_play_seed_return(crop_definition.identity_color)
 	if _crop_visual:
@@ -394,6 +449,7 @@ func _reset_to_soil() -> void:
 	crop_definition = null
 	_stage_index = 0
 	_needs_water = false
+	_thirsty_since_msec = -1
 	var indicator := _get_indicator()
 	if indicator:
 		indicator.set_tint(_default_indicator_tint)

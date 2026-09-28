@@ -1,4 +1,4 @@
-[gd_scene load_steps=45 format=3]
+[gd_scene load_steps=47 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -38,6 +38,8 @@
 [ext_resource type="Script" path="res://scripts/world_simulation/environmental_event.gd" id="36"]
 [ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark.gd" id="37"]
 [ext_resource type="PackedScene" path="res://scenes/farming/FarmPlot.tscn" id="38"]
+[ext_resource type="PackedScene" path="res://scenes/farming/GardenBloomFlowers.tscn" id="39"]
+[ext_resource type="Script" path="res://scripts/farming/milestone_reveal.gd" id="40"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -569,15 +571,45 @@ rotation_degrees = Vector3(0, -30, 0)
 plot_id = "farm_plot_06"
 unlocked = false
 unlock_on_milestone = "first_harvest"
+overgrowth_path = NodePath("Overgrowth")
 position = Vector3(10.6, 0, 5.0)
 rotation_degrees = Vector3(0, -20, 0)
+
+[node name="Overgrowth" type="Node3D" parent="Farm/FarmPlot6"]
+
+[node name="WildGrass1" parent="Farm/FarmPlot6/Overgrowth" instance=ExtResource("13")]
+position = Vector3(0.15, 0, 0.1)
+scale = Vector3(1.1, 1.1, 1.1)
+
+[node name="WildGrass2" parent="Farm/FarmPlot6/Overgrowth" instance=ExtResource("13")]
+position = Vector3(-0.22, 0, -0.12)
+scale = Vector3(0.95, 0.95, 0.95)
+
+[node name="WildGrass3" parent="Farm/FarmPlot6/Overgrowth" instance=ExtResource("13")]
+position = Vector3(0.05, 0, -0.3)
+scale = Vector3(0.85, 0.85, 0.85)
 
 [node name="FarmPlot7" parent="Farm" instance=ExtResource("38")]
 plot_id = "farm_plot_07"
 unlocked = false
 unlock_on_milestone = "all_starter_crops"
+overgrowth_path = NodePath("Overgrowth")
 position = Vector3(13.6, 0, 5.1)
 rotation_degrees = Vector3(0, 15, 0)
+
+[node name="Overgrowth" type="Node3D" parent="Farm/FarmPlot7"]
+
+[node name="WildGrass1" parent="Farm/FarmPlot7/Overgrowth" instance=ExtResource("13")]
+position = Vector3(-0.1, 0, 0.18)
+scale = Vector3(1.05, 1.05, 1.05)
+
+[node name="WildGrass2" parent="Farm/FarmPlot7/Overgrowth" instance=ExtResource("13")]
+position = Vector3(0.25, 0, -0.05)
+scale = Vector3(0.9, 0.9, 0.9)
+
+[node name="WildGrass3" parent="Farm/FarmPlot7/Overgrowth" instance=ExtResource("13")]
+position = Vector3(-0.2, 0, -0.25)
+scale = Vector3(1.0, 1.0, 1.0)
 
 [node name="FarmGrass1" parent="Farm" instance=ExtResource("13")]
 position = Vector3(10.2, 0, 0.2)
@@ -607,6 +639,41 @@ sway_speed = 0.7
 
 [node name="FarmMotes" parent="Farm" instance=ExtResource("24")]
 position = Vector3(14.8, 0.1, 2.6)
+
+[node name="FarmGrass4" parent="Farm" instance=ExtResource("13")]
+position = Vector3(9.7, 0, 5.8)
+
+[node name="FarmGrass5" parent="Farm" instance=ExtResource("13")]
+position = Vector3(14.5, 0, 5.9)
+
+[node name="GardenBloom" type="Node3D" parent="Farm"]
+script = ExtResource("40")
+milestone_id = "garden_in_bloom"
+pulse_node_path = NodePath("../FarmMotes")
+
+[node name="BloomFlowers1" parent="Farm/GardenBloom" instance=ExtResource("39")]
+position = Vector3(9.3, 0, 4.3)
+
+[node name="BloomFlowers2" parent="Farm/GardenBloom" instance=ExtResource("39")]
+position = Vector3(15.3, 0, 4.2)
+
+[node name="BloomFlowers3" parent="Farm/GardenBloom" instance=ExtResource("39")]
+position = Vector3(11.4, 0, 6.4)
+
+[node name="BloomFlowers4" parent="Farm/GardenBloom" instance=ExtResource("39")]
+position = Vector3(14.3, 0, 6.5)
+
+[node name="BloomFlowers5" parent="Farm/GardenBloom" instance=ExtResource("39")]
+position = Vector3(9.9, 0, -0.1)
+
+[node name="BloomFlowers6" parent="Farm/GardenBloom" instance=ExtResource("39")]
+position = Vector3(15.4, 0, 1.9)
+
+[node name="BloomGrass1" parent="Farm/GardenBloom" instance=ExtResource("13")]
+position = Vector3(12.6, 0, 6.9)
+
+[node name="BloomGrass2" parent="Farm/GardenBloom" instance=ExtResource("13")]
+position = Vector3(9.0, 0, 3.2)
 
 [node name="Wildlife" type="Node3D" parent="."]
 

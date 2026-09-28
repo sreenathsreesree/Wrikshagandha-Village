@@ -5,6 +5,9 @@ extends CanvasLayer
 ## the autoload systems. Holds no gameplay state itself.
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
+## A seed that introduces a new crop is shown a beat after the discovery
+## that revealed it, so it reads as that discovery's consequence.
+const NEW_CROP_CARD_DELAY := 1.1
 
 @onready var points_label: Label = $MarginContainer/TopBar/HBoxContainer/PointsLabel
 @onready var discoveries_label: Label = $MarginContainer/TopBar/HBoxContainer/DiscoveriesLabel
@@ -14,10 +17,12 @@ const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotificati
 @onready var collection_button: Button = $ScreenButtons/CollectionButton
 @onready var journal_button: Button = $ScreenButtons/JournalButton
 @onready var daily_button: Button = $ScreenButtons/DailyButton
+@onready var basket_button: Button = $ScreenButtons/BasketButton
 
 @onready var collection_screen: CollectionScreen = $CollectionScreen
 @onready var journal_screen: JournalScreen = $JournalScreen
 @onready var daily_screen: DailyDiscoveryScreen = $DailyDiscoveryScreen
+@onready var basket_screen: BasketScreen = $BasketScreen
 
 func _ready() -> void:
 	PointsManager.points_changed.connect(_on_points_changed)
@@ -36,6 +41,7 @@ func _ready() -> void:
 	FarmManager.crop_planted.connect(_on_crop_planted)
 	FarmManager.milestone_reached.connect(_on_farm_milestone)
 	FarmManager.seed_found.connect(_on_seed_found)
+	FarmManager.produce_changed.connect(_update_basket_button)
 
 	interact_button.pivot_offset = interact_button.size / 2.0
 	interact_button.pressed.connect(_on_interact_button_pressed)
@@ -45,6 +51,8 @@ func _ready() -> void:
 	collection_button.pressed.connect(collection_screen.open)
 	journal_button.pressed.connect(journal_screen.open)
 	daily_button.pressed.connect(daily_screen.open)
+	basket_button.pressed.connect(basket_screen.open)
+	_update_basket_button()
 
 	_on_points_changed(PointsManager.get_points())
 	_update_discoveries_label()
@@ -94,12 +102,12 @@ func _on_daily_completed(definition: DiscoveryDefinition, bonus_points: int) -> 
 
 ## Reuses the exact same notification card as a discovery harvest — a
 ## crop is presented the same way, not a separate farming UI. The seed that
-## came back is mentioned in the same line, not as a second card, and the
-## quality it grew at sits beside its name.
-func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int) -> void:
+## came back is mentioned in the same line, not as a second card; the
+## quality it grew at sits beside its name, with how it was cared for.
+func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int, care: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
-	var name_line := "%s · %s" % [crop_definition.display_name, FarmManager.get_quality_name(quality)]
+	var name_line := "%s · %s\n%s" % [crop_definition.display_name, FarmManager.get_quality_name(quality), FarmManager.get_care_note(care)]
 	notification.show_message("✦ Harvested ✦", name_line, "+%d Wriksha Points · +1 seed" % points_awarded)
 
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
@@ -115,13 +123,13 @@ func _on_secret_location_found(location_id: String, bonus_points: int) -> void:
 ## A quiet note for an everyday planting. When the planting itself was a
 ## milestone (the garden's first seed), FarmManager says so and the
 ## milestone card stands in for this one — one card per moment.
-func _on_crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool, quality: int) -> void:
+func _on_crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool, soil: int) -> void:
 	if announced_by_milestone:
 		return
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	var left := FarmManager.get_seed_count(crop_definition.crop_id)
-	var detail := "%s · %s" % [FarmManager.get_soil_note(quality), _seeds_left_text(left)]
+	var detail := "%s · %s" % [FarmManager.get_soil_note(soil), _seeds_left_text(left)]
 	notification.show_compact("%s planted" % crop_definition.display_name, detail)
 
 ## Farm milestones are quiet sentences, not "achievements": FarmManager
@@ -138,12 +146,28 @@ func _seeds_left_text(count: int) -> String:
 	return "1 seed left" if count == 1 else "%d seeds left" % count
 
 ## Exploration feeding the garden: a quiet card, no points — the seed is
-## the reward.
-func _on_seed_found(crop_definition: CropDefinition) -> void:
+## the reward. A seed of a crop the player has never known is its own
+## small moment: shown just after the discovery that revealed it, titled
+## as a new crop, pointing home to the garden.
+func _on_seed_found(crop_definition: CropDefinition, new_crop: bool) -> void:
+	if new_crop:
+		get_tree().create_timer(NEW_CROP_CARD_DELAY).timeout.connect(_show_new_crop_card.bind(crop_definition))
+		return
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	var note := crop_definition.found_seed_note if crop_definition.found_seed_note != "" else "You found a seed here."
 	notification.show_message(crop_definition.icon_glyph, note, "+1 %s seed" % crop_definition.display_name)
+
+func _show_new_crop_card(crop_definition: CropDefinition) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	var note := crop_definition.found_seed_note if crop_definition.found_seed_note != "" else "A seed you've never seen before."
+	var garden := ExplorationManager.get_place_display_name(FarmManager.GARDEN_PLACE_ID)
+	notification.show_message("%s A New Crop %s" % [crop_definition.icon_glyph, crop_definition.icon_glyph], "%s\n%s" % [crop_definition.display_name, note], "Plant it in the %s" % garden)
+
+## The basket button only appears once there's something in the basket.
+func _update_basket_button() -> void:
+	basket_button.visible = FarmManager.get_produce_total() > 0
 
 ## The very first discovery of the session — a mood beat, not a reward, so
 ## it carries no points and no fanfare title.

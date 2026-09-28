@@ -20,6 +20,7 @@ starting_seeds = 2
 mature_scale = 1.0
 sway_amount = 1.6
 wildlife_interest = 0.25
+thirst_tolerance = 150.0
 ready_pulse = 0.0
 found_seed_source = "discovery"
 found_seed_source_id = "hidden_herb"

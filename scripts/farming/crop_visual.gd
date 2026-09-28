@@ -58,6 +58,7 @@ var sway: float = 0.0:
 		_apply()
 
 var _mature_scale: float = 1.0
+var _base_mature_scale: float = 1.0
 var _sway_amount: float = 1.0
 var _ready_pulse: float = 0.0
 var _current_stage: int = 0
@@ -75,12 +76,17 @@ func _ready() -> void:
 	_apply()
 
 ## Called by FarmPlot right after instancing, before appear().
-## size_factor: the planting's quality, shown as a slightly smaller (Plain)
-## or larger (Fine) mature crop.
-func configure(crop: CropDefinition, size_factor: float = 1.0) -> void:
-	_mature_scale = maxf(crop.mature_scale * size_factor, 0.1)
+func configure(crop: CropDefinition) -> void:
+	_base_mature_scale = maxf(crop.mature_scale, 0.1)
+	_mature_scale = _base_mature_scale
 	_sway_amount = maxf(crop.sway_amount, 0.0)
 	_ready_pulse = maxf(crop.ready_pulse, 0.0)
+	_apply()
+
+## Quality shows as a slightly smaller (Plain) or larger (Fine) mature
+## crop. Set as it ripens; the running growth tween eases into the new size.
+func set_size_factor(size_factor: float) -> void:
+	_mature_scale = maxf(_base_mature_scale * size_factor, 0.1)
 	_apply()
 
 ## Planting: the seedling starts slightly sunk and flattened, then rises

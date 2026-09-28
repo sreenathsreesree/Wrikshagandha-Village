@@ -92,6 +92,8 @@ func _build_garden_section() -> Control:
 		garden_line += " · room to grow"
 	if FarmManager.is_garden_found():
 		garden_line = "Found the Meadow's little growing place. " + garden_line + "."
+	if FarmManager.is_milestone_reached(FarmManager.GARDEN_IN_BLOOM):
+		garden_line = "The garden is in bloom. " + garden_line
 	box.add_child(_build_note(garden_line))
 
 	box.add_child(_build_note("Seeds: %s" % _seed_summary()))
@@ -112,7 +114,7 @@ func _build_garden_section() -> Control:
 		# The soil rule, said once in words until the player has seen it
 		# pay off; the seed picker shows it on every choice anyway.
 		if FarmManager.get_produce_total(FarmManager.QUALITY_FINE) == 0:
-			box.add_child(_build_note("The soil remembers: a different crop than last time grows Fine."))
+			box.add_child(_build_note("The soil remembers what grew last, and crops remember how long they waited for water. Both together grow Fine."))
 
 	var marks: PackedStringArray = []
 	for milestone: Dictionary in FarmManager.get_milestones():

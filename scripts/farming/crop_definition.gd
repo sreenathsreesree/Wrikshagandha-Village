@@ -53,6 +53,18 @@ class_name CropDefinition
 ## head) sit higher.
 @export_range(0.0, 1.0) var wildlife_interest: float = 0.2
 
+## Care: how many seconds this crop can wait for water (each time it's
+## thirsty) before it counts as neglected. FarmManager rates care from the
+## longest wait: within the tolerance is careful, within
+## FarmManager.NEGLECT_FACTOR × tolerance is tended, beyond that neglected.
+## Hardy crops tolerate more; fussy ones less. Generous on purpose — a
+## short exploring trip is never neglect.
+@export var thirst_tolerance: float = 90.0
+
+## Optional line for the quiet card when this crop first grows in the
+## garden. Empty = the generic "<name> has grown in the garden."
+@export var grown_note: String = ""
+
 ## Optional exploration reward, granted by FarmManager at most once per
 ## session: reaching a place (an ExplorationManager place id) or finding a
 ## discovery (a DiscoveryDefinition id) reveals one extra seed of this crop.

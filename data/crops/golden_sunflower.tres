@@ -20,6 +20,7 @@ starting_seeds = 1
 mature_scale = 1.15
 sway_amount = 0.8
 wildlife_interest = 0.6
+thirst_tolerance = 75.0
 ready_pulse = 0.05
 found_seed_source = "place"
 found_seed_source_id = "hidden_flower_pocket"

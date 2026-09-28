@@ -18,11 +18,17 @@ extends Node
 ##   summed from the ready crops' CropDefinition.wildlife_interest, pushed
 ##   out via garden_interest_changed only when it changes. Nothing polls
 ##   plots; WorldSimulation relays the level to wildlife.
-## - Crop quality (Plain / Good / Fine): the soil rule. A plot remembers
-##   its last few harvests (FarmPlot owns that memory); FarmManager rates a
-##   planting from it — fresh soil grows Good, a different crop than the
-##   plot's recent ones grows Fine, the same crop again grows Plain. Rated at
-##   planting, so the seed picker can show the outcome before the choice.
+## - Crop quality (Plain / Good / Fine) from two factors, both rated here
+##   from facts the plot reports (FarmPlot owns the facts, never the rule):
+##   * soil (rotation), rated at planting from the plot's last harvests —
+##     tired (same crop again) / good (fresh or partly rotated) / rotated;
+##     shown on the seed picker before the choice;
+##   * care, rated at ripening from the longest the crop waited thirsty
+##     against its CropDefinition.thirst_tolerance — neglected / tended /
+##     careful.
+##   soil + care (0..4): 4 = Fine, 2-3 = Good, 0-1 = Plain. Fine needs both
+##   a rotated bed and careful watering; either factor alone can't carry a
+##   crop, and neither alone ruins one.
 ## - The basket: harvested produce by crop and quality (session-only, a
 ##   foundation — nothing consumes it yet).
 ## - Farm progression: which crops have grown, and a small fixed set of
@@ -37,13 +43,15 @@ extends Node
 ## Each FarmPlot still owns its own state, crop, growth and animation; it
 ## only reports planted/ready/harvested here. HUD and Journal only display.
 
-signal crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool, quality: int)
-signal crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int)
+signal crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool, soil: int)
+signal crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int, care: int)
 signal seeds_changed
 signal produce_changed
 signal seed_choice_requested
 signal seed_choice_closed
-signal seed_found(crop_definition: CropDefinition)
+## new_crop: this seed introduces a crop the player didn't know yet (an
+## exploration-only crop) — presented as a find in its own right.
+signal seed_found(crop_definition: CropDefinition, new_crop: bool)
 signal milestone_reached(milestone_id: String, message: String, bonus_points: int)
 signal garden_interest_changed(level: float)
 
@@ -53,6 +61,10 @@ const WILDLIFE_ATTRACTION_KEY := "garden"
 ## Cap on the summed interest, so a garden full of ripe sunflowers is a
 ## strong pull, never a certainty — wildlife keeps its own wandering.
 const MAX_GARDEN_INTEREST := 0.7
+## A garden in bloom keeps a little pull on the Meadow even with nothing
+## ripe — butterflies drift by more often. The lasting part of the bloom's
+## world change, through the same interest relay (no new system).
+const BLOOM_GARDEN_INTEREST := 0.15
 ## The ExplorationManager place id that is this garden.
 const GARDEN_PLACE_ID := "quiet_farm"
 
@@ -60,9 +72,18 @@ const QUALITY_PLAIN := 0
 const QUALITY_GOOD := 1
 const QUALITY_FINE := 2
 const QUALITY_NAMES := ["Plain", "Good", "Fine"]
-## What each quality means where the player chooses — the seed picker and
-## the planting note — so the rule is learned by seeing it, not reading it.
-const SOIL_NOTES := ["Tired soil", "Good soil", "✦ Fine soil"]
+## Soil ratings share the 0..2 scale: tired / good / rotated. Shown where
+## the player chooses (seed picker, planting note), so the rotation rule is
+## learned by seeing it, not reading it.
+const SOIL_NOTES := ["Tired soil", "Good soil", "✦ Rotated soil"]
+const CARE_NEGLECTED := 0
+const CARE_TENDED := 1
+const CARE_CAREFUL := 2
+## Shown under the crop's name on the harvest card, so care is learned the
+## same way.
+const CARE_NOTES := ["left thirsty", "watered", "watered with care"]
+## Beyond this many times a crop's thirst_tolerance, a wait is neglect.
+const NEGLECT_FACTOR := 3.0
 ## Harvest points relative to the crop's points_value (Good = unchanged).
 const QUALITY_POINT_SCALE := [0.75, 1.0, 1.5]
 ## Mature size relative to the crop's own mature_scale — quality is visible
@@ -74,6 +95,7 @@ const SOIL_MEMORY := 2
 const FIRST_SEED := "first_seed"
 const FIRST_HARVEST := "first_harvest"
 const FIRST_FINE := "first_fine"
+const GARDEN_IN_BLOOM := "garden_in_bloom"
 const ALL_STARTER_CROPS := "all_starter_crops"
 const GARDEN_COMPLETE := "garden_complete"
 const CROP_GROWN_PREFIX := "grown:"
@@ -81,6 +103,7 @@ const CROP_GROWN_PREFIX := "grown:"
 const FIRST_HARVEST_BONUS := 10
 const ALL_STARTER_CROPS_BONUS := 40
 const GARDEN_COMPLETE_BONUS := 30
+const GARDEN_IN_BLOOM_BONUS := 50
 
 const NUMBER_WORDS := ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
 
@@ -135,14 +158,17 @@ func get_seed_count(crop_id: String) -> int:
 func get_known_crops() -> Array[CropDefinition]:
 	var known: Array[CropDefinition] = []
 	for crop in _crops:
-		if crop.starting_seeds > 0 or _found_seed_crop_ids.has(crop.crop_id) or get_seed_count(crop.crop_id) > 0:
+		if _is_known(crop):
 			known.append(crop)
 	return known
+
+func _is_known(crop: CropDefinition) -> bool:
+	return crop.starting_seeds > 0 or _found_seed_crop_ids.has(crop.crop_id) or get_seed_count(crop.crop_id) > 0
 
 # --- Quality & basket --------------------------------------------------------
 
 ## The soil rule. recent_crop_ids: the plot's past harvests, oldest first.
-func rate_planting(recent_crop_ids: Array[String], crop_id: String) -> int:
+func rate_soil(recent_crop_ids: Array[String], crop_id: String) -> int:
 	if recent_crop_ids.is_empty():
 		return QUALITY_GOOD
 	if recent_crop_ids.back() == crop_id:
@@ -151,12 +177,33 @@ func rate_planting(recent_crop_ids: Array[String], crop_id: String) -> int:
 		return QUALITY_GOOD
 	return QUALITY_FINE
 
-## What planting this crop in the plot waiting for a seed would grow —
-## read by the seed picker to show the outcome on each card.
-func get_planting_quality(crop: CropDefinition) -> int:
+## The soil this crop would get in the plot waiting for a seed — read by
+## the seed picker to show on each card.
+func get_soil_rating(crop: CropDefinition) -> int:
 	if crop == null or not is_choosing_seed():
 		return QUALITY_GOOD
-	return rate_planting(_pending_plot.get_recent_crop_ids(), crop.crop_id)
+	return rate_soil(_pending_plot.get_recent_crop_ids(), crop.crop_id)
+
+## The care rule: the longest single wait for water, in seconds.
+func rate_care(crop: CropDefinition, longest_thirst_seconds: float) -> int:
+	var tolerance := maxf(crop.thirst_tolerance, 1.0)
+	if longest_thirst_seconds <= tolerance:
+		return CARE_CAREFUL
+	if longest_thirst_seconds <= tolerance * NEGLECT_FACTOR:
+		return CARE_TENDED
+	return CARE_NEGLECTED
+
+## Soil and care together decide the harvest quality.
+func combine_quality(soil: int, care: int) -> int:
+	var score := clampi(soil, 0, 2) + clampi(care, 0, 2)
+	if score >= 4:
+		return QUALITY_FINE
+	if score >= 2:
+		return QUALITY_GOOD
+	return QUALITY_PLAIN
+
+func get_care_note(care: int) -> String:
+	return CARE_NOTES[clampi(care, 0, CARE_NOTES.size() - 1)]
 
 func get_quality_name(quality: int) -> String:
 	return QUALITY_NAMES[clampi(quality, 0, QUALITY_NAMES.size() - 1)]
@@ -292,8 +339,8 @@ func choose_seed(crop: CropDefinition) -> bool:
 	if not is_choosing_seed() or not _pending_plot.can_plant():
 		cancel_seed_choice()
 		return false
-	var quality := rate_planting(_pending_plot.get_recent_crop_ids(), crop.crop_id)
-	if not _pending_plot.plant(crop, quality):
+	var soil := rate_soil(_pending_plot.get_recent_crop_ids(), crop.crop_id)
+	if not _pending_plot.plant(crop, soil):
 		return false
 	_seeds[crop.crop_id] = get_seed_count(crop.crop_id) - 1
 	_pending_plot = null
@@ -301,7 +348,7 @@ func choose_seed(crop: CropDefinition) -> bool:
 	seed_choice_closed.emit()
 	seeds_changed.emit()
 	var announced := _reach(FIRST_SEED, "The garden has its first seed.", 0)
-	crop_planted.emit(crop, announced, quality)
+	crop_planted.emit(crop, announced, soil)
 	return true
 
 # --- Reports from FarmPlot --------------------------------------------------
@@ -315,7 +362,10 @@ func notify_crop_ready(crop_definition: CropDefinition) -> void:
 	if _grown_crop_ids.has(crop_definition.crop_id):
 		return
 	_grown_crop_ids.append(crop_definition.crop_id)
-	_reach(CROP_GROWN_PREFIX + crop_definition.crop_id, "%s has grown in the garden." % crop_definition.display_name, 0)
+	var grown_line := crop_definition.grown_note
+	if grown_line == "":
+		grown_line = "%s has grown in the garden." % crop_definition.display_name
+	_reach(CROP_GROWN_PREFIX + crop_definition.crop_id, grown_line, 0)
 	if _all_starter_crops_grown():
 		var count := _starter_crops().size()
 		_reach(ALL_STARTER_CROPS, "%s different crops have grown here." % _number_word(count), ALL_STARTER_CROPS_BONUS)
@@ -323,7 +373,7 @@ func notify_crop_ready(crop_definition: CropDefinition) -> void:
 ## A harvest paid out: exactly one seed of that crop comes back, so the
 ## loop renews itself without an economy, and the produce goes into the
 ## basket at the quality it grew.
-func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, points_awarded: int, quality: int) -> void:
+func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, points_awarded: int, quality: int, care: int) -> void:
 	_seeds[crop_definition.crop_id] = get_seed_count(crop_definition.crop_id) + 1
 	_ready_by_crop[crop_definition.crop_id] = maxi(int(_ready_by_crop.get(crop_definition.crop_id, 0)) - 1, 0)
 	_update_garden_interest()
@@ -335,12 +385,15 @@ func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, poi
 		_harvested_plot_ids.append(plot_id)
 	seeds_changed.emit()
 	produce_changed.emit()
-	crop_harvested.emit(crop_definition, points_awarded, quality)
+	crop_harvested.emit(crop_definition, points_awarded, quality, care)
 	_reach(FIRST_HARVEST, "Something you planted has finally come home.", FIRST_HARVEST_BONUS)
 	if quality >= QUALITY_FINE:
-		_reach(FIRST_FINE, "Fresh ground after a different crop — this one grew fine.", 0)
+		_reach(FIRST_FINE, "A rotated bed and a careful hand — this one grew fine.", 0)
 	if _is_starter_garden_complete():
-		_reach(GARDEN_COMPLETE, "The garden feels complete.", GARDEN_COMPLETE_BONUS)
+		_reach(GARDEN_COMPLETE, "The starter garden feels complete.", GARDEN_COMPLETE_BONUS)
+	if _is_garden_in_bloom():
+		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The Quiet Garden is in bloom.", GARDEN_IN_BLOOM_BONUS):
+			_update_garden_interest()
 
 # --- Exploration --------------------------------------------------------------
 
@@ -363,11 +416,12 @@ func _grant_found_seeds(source: String, source_id: String) -> void:
 			continue
 		if _found_seed_crop_ids.has(crop.crop_id):
 			continue
+		var new_crop := not _is_known(crop)
 		_found_seed_crop_ids.append(crop.crop_id)
 		_found_seed_origins[crop.crop_id] = {"source": source, "source_id": source_id}
 		_seeds[crop.crop_id] = get_seed_count(crop.crop_id) + 1
 		granted = true
-		seed_found.emit(crop)
+		seed_found.emit(crop, new_crop)
 	if granted:
 		seeds_changed.emit()
 
@@ -385,7 +439,11 @@ func get_milestones() -> Array:
 		rows.append(_milestone_row(CROP_GROWN_PREFIX + crop.crop_id, "%s Grown" % crop.display_name))
 	rows.append(_milestone_row(ALL_STARTER_CROPS, "All %s Crops" % _number_word(_starter_crops().size())))
 	rows.append(_milestone_row(GARDEN_COMPLETE, "Starter Garden Complete"))
+	rows.append(_milestone_row(GARDEN_IN_BLOOM, "Garden in Bloom"))
 	return rows
+
+func is_milestone_reached(milestone_id: String) -> bool:
+	return _milestones_reached.has(milestone_id)
 
 func get_grown_crop_names() -> PackedStringArray:
 	return _crop_names_for(_grown_crop_ids)
@@ -425,6 +483,8 @@ func _update_garden_interest() -> void:
 	var total := 0.0
 	for crop in _crops:
 		total += float(_ready_by_crop.get(crop.crop_id, 0)) * crop.wildlife_interest
+	if _milestones_reached.has(GARDEN_IN_BLOOM):
+		total += BLOOM_GARDEN_INTEREST
 	var level := clampf(total, 0.0, MAX_GARDEN_INTEREST)
 	if is_equal_approx(level, _garden_interest):
 		return
@@ -464,6 +524,22 @@ func _is_starter_garden_complete() -> bool:
 		return false
 	for plot_id in _starter_plot_ids:
 		if not _harvested_plot_ids.has(plot_id):
+			return false
+	return true
+
+## The whole garden, not just the start: every plot open and harvested at
+## least once, every crop the player knows harvested, and at least one
+## Fine harvest. Derived from data — a new plot or found crop simply
+## becomes part of it.
+func _is_garden_in_bloom() -> bool:
+	if _plots.is_empty() or not _milestones_reached.has(FIRST_FINE):
+		return false
+	for plot_id: String in _plots:
+		var plot := _get_plot(plot_id)
+		if plot == null or not plot.unlocked or not _harvested_plot_ids.has(plot_id):
+			return false
+	for crop in get_known_crops():
+		if get_produce_count(crop.crop_id) <= 0:
 			return false
 	return true
 

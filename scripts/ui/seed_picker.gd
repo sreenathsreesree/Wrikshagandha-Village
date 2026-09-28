@@ -108,7 +108,7 @@ func _build_choice(crop: CropDefinition, count: int, width: float) -> Button:
 	column.add_child(_build_label(crop.display_name, 22))
 	column.add_child(_build_label(_seed_count_text(count), 20))
 	if count > 0:
-		column.add_child(_build_label(FarmManager.get_soil_note(FarmManager.get_planting_quality(crop)), 18))
+		column.add_child(_build_label(FarmManager.get_soil_note(FarmManager.get_soil_rating(crop)), 18))
 	return button
 
 ## A round swatch in the crop's identity color with its glyph on top — the
