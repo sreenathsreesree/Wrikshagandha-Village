@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/world/Meadow.tscn" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="2"]
+
+[node name="Main" type="Node3D"]
+
+[node name="Meadow" parent="." instance=ExtResource("1")]
+
+[node name="HUD" parent="." instance=ExtResource("2")]

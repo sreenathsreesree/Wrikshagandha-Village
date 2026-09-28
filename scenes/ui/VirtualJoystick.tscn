@@ -1,0 +1,22 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/virtual_joystick.gd" id="1"]
+
+[node name="VirtualJoystick" type="Control"]
+offset_right = 160.0
+offset_bottom = 160.0
+script = ExtResource("1")
+
+[node name="Base" type="ColorRect" parent="."]
+mouse_filter = 2
+offset_right = 160.0
+offset_bottom = 160.0
+color = Color(1, 1, 1, 0.2)
+
+[node name="Knob" type="ColorRect" parent="Base"]
+mouse_filter = 2
+offset_left = 50.0
+offset_top = 50.0
+offset_right = 110.0
+offset_bottom = 110.0
+color = Color(1, 1, 1, 0.5)

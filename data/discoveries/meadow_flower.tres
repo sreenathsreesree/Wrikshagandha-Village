@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="DiscoveryDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/discoveries/discovery_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "meadow_flower"
+display_name = "Meadow Flower"
+description = "A common flower found in open meadows."
+category = "plant"
+points_value = 10
+harvestable = true

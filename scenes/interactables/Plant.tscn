@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_flower"]
+radius = 0.3
+height = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Material_flower"]
+albedo_color = Color(0.95, 0.3, 0.55, 1)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_flower"]
+radius = 0.4
+
+[node name="Plant" type="Area3D"]
+collision_layer = 4
+collision_mask = 0
+script = ExtResource("1")
+discovery_id = "meadow_flower"
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.3, 0)
+mesh = SubResource("SphereMesh_flower")
+surface_material_override/0 = SubResource("Material_flower")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.3, 0)
+shape = SubResource("SphereShape3D_flower")

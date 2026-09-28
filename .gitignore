@@ -1,0 +1,13 @@
+# Godot 4 editor/runtime cache
+.godot/
+.import/
+
+# Export artifacts
+build/
+*.apk
+*.aab
+export_credentials.cfg
+
+# OS/editor cruft
+.DS_Store
+*.tmp
