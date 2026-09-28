@@ -556,7 +556,7 @@ No large world expansion before this gate passes.
 | M01.2 | `d316ecc` |
 | M01.3 (was M01.2a) | `b663d76` |
 | M01.4 | `443503f` |
-| M01.5 | *(recorded after commit)* |
+| M01.5 | `9ec60f1` |
 
 ## 16. Current position
 - **Current phase:** 01 — Player. M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
