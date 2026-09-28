@@ -111,7 +111,7 @@ Main (Node3D)                       scenes/Main.tscn
   - Focus loss clears keys. Raw key polling is not allowed (toolkit-enforced).
 - **Movement mode:** `movement_mode` (JOYSTICK default, TAP_TO_MOVE) only controls whether the joystick is shown. It's saved in `settings`.
 - **Notification cards** are input-transparent, so they never swallow a world tap.
-- **Legacy:** `interact_requested` (interact with the nearest object in the zone) is still connected in Player, but nothing emits it. Resolve in Phase 02.
+- **One way in (M02.5, A6 resolved):** `interact_target_requested(target)` is InputManager's only interaction request. The old "interact with the nearest object" path (`interact_requested` / `request_interact()`) had no callers and was removed; the toolkit keeps it from returning. Player's `_interact_with()` is entered only from a tap (`_on_interact_target_requested`) or on arriving at the tapped object (`_on_interaction_zone_area_entered`).
 - **Direction:** no second input system, ever.
 
 ## 7. Interaction system

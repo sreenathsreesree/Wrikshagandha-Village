@@ -171,7 +171,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 | A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
 | A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | Phases 01, 03 |
-| A6 | Unused interaction path (`interact_requested`) | Phase 02 |
+| A6 | Unused interaction path (`interact_requested`) | **Resolved in M02.5** (removed; guarded by the toolkit) |
 | A7 | No top-level save versioning before inventory changes save keys | Phase 04 (P-01, proposed) → Phase 15 |
 | A8 | ~50 per-frame scripts; runtime navmesh bake cost unknown on device | Phase 01 test, Phase 16 |
 
@@ -413,7 +413,7 @@ Goal: one generic interaction architecture for everything touchable.
 | M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[~]` |
 | M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[~]` |
 | M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[~]` |
-| M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
+| M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[~]` |
 | M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
 
 **M02.1 — Generic interaction foundation** `[~]` Implemented — runtime testing pending
@@ -516,6 +516,23 @@ Goal: one generic interaction architecture for everything touchable.
   - A new rule pins the project's whole set of per-frame callbacks (13), so any new loop fails.
   - `sim_interaction.py`: the selection port (exact, off-centre, just outside, tolerance edge, between two, ties, unavailable, large vs small); 40,000 taps on the real Meadow layout (never a farther or unavailable object, order-independent); the feedback lifecycle (far, in range, arrival, cancel, retarget, ground tap, repeat, unavailable, 3,000 random runs).
   - Mutation-tested: 19 GDScript/scene mutations and 6 model mutations, all caught by the suite.
+- **Commit:** §15.
+
+**M02.5 — Remove the unused `interact_requested` path (A6)** `[~]` Implemented — covered by the combined playtest (no behaviour change)
+- **Objective:** resolve A6 so there is exactly one way into interaction.
+- **Audit:**
+  - Declared: `signal interact_requested` in `input_manager.gd`.
+  - Emitted: only by `InputManager.request_interact()` ("kept for non-touch input").
+  - Callers of `request_interact()`: **none** — no script, scene connection, dynamic `call()`, or input action (the InputMap has only `move_*`; the Interact button was removed earlier, D-08).
+  - Connected/listened: Player `_ready` → `_on_interact_requested()`, which interacted with the nearest in-range object via `_interact_with()` (so it never bypassed the guards, but it was a second entry that skipped the tap target and its M02.4 feedback).
+  - Runtime path: unreachable. Removing it is safe; wiring it would need a new key/button (a new feature, against D-08) and would reintroduce a "nearest object" entry beside the tap target. (The old ARCHITECTURE note said nothing emitted it; in fact an emitter existed with no callers.)
+- **Decision:** remove. No design decision needed (D-08 already covers it).
+- **Files:** `scripts/autoload/input_manager.gd`, `scripts/player/player.gd`, `tools/check_project.py`, docs.
+- **Implementation:** removed the signal, `request_interact()`, the Player connection and `_on_interact_requested()`. `_find_nearest_interactable()` stays (it drives the proximity reaction); its comment no longer mentions interaction. The tap path is untouched.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes (all simulations included).
+  - New checks: the removed names never return in scripts, scenes or `project.godot`; InputManager has exactly one interaction request signal (`interact_target_requested`), emitted by `_handle_tap` and connected in Player `_ready`; `_interact_with()` is entered only from `_on_interact_target_requested` and `_on_interaction_zone_area_entered`; one-shot protection (refuse spent; register one-shot objects before interacting) is now checked directly.
+  - Mutation-tested: 18 GDScript mutations and 1 model mutation caught (restoring the dead path in full, just the signal, or a nearest-object entry under a new name; removing the target-request connection or emit; a second `interact()` call site; bypassing availability or one-shot protection, registration after interacting; interacting before facing; removing the INTERACT wrap; breaking the verb API; removing tap feedback; a new per-frame loop; a timer; a numeric mask).
 - **Commit:** §15.
 
 ### PHASE 03 — CAMERA / WORLD SHELL
@@ -683,8 +700,9 @@ No large world expansion before this gate passes.
 | M02.2 | `3a26ee4` |
 | M02.3 | `0f0dded` |
 | M02.4 | `0dfbdbe` |
+| M02.5 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.4 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's and M02.4's runtime tests). In Phase 02 the next is **M02.5 — remove or bind the unused `interact_requested` path (A6)**. Either starts only on the developer's instruction.
+- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.5 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's and M02.4's runtime tests). In Phase 02 the next is **M02.6 — placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

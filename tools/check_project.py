@@ -588,6 +588,11 @@ calls = [(f, n) for f, s2 in scripts.items() if not f.startswith("tools/")
 if calls != [(PL, 1)]:
     err(f"interact() must have exactly one call site (Player._interact_with); found {calls}")
 iw = func_body(scripts.get(PL, ""), "_interact_with") or ""
+spent = re.search(r"if _spent_interactables\.has\(target\) or not target\.is_interaction_available\(\):\s*return"
+                  r".*if target\.remove_on_harvest:\s*_nearby_interactables\.erase\(target\)\s*_spent_interactables\.append\(target\)"
+                  r".*_begin_interaction\(target\)", iw, re.S)
+if not spent:
+    err(f"{PL}: _interact_with() must keep one-shot protection (refuse spent objects; register one-shot objects before interacting)")
 if "is_interaction_available()" not in iw or iw.find("is_interaction_available()") > iw.find("_begin_interaction("):
     err(f"{PL}: _interact_with() must refuse unavailable objects before interacting")
 for f, s2 in scripts.items():
@@ -604,6 +609,26 @@ refs = [f for f in glob.glob("**/*.tscn", recursive=True) + glob.glob("**/*.tres
         if "res://tools/" in open(f, encoding="utf-8").read()]
 if refs:
     err(f"game content must not reference tools/: {refs}")
+# M02.5 (A6): one way in. A tap names its target (interact_target_requested),
+# Player walks/faces/interacts through _interact_with(); the old "interact
+# with the nearest" path (interact_requested / request_interact) is gone.
+im_code = code_only(scripts.get(IM, ""))
+game_files = [f for f in list(scripts) + glob.glob("**/*.tscn", recursive=True) + ["project.godot"] if not f.startswith("tools/")]
+for f in game_files:
+    txt = code_only(scripts[f]) if f in scripts else open(f, encoding="utf-8").read()
+    for m in re.finditer(r"\b(interact_requested|request_interact|_on_interact_requested)\b", txt):
+        err(f"{f}: '{m.group(1)}' — the removed nearest-object interaction path (A6) must not return")
+im_interact_signals = sorted(re.findall(r"^signal\s+(\w*interact\w*)", im_code, re.M))
+if im_interact_signals != ["interact_target_requested"]:
+    err(f"{IM}: exactly one interaction request signal, interact_target_requested (found {im_interact_signals})")
+if "interact_target_requested.emit(" not in (func_body(scripts.get(IM, ""), "_handle_tap") or "") or \
+   "InputManager.interact_target_requested.connect(_on_interact_target_requested)" not in (func_body(scripts.get(PL, ""), "_ready") or ""):
+    err("the tap target-request path (InputManager._handle_tap -> Player._on_interact_target_requested) must stay wired")
+pl_code_src = scripts.get(PL, "")
+iw_callers = sorted(fn for fn in re.findall(r"^func (\w+)\(", pl_code_src, re.M)
+                    if fn != "_interact_with" and "_interact_with(" in code_only(func_body(pl_code_src, fn) or ""))
+if iw_callers != ["_on_interact_target_requested", "_on_interaction_zone_area_entered"]:
+    err(f"{PL}: _interact_with() must be entered only from a tap (in range) or arrival at the tapped object (found {iw_callers})")
 notes.append(f"interaction contract: {len(subclasses)} Interactable implementations {sub_names + ['(probe)']}")
 
 # ------------------------------------------------------------ interaction verbs

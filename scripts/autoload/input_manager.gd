@@ -28,7 +28,6 @@ extends Node
 
 enum MovementMode { JOYSTICK, TAP_TO_MOVE }
 
-signal interact_requested
 signal interact_target_requested(target: Interactable)
 signal move_target_requested(destination: Vector3)
 signal stop_requested
@@ -86,10 +85,6 @@ func set_move_vector(vector: Vector2) -> void:
 
 func _update_move_vector() -> void:
 	move_vector = (_joystick_vector + _keyboard_vector).limit_length(1.0)
-
-## Interact with whatever is nearest the player (kept for non-touch input).
-func request_interact() -> void:
-	interact_requested.emit()
 
 func set_movement_mode(mode: MovementMode) -> void:
 	if mode == movement_mode:

@@ -93,7 +93,6 @@ var _selected_target: Interactable
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
 	interaction_zone.area_exited.connect(_on_interaction_zone_area_exited)
-	InputManager.interact_requested.connect(_on_interact_requested)
 	InputManager.interact_target_requested.connect(_on_interact_target_requested)
 	InputManager.move_target_requested.connect(_on_move_target_requested)
 	InputManager.stop_requested.connect(_on_stop_requested)
@@ -184,11 +183,10 @@ func _update_nearby_proximity() -> void:
 	var t := 1.0 - clampf(distance / INTERACTION_RADIUS, 0.0, 1.0)
 	nearest.update_proximity(t)
 
-## Shared by proximity feedback and the nearest-object interaction, so the object whose
-## indicator is visibly responding is always the one that gets interacted
-## with. (Previously the press went to whichever object entered range
-## first, which could differ from the glowing one when several interactables
-## — e.g. neighbouring farm plots — are in range at once.)
+## The in-range object nearest the player — the one whose indicator gets
+## the live proximity reaction when several (e.g. neighbouring farm plots)
+## are in range at once. Interaction itself always goes to the object that
+## was tapped (_on_interact_target_requested), never to "the nearest".
 func _find_nearest_interactable() -> Interactable:
 	var nearest: Interactable = null
 	var nearest_distance := INF
@@ -218,17 +216,6 @@ func _on_interaction_zone_area_exited(area: Area3D) -> void:
 	var interactable: Interactable = area
 	_nearby_interactables.erase(interactable)
 	interactable.set_highlighted(false)
-
-func _on_interact_requested() -> void:
-	_nearby_interactables = _nearby_interactables.filter(
-		func(interactable: Interactable) -> bool: return is_instance_valid(interactable)
-	)
-	if _nearby_interactables.is_empty():
-		return
-	var target := _find_nearest_interactable()
-	if target == null:
-		return
-	_interact_with(target)
 
 ## A tap landed on this exact Interactable (see InputManager). Already in
 ## interaction range: interact now. Otherwise walk toward it (the path ends
