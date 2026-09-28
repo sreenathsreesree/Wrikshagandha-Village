@@ -103,6 +103,15 @@ func _flee_target() -> Vector3:
 		away = Vector3(1.0, 0.0, 0.0)
 	return position + away.normalized() * flee_distance * 2.0
 
+## Forces an immediate flee reaction even if the player hasn't crossed
+## this actor's own flee_distance yet. Used by EnvironmentalEvent so a
+## small group of actors can react together the instant the player
+## approaches, rather than each one only noticing individually and late.
+## Safe to call on an actor that's already fleeing — it's just a no-op.
+func startle() -> void:
+	if state != "flee":
+		_enter_flee()
+
 func _enter_idle() -> void:
 	state = "idle"
 	_state_timer = randf_range(idle_time_min, idle_time_max)

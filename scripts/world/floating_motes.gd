@@ -11,6 +11,18 @@ extends Node3D
 var _base_positions: Array[Vector3] = []
 var _time: float = 0.0
 
+## A brief, subtle swell used by EnvironmentalEvent's ENVIRONMENTAL_REVEAL
+## events (and the reveal flourish on a finished BUTTERFLY_LEAD) to make
+## an already-present mote cluster momentarily more noticeable, without
+## any new visibility state or particle system — just a one-shot tween on
+## top of the drift this node is already doing every frame.
+func reveal_pulse() -> void:
+	var tween := create_tween()
+	tween.tween_property(self, "scale", Vector3.ONE * 1.4, 0.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "scale", Vector3.ONE, 0.8) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+
 func _ready() -> void:
 	for child in get_children():
 		if child is Node3D:

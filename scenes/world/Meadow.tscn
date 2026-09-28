@@ -1,4 +1,4 @@
-[gd_scene load_steps=42 format=3]
+[gd_scene load_steps=43 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -35,6 +35,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/props/StoneMonolith.tscn" id="33"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/LilyPad.tscn" id="34"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/Reed.tscn" id="35"]
+[ext_resource type="Script" path="res://scripts/world_simulation/environmental_event.gd" id="36"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -473,6 +474,9 @@ rotation_degrees = Vector3(0, 80, 0)
 position = Vector3(9, 0, -8.5)
 rotation_degrees = Vector3(0, 131, 0)
 
+[node name="UnusualFlowerPatchTrailStart" parent="Clues" instance=ExtResource("27")]
+position = Vector3(-7, 0, -6)
+
 [node name="SecretSpots" type="Node3D" parent="."]
 
 [node name="StoneRing1" parent="SecretSpots" instance=ExtResource("12")]
@@ -557,6 +561,12 @@ position = Vector3(13.6, 0.4, -11.8)
 [node name="SmallBird4" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(10, 0.12, -3.5)
 
+[node name="SmallBird5" parent="Wildlife" instance=ExtResource("30")]
+position = Vector3(9.3, 0.12, -2.8)
+
+[node name="TrailButterfly1" parent="Wildlife" instance=ExtResource("31")]
+position = Vector3(-7.2, 0.4, -5.8)
+
 [node name="Ambient" type="Node3D" parent="."]
 
 [node name="DriftingLeaf1" parent="Ambient" instance=ExtResource("32")]
@@ -573,6 +583,27 @@ position = Vector3(-2, 0, -4)
 
 [node name="DriftingLeaf3" parent="Ambient" instance=ExtResource("32")]
 position = Vector3(-8, 3, -9)
+
+[node name="EnvironmentalEvents" type="Node3D" parent="."]
+
+[node name="HiddenHerbButterflyTrail" type="Node3D" parent="EnvironmentalEvents"]
+script = ExtResource("36")
+position = Vector3(-7, 0, -6)
+event_type = 1
+trigger_radius = 3.5
+cooldown_seconds = 90.0
+related_discovery_id = "hidden_herb"
+lead_actor_path = NodePath("../../Wildlife/TrailButterfly1")
+lead_target_path = NodePath("../../Clues/GlowingMotesNearHiddenHerb")
+reveal_node_path = NodePath("../../Clues/GlowingMotesNearHiddenHerb")
+
+[node name="StoneRingBirdDisturbance" type="Node3D" parent="EnvironmentalEvents"]
+script = ExtResource("36")
+position = Vector3(9.3, 0, -3)
+event_type = 0
+trigger_radius = 3.5
+cooldown_seconds = 75.0
+actor_paths = [NodePath("../../Wildlife/SmallBird4"), NodePath("../../Wildlife/SmallBird5")]
 
 [node name="WorldSimulation" parent="." instance=ExtResource("28")]
 
