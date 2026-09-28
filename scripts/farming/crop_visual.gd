@@ -3,37 +3,46 @@ class_name CropVisual
 
 ## Generic presentation shared by every crop scene (Wild Carrot, Meadow
 ## Herb, Golden Sunflower, and any future crop). Only the mesh/material
-## differ per crop scene; adding a new crop later means a new .tscn + .tres
-## pair, not new presentation logic.
+## differ per crop scene, and every behavioral difference — silhouette,
+## how much it moves, whether it "breathes" when ready, how it leaves the
+## ground at harvest — comes from its CropDefinition via configure(). No
+## crop-specific code lives here or in FarmPlot.
 ##
-## The node's transform is composed from four independent channels, each a
+## The node's transform is composed from independent channels, each a
 ## plain property with a setter:
 ##   stage_scale — persistent growth size (only growth/removal touch it)
+##   droop       — persistent "thirsty" lean + slight sag (0..1)
 ##   squash      — transient squash/stretch, always settles back to ONE
 ##   lift        — transient vertical offset, always settles back to 0
-##   sway        — rotation about the base (growing/ready idle, harvest sway)
-## Every tween drives exactly one channel, so a watering bounce can never
-## overwrite a growth-stage tween the way two tweens both writing `scale`
-## would (the last one to finish won, which could leave a sprouted crop
-## stuck at seed size). No _process anywhere — all motion is Tween-driven.
+##   sway        — rotation about the base (idle, harvest)
+## Each tween drives only its own channels, so e.g. a watering bounce can
+## never overwrite a growth-stage tween. No _process — all Tween-driven.
+##
+## Readable at a glance: a crop waiting for water droops and holds still;
+## a watered, growing crop stands up and barely stirs; a ready crop is at
+## full size, riper in color, and moves a little more (plus a gentle
+## swell for crops with ready_pulse).
 
 const STAGE_SCALES := [0.28, 0.55, 0.8, 1.0]
 const MATURE_STAGE := 3
 const MIN_SCALE := 0.001
 const SEED_SINK := -0.05
-## Idle life by stage: a seed is still; a growing crop barely stirs; a ready
-## crop sways a little more and gently rises and settles — the most
-## noticeable thing on the plot, but still calm.
 const GROWING_SWAY := 0.02
 const GROWING_SWAY_PERIOD := 2.2
 const READY_SWAY := 0.06
 const READY_SWAY_PERIOD := 1.4
 const READY_BOB := 0.012
 const READY_LIGHTEN := 0.18
+const DROOP_TILT := 0.22
+const DROOP_SAG := 0.1
 
 var stage_scale: float = 0.0:
 	set(value):
 		stage_scale = value
+		_apply()
+var droop: float = 0.0:
+	set(value):
+		droop = value
 		_apply()
 var squash: Vector3 = Vector3.ONE:
 	set(value):
@@ -48,21 +57,37 @@ var sway: float = 0.0:
 		sway = value
 		_apply()
 
+var _mature_scale: float = 1.0
+var _sway_amount: float = 1.0
+var _ready_pulse: float = 0.0
+var _current_stage: int = 0
+var _thirsty: bool = false
+
 var _materials: Array[StandardMaterial3D] = []
 var _base_albedo: Array[Color] = []
 var _stage_tween: Tween
 var _motion_tween: Tween
 var _idle_tween: Tween
+var _droop_tween: Tween
 
 func _ready() -> void:
 	_make_materials_unique()
+	_apply()
+
+## Called by FarmPlot right after instancing, before appear().
+func configure(crop: CropDefinition) -> void:
+	_mature_scale = maxf(crop.mature_scale, 0.1)
+	_sway_amount = maxf(crop.sway_amount, 0.0)
+	_ready_pulse = maxf(crop.ready_pulse, 0.0)
 	_apply()
 
 ## Planting: the seedling starts slightly sunk and flattened, then rises
 ## and un-squashes out of the soil — a tiny upward emergence cue.
 func appear() -> void:
 	_stop_all_tweens()
+	_current_stage = 0
 	stage_scale = 0.0
+	droop = 0.0
 	lift = SEED_SINK
 	squash = Vector3(1.3, 0.6, 1.3)
 	_stage_tween = create_tween()
@@ -76,13 +101,15 @@ func appear() -> void:
 
 ## Growth: a smooth scale-in rather than a size swap, stretching slightly
 ## upward as it grows, then a small squash and settle. Reaching maturity
-## also ripens the colors and starts a gentle idle sway — the ready crop is
-## the one thing on the plot that's both biggest and moving.
+## also stands the crop fully up, ripens its colors, and starts the ready
+## idle.
 func set_stage(stage_index: int) -> void:
-	var clamped: int = clampi(stage_index, 0, MATURE_STAGE)
-	_stop_all_tweens()
+	_current_stage = clampi(stage_index, 0, MATURE_STAGE)
+	_kill(_stage_tween)
+	_kill(_motion_tween)
+	_kill(_idle_tween)
 	_stage_tween = create_tween()
-	_stage_tween.tween_property(self, "stage_scale", STAGE_SCALES[clamped], 0.55) \
+	_stage_tween.tween_property(self, "stage_scale", STAGE_SCALES[_current_stage], 0.55) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 	_motion_tween = create_tween()
@@ -93,77 +120,129 @@ func set_stage(stage_index: int) -> void:
 	_motion_tween.tween_property(self, "squash", Vector3(1.06, 0.94, 1.06), 0.15).set_trans(Tween.TRANS_SINE)
 	_motion_tween.parallel().tween_property(self, "lift", 0.0, 0.15).set_trans(Tween.TRANS_SINE)
 	_motion_tween.tween_property(self, "squash", Vector3.ONE, 0.2).set_trans(Tween.TRANS_SINE)
+	_motion_tween.tween_callback(_resume_idle)
 
-	if clamped == MATURE_STAGE:
+	if _current_stage == MATURE_STAGE:
 		_ripen_colors()
-		_motion_tween.tween_callback(_start_idle.bind(READY_SWAY, READY_SWAY_PERIOD, READY_BOB))
-	elif clamped > 0:
-		_motion_tween.tween_callback(_start_idle.bind(GROWING_SWAY, GROWING_SWAY_PERIOD, 0.0))
+		# Stand up fully, but let the settle callback above start the ready
+		# idle — it uses squash/lift, which the settle is still driving.
+		_set_droop(false)
+
+## Thirsty = waiting for water: lean over a little, sag slightly, and hold
+## still. Watering (set_thirsty(false)) stands it back up and lets it stir.
+func set_thirsty(thirsty: bool) -> void:
+	_set_droop(thirsty)
+	if thirsty:
+		_kill(_idle_tween)
+		_droop_tween.parallel().tween_property(self, "sway", 0.0, 0.8).set_trans(Tween.TRANS_SINE)
+	else:
+		# Only ever reached for a growing crop (the ready idle is started by
+		# set_stage's settle), and the growing idle drives sway alone.
+		_resume_idle()
+
+func _set_droop(thirsty: bool) -> void:
+	_thirsty = thirsty
+	_kill(_droop_tween)
+	_droop_tween = create_tween()
+	_droop_tween.tween_property(self, "droop", 1.0 if thirsty else 0.0, 1.2 if thirsty else 0.5) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 ## A gentle bounce when watered. Touches only the transient channels, and
 ## always returns them to neutral.
 func play_water_response() -> void:
-	if _motion_tween and _motion_tween.is_valid():
-		_motion_tween.kill()
+	_kill(_motion_tween)
 	_motion_tween = create_tween()
 	_motion_tween.tween_property(self, "squash", Vector3(1.1, 0.88, 1.1), 0.12).set_trans(Tween.TRANS_SINE)
 	_motion_tween.parallel().tween_property(self, "lift", 0.0, 0.12)
 	_motion_tween.tween_property(self, "squash", Vector3(0.96, 1.06, 0.96), 0.14).set_trans(Tween.TRANS_SINE)
 	_motion_tween.tween_property(self, "squash", Vector3.ONE, 0.18).set_trans(Tween.TRANS_SINE)
 
-## The crop's small harvest personality (CropDefinition.harvest_style),
-## scaled by rarity intensity. Uses a local tween nothing else can kill, so
-## awaiting it can never hang the caller.
+## The crop's harvest personality (CropDefinition.harvest_style), scaled by
+## rarity intensity: the anticipation beat. Uses a local tween nothing else
+## can kill, so awaiting it can never hang the caller.
 func play_harvest(style: String, intensity: float) -> void:
 	_stop_all_tweens()
 	var tween := create_tween()
 	match style:
 		"sway":
-			tween.tween_property(self, "sway", 0.22 * intensity, 0.1).set_trans(Tween.TRANS_SINE)
-			tween.tween_property(self, "sway", -0.18 * intensity, 0.14).set_trans(Tween.TRANS_SINE)
-			tween.tween_property(self, "sway", 0.0, 0.1).set_trans(Tween.TRANS_SINE)
-			tween.tween_property(self, "lift", 0.08 * intensity, 0.14) \
-				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			tween.tween_property(self, "sway", 0.22 * intensity, 0.12).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "sway", -0.18 * intensity, 0.16).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "sway", 0.08 * intensity, 0.12).set_trans(Tween.TRANS_SINE)
 		"bloom":
-			tween.tween_property(self, "squash", Vector3.ONE * (1.0 + 0.2 * intensity), 0.12) \
+			tween.tween_property(self, "squash", Vector3.ONE * (1.0 + 0.2 * intensity), 0.14) \
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 			tween.tween_property(self, "squash", Vector3.ONE * 0.95, 0.1).set_trans(Tween.TRANS_SINE)
-			tween.tween_property(self, "squash", Vector3.ONE * (1.0 + 0.12 * intensity), 0.1).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "squash", Vector3.ONE * (1.0 + 0.12 * intensity), 0.12).set_trans(Tween.TRANS_SINE)
 		_:
-			tween.tween_property(self, "squash", Vector3(1.12, 0.82, 1.12), 0.08).set_trans(Tween.TRANS_SINE)
-			tween.tween_property(self, "lift", 0.16 * intensity, 0.12) \
+			tween.tween_property(self, "squash", Vector3(1.14, 0.8, 1.14), 0.1).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "lift", 0.1 * intensity, 0.1) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-			tween.parallel().tween_property(self, "squash", Vector3(0.88, 1.2, 0.88), 0.12).set_trans(Tween.TRANS_SINE)
+			tween.parallel().tween_property(self, "squash", Vector3(0.86, 1.24, 0.86), 0.1).set_trans(Tween.TRANS_SINE)
 	await tween.finished
 
-## Shrink away after harvest. Same local-tween rule as play_harvest().
-func play_remove() -> void:
+## The release: each style leaves the ground in its own way instead of
+## everything shrinking in place. Carrot keeps rising as it pops free;
+## herb floats up softly as its sway settles; sunflower swells once more,
+## then gently closes. Same local-tween rule as play_harvest().
+func play_remove(style: String) -> void:
 	_stop_all_tweens()
-	var tween := create_tween()
-	tween.tween_property(self, "stage_scale", 0.0, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+	var tween := create_tween().set_parallel(true)
+	match style:
+		"sway":
+			tween.tween_property(self, "lift", lift + 0.16, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			tween.tween_property(self, "sway", 0.0, 0.38).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "stage_scale", 0.0, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		"bloom":
+			tween.tween_property(self, "squash", Vector3.ONE * 1.18, 0.12).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "stage_scale", 0.0, 0.3).set_delay(0.08) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+		_:
+			tween.tween_property(self, "lift", lift + 0.32, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			tween.tween_property(self, "sway", 0.35, 0.28).set_trans(Tween.TRANS_SINE)
+			tween.tween_property(self, "stage_scale", 0.0, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	await tween.finished
 
 func _apply() -> void:
-	scale = squash * maxf(stage_scale, MIN_SCALE)
+	var sag := Vector3(1.0, 1.0 - droop * DROOP_SAG, 1.0)
+	scale = squash * sag * maxf(stage_scale * _mature_scale, MIN_SCALE)
 	position.y = lift
+	rotation.x = droop * DROOP_TILT
 	rotation.z = sway
 
-## One looping tween per crop. Uses only sway (and lift, when bobbing) —
-## watering touches squash/lift but can't happen once a crop is ready, and
-## a growing crop's idle never uses lift, so the channels never collide.
-func _start_idle(amplitude: float, period: float, bob: float) -> void:
-	if _idle_tween and _idle_tween.is_valid():
-		_idle_tween.kill()
+## Picks the idle that matches the crop's state: none for a seed or a
+## thirsty crop, a barely-there stir while growing, and the livelier
+## ready idle (with the crop's own ready_pulse swell) once mature.
+func _resume_idle() -> void:
+	if _current_stage >= MATURE_STAGE:
+		_start_idle(READY_SWAY * _sway_amount, READY_SWAY_PERIOD, READY_BOB, _ready_pulse)
+	elif _current_stage > 0 and not _thirsty:
+		_start_idle(GROWING_SWAY * _sway_amount, GROWING_SWAY_PERIOD, 0.0, 0.0)
+	else:
+		_kill(_idle_tween)
+
+## One looping tween per crop. Only started once transient motion has
+## settled (from set_stage's settle callback or set_thirsty(false) on a
+## growing crop, which only uses sway), so it never fights another tween.
+func _start_idle(amplitude: float, period: float, bob: float, pulse: float) -> void:
+	_kill(_idle_tween)
+	if amplitude <= 0.0 and bob <= 0.0 and pulse <= 0.0:
+		return
 	_idle_tween = create_tween().set_loops()
 	_idle_tween.tween_property(self, "sway", amplitude, period) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if bob > 0.0:
 		_idle_tween.parallel().tween_property(self, "lift", bob, period) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if pulse > 0.0:
+		_idle_tween.parallel().tween_property(self, "squash", Vector3.ONE * (1.0 + pulse), period) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_idle_tween.tween_property(self, "sway", -amplitude, period) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	if bob > 0.0:
 		_idle_tween.parallel().tween_property(self, "lift", 0.0, period) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if pulse > 0.0:
+		_idle_tween.parallel().tween_property(self, "squash", Vector3.ONE, period) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 ## Ready crops read slightly lighter/riper — a value change, not a glow.
@@ -173,12 +252,16 @@ func _ripen_colors() -> void:
 		tween.tween_property(_materials[i], "albedo_color", _base_albedo[i].lightened(READY_LIGHTEN), 0.6)
 
 func _stop_all_tweens() -> void:
-	for tween: Tween in [_stage_tween, _motion_tween, _idle_tween]:
-		if tween and tween.is_valid():
-			tween.kill()
+	for tween: Tween in [_stage_tween, _motion_tween, _idle_tween, _droop_tween]:
+		_kill(tween)
 	_stage_tween = null
 	_motion_tween = null
 	_idle_tween = null
+	_droop_tween = null
+
+func _kill(tween: Tween) -> void:
+	if tween and tween.is_valid():
+		tween.kill()
 
 ## Scene sub-resource materials are shared across every instance of this
 ## crop scene; ripening edits albedo, so each instance needs its own copy

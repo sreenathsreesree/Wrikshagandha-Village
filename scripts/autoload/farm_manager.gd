@@ -7,8 +7,13 @@ extends Node
 ##   crop is a new CropDefinition .tres (plus its CropVisual scene), with
 ##   no code change here.
 ## - The session seed inventory: each crop's starting_seeds at launch,
-##   minus one per planting, plus one back per harvest. Never negative,
-##   never saved, never accumulates beyond what's been planted.
+##   minus one per planting, plus one back per harvest, plus at most one
+##   "found" seed per crop from exploration (CropDefinition.
+##   found_seed_place_id). Never negative, never saved. Invariant: seeds in
+##   hand + crops in the ground = starting seeds + found seeds.
+## - How many crops are ready right now, so the garden itself can react
+##   when the player comes back to ripe crops (EnvironmentalEvent's
+##   requires_ready_crops gate).
 ## - Seed-choice coordination: a FarmPlot on prepared soil asks for a
 ##   choice; the HUD's seed picker shows it; the player's pick comes back
 ##   through choose_seed(), which checks and consumes the seed and plants.
@@ -28,6 +33,8 @@ const CROPS_PATH := "res://data/crops/"
 var _crops: Array[CropDefinition] = []
 var _seeds: Dictionary = {}
 var _pending_plot: FarmPlot
+var _ready_crop_count: int = 0
+var _found_seed_crop_ids: Array[String] = []
 
 func _ready() -> void:
 	_load_crops()
@@ -83,8 +90,41 @@ func choose_seed(crop: CropDefinition) -> bool:
 ## harvested crop comes back, so the loop renews itself without an economy.
 func notify_crop_harvested(crop_definition: CropDefinition, points_awarded: int) -> void:
 	_seeds[crop_definition.crop_id] = get_seed_count(crop_definition.crop_id) + 1
+	_ready_crop_count = maxi(_ready_crop_count - 1, 0)
 	seeds_changed.emit()
 	crop_harvested.emit(crop_definition, points_awarded)
+
+## Called by FarmPlot when a crop ripens. Balanced by the decrement in
+## notify_crop_harvested(), the only way a ready crop leaves READY.
+func notify_crop_ready(_crop_definition: CropDefinition) -> void:
+	_ready_crop_count += 1
+
+func has_ready_crops() -> bool:
+	return _ready_crop_count > 0
+
+## Exploration link, called by ExplorationManager when a place is reached:
+## each crop whose found_seed_place_id matches gets one extra seed, once per
+## session. Returns the crops that were granted (usually none).
+func grant_found_seeds(place_id: String) -> Array[CropDefinition]:
+	var granted: Array[CropDefinition] = []
+	if place_id == "":
+		return granted
+	for crop in _crops:
+		if crop.found_seed_place_id != place_id or _found_seed_crop_ids.has(crop.crop_id):
+			continue
+		_found_seed_crop_ids.append(crop.crop_id)
+		_seeds[crop.crop_id] = get_seed_count(crop.crop_id) + 1
+		granted.append(crop)
+	if not granted.is_empty():
+		seeds_changed.emit()
+	return granted
+
+func get_found_seed_names() -> PackedStringArray:
+	var names: PackedStringArray = []
+	for crop in _crops:
+		if _found_seed_crop_ids.has(crop.crop_id):
+			names.append(crop.display_name)
+	return names
 
 func _load_crops() -> void:
 	_crops.clear()

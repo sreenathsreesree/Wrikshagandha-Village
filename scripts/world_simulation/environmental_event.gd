@@ -28,6 +28,11 @@ enum EventType { WILDLIFE_DISTURBANCE, BUTTERFLY_LEAD, ENVIRONMENTAL_REVEAL }
 ## state instead of the event inventing its own.
 @export var related_discovery_id: String = ""
 
+## Optional gate: only fire while at least one crop is ready to harvest
+## (FarmManager.has_ready_crops()). Lets the garden greet a returning
+## player with a small reaction only when there's something waiting.
+@export var requires_ready_crops: bool = false
+
 ## WILDLIFE_DISTURBANCE: every actor in this list is startled at once,
 ## even if the player isn't within that individual actor's own
 ## flee_distance yet — reads as a small group reacting together.
@@ -56,6 +61,8 @@ func can_trigger() -> bool:
 	if not repeatable and _triggered_once:
 		return false
 	if related_discovery_id != "" and DiscoveryManager.is_discovered(related_discovery_id):
+		return false
+	if requires_ready_crops and not FarmManager.has_ready_crops():
 		return false
 	return true
 

@@ -34,6 +34,7 @@ func _ready() -> void:
 	ExplorationManager.crop_planting_noted.connect(_on_crop_planting_noted)
 	ExplorationManager.first_crop_harvested.connect(_on_first_crop_harvested)
 	ExplorationManager.all_starter_crops_harvested.connect(_on_all_starter_crops_harvested)
+	ExplorationManager.seed_found.connect(_on_seed_found)
 	DailyDiscoveryManager.daily_completed.connect(_on_daily_completed)
 	FarmManager.crop_harvested.connect(_on_crop_harvested)
 
@@ -135,6 +136,14 @@ func _on_first_crop_harvested(crop_definition: CropDefinition, bonus_points: int
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	notification.show_message("✦ First Harvest ✦", crop_definition.display_name, "+%d Wriksha Points" % bonus_points)
+
+## Exploration feeding the garden: a quiet card, no points — the seed is
+## the reward.
+func _on_seed_found(crop_definition: CropDefinition, _place_id: String) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	var note := crop_definition.found_seed_note if crop_definition.found_seed_note != "" else "You found a seed here."
+	notification.show_message(crop_definition.icon_glyph, note, "+1 %s seed" % crop_definition.display_name)
 
 func _on_all_starter_crops_harvested(bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()

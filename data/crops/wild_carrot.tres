@@ -17,4 +17,7 @@ growing_duration = 20.0
 identity_color = Color(0.95, 0.55, 0.2, 1)
 icon_glyph = "🥕"
 starting_seeds = 2
+mature_scale = 0.9
+sway_amount = 0.6
+ready_pulse = 0.0
 visual_scene = ExtResource("2")

@@ -33,6 +33,21 @@ class_name CropDefinition
 ## that can ever be growing at once — renewable, never accumulating.
 @export var starting_seeds: int = 1
 
+## Growth personality, read by the shared CropVisual (never by FarmPlot):
+## mature_scale sets the silhouette (compact < 1 < tall), sway_amount
+## scales how much the crop moves while growing and when ready (stiff < 1
+## < willowy), and ready_pulse is a gentle breathing swell once mature
+## (0 = none) — how a flower reads as "open".
+@export var mature_scale: float = 1.0
+@export var sway_amount: float = 1.0
+@export var ready_pulse: float = 0.0
+
+## Optional exploration link: reaching this place (an ExplorationManager
+## place id) once per session tucks one extra seed of this crop into the
+## player's pouch. Empty = no link. found_seed_note is the line shown then.
+@export var found_seed_place_id: String = ""
+@export var found_seed_note: String = ""
+
 ## Seconds spent in each growth stage before it can advance to the next —
 ## each advance requires the plot to be watered first (see FarmPlot).
 ## seed_duration is 0 by design: the very first watering sprouts it

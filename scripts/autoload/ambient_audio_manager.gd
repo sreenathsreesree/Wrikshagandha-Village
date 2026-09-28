@@ -14,6 +14,10 @@ extends Node
 @export var ui_feedback_sound: AudioStream
 @export var footstep_sound: AudioStream
 @export var proximity_chime_sound: AudioStream
+## Farming actions are world sounds, not UI clicks, so they get their own
+## hooks — assigning a UI click later must not make planting "click".
+@export var soil_sound: AudioStream
+@export var water_sound: AudioStream
 
 @onready var _ambience_player: AudioStreamPlayer = _make_player()
 @onready var _sfx_player: AudioStreamPlayer = _make_player()
@@ -46,6 +50,13 @@ func play_footstep_sound() -> void:
 
 func play_proximity_chime() -> void:
 	_play_once(proximity_chime_sound)
+
+## Preparing soil and planting a seed.
+func play_soil_sound() -> void:
+	_play_once(soil_sound)
+
+func play_water_sound() -> void:
+	_play_once(water_sound)
 
 func _play_once(stream: AudioStream) -> void:
 	if stream == null:

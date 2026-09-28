@@ -94,6 +94,9 @@ func _build_garden_section(garden: Dictionary) -> Control:
 		box.add_child(_build_note("First crop harvested: %s" % garden.first_harvested))
 
 	box.add_child(_build_note("Seeds: %s" % _seed_summary()))
+	var found := FarmManager.get_found_seed_names()
+	if not found.is_empty():
+		box.add_child(_build_note("Found while exploring: %s" % ", ".join(found)))
 	box.add_child(_build_note("Crops planted: %d" % int(garden.crops_planted)))
 	box.add_child(_build_note("Crops harvested: %d" % int(garden.crops_harvested)))
 

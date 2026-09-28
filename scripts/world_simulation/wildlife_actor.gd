@@ -34,6 +34,15 @@ class_name WildlifeActor
 @export var interest_points: Array[Vector3] = []
 @export_range(0.0, 1.0) var interest_chance: float = 0.35
 
+## Harmless curiosity, inside the existing pause state (no new AI state):
+## when the actor arrives at interest_points[i] and pauses, it turns to
+## face interest_look_targets[i] (if one exists at that index) — e.g. a
+## rabbit at the garden's edge looking in at the crops — and its usual
+## idle look-around centers on that direction. interest_linger stretches
+## the pause at an interest point so it reads as lingering, not passing.
+@export var interest_look_targets: Array[Vector3] = []
+@export var interest_linger: float = 1.8
+
 ## Set by WildlifeController once, after every actor in the scene exists —
 ## never touched by the actor itself.
 var player: Node3D
@@ -45,6 +54,7 @@ var _target_position: Vector3
 var _state_timer: float = 0.0
 var _idle_wiggle_time: float = 0.0
 var _idle_base_rotation: float = 0.0
+var _current_interest_index: int = -1
 
 func _ready() -> void:
 	_home_position = position
@@ -129,15 +139,29 @@ func _enter_idle() -> void:
 	_idle_wiggle_time = 0.0
 
 func _enter_pause() -> void:
+	# Only a wander that just reached an interest point counts as arriving
+	# there (not e.g. a butterfly landing after a lead).
+	var arrived_at := _current_interest_index if state == "wander" else -1
+	_current_interest_index = -1
 	state = "pause"
 	_state_timer = randf_range(idle_time_min, idle_time_max)
 	_idle_base_rotation = rotation.y
 	_idle_wiggle_time = 0.0
+	if arrived_at < 0:
+		return
+	_state_timer *= maxf(interest_linger, 1.0)
+	if arrived_at < interest_look_targets.size():
+		var look := interest_look_targets[arrived_at] - position
+		look.y = 0.0
+		if look.length() > 0.05:
+			_idle_base_rotation = atan2(look.x, -look.z)
 
 func _enter_wander() -> void:
 	state = "wander"
+	_current_interest_index = -1
 	if not interest_points.is_empty() and randf() < interest_chance:
-		_target_position = interest_points[randi() % interest_points.size()]
+		_current_interest_index = randi() % interest_points.size()
+		_target_position = interest_points[_current_interest_index]
 	else:
 		var angle := randf_range(0.0, TAU)
 		var radius := randf_range(0.3, wander_radius)

@@ -33,6 +33,9 @@ signal session_summary_ready(summary: Dictionary)
 signal crop_planting_noted(crop_definition: CropDefinition, moment: String)
 signal first_crop_harvested(crop_definition: CropDefinition, bonus_points: int)
 signal all_starter_crops_harvested(bonus_points: int)
+## Reaching a place a crop is linked to (CropDefinition.found_seed_place_id)
+## tucks one extra seed of it into the pouch, once per session.
+signal seed_found(crop_definition: CropDefinition, place_id: String)
 
 const THRESHOLDS := {3: 20, 5: 40}
 const LANDMARK_BONUS := 15
@@ -127,6 +130,7 @@ func mark_landmark_reached(landmark_id: String) -> void:
 	_reached_landmarks.append(landmark_id)
 	PointsManager.add_points(LANDMARK_BONUS)
 	landmark_reached.emit(landmark_id, LANDMARK_BONUS)
+	_grant_found_seeds(landmark_id)
 
 func has_found_secret_location(location_id: String) -> bool:
 	return _found_secret_locations.has(location_id)
@@ -137,6 +141,7 @@ func mark_secret_location_found(location_id: String) -> void:
 	_found_secret_locations.append(location_id)
 	PointsManager.add_points(SECRET_LOCATION_BONUS)
 	secret_location_found.emit(location_id, SECRET_LOCATION_BONUS)
+	_grant_found_seeds(location_id)
 
 	_maybe_award_curiosity_bonus(location_id)
 
@@ -218,6 +223,10 @@ func _on_crop_harvested(crop_definition: CropDefinition, _points_awarded: int) -
 		_all_starter_crops_awarded = true
 		PointsManager.add_points(ALL_STARTER_CROPS_BONUS)
 		all_starter_crops_harvested.emit(ALL_STARTER_CROPS_BONUS)
+
+func _grant_found_seeds(place_id: String) -> void:
+	for crop in FarmManager.grant_found_seeds(place_id):
+		seed_found.emit(crop, place_id)
 
 func _has_harvested_all_starter_crops() -> bool:
 	for crop_id: String in STARTER_CROP_IDS:
