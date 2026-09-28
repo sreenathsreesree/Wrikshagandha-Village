@@ -47,7 +47,7 @@ func _ensure_today_target() -> void:
 	var definitions := DiscoveryDatabase.get_all_definitions()
 	if definitions.is_empty():
 		return
-	var index := abs(_pick_target_for_date(today)) % definitions.size()
+	var index := absi(_pick_target_for_date(today)) % definitions.size()
 	target_id = definitions[index].id
 	target_date = today
 

@@ -47,7 +47,7 @@ func _physics_process(delta: float) -> void:
 	_last_target_position = target_position
 
 	var horizontal_speed := Vector2(velocity_estimate.x, velocity_estimate.z).length()
-	var speed_ratio := clamp(horizontal_speed / look_ahead_speed_reference, 0.0, 1.0)
+	var speed_ratio := clampf(horizontal_speed / look_ahead_speed_reference, 0.0, 1.0)
 
 	var look_ahead := Vector3.ZERO
 	if horizontal_speed > 0.15:

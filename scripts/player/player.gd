@@ -81,7 +81,7 @@ func _update_facing(direction: Vector3, delta: float) -> void:
 	visual.rotation.y = lerp_angle(visual.rotation.y, _facing_angle, TURN_SPEED * delta)
 
 func _update_walk_bob(delta: float, speed: float) -> void:
-	var speed_ratio := clamp(speed / MAX_SPEED, 0.0, 1.0)
+	var speed_ratio := clampf(speed / MAX_SPEED, 0.0, 1.0)
 	if speed > 0.1:
 		_bob_time += delta * BOB_SPEED * speed_ratio
 		visual.position.y = abs(sin(_bob_time)) * BOB_HEIGHT
@@ -112,7 +112,7 @@ func _update_nearby_proximity() -> void:
 	if nearest == null:
 		return
 	var distance := global_position.distance_to(nearest.global_position)
-	var t := 1.0 - clamp(distance / INTERACTION_RADIUS, 0.0, 1.0)
+	var t := 1.0 - clampf(distance / INTERACTION_RADIUS, 0.0, 1.0)
 	nearest.update_proximity(t)
 
 ## Shared by proximity feedback and the Interact press, so the object whose

@@ -21,7 +21,7 @@ func apply_time(day_fraction: float) -> void:
 	# One full sun arc per day: height_factor is 1 at "noon" (0.5) and -1 at
 	# "midnight" (0.0 / 1.0).
 	var sun_angle := (day_fraction - 0.25) * TAU
-	var height_factor := clamp(sin(sun_angle), -1.0, 1.0)
+	var height_factor := clampf(sin(sun_angle), -1.0, 1.0)
 
 	if directional_light:
 		directional_light.rotation.x = -clamp(sin(sun_angle) * 1.1, -1.4, 1.4)
@@ -32,7 +32,7 @@ func apply_time(day_fraction: float) -> void:
 
 	if world_environment and world_environment.environment:
 		var env := world_environment.environment
-		var brightness := clamp(0.5 + height_factor * 0.5, 0.05, 1.0)
+		var brightness := clampf(0.5 + height_factor * 0.5, 0.05, 1.0)
 		env.background_color = DAY_SKY.lerp(NIGHT_SKY, 1.0 - brightness)
 		env.ambient_light_energy = clamp(0.2 + height_factor * 0.55, 0.1, 0.75)
 		env.ambient_light_color = DAY_AMBIENT.lerp(NIGHT_AMBIENT, 1.0 - brightness)
@@ -41,7 +41,7 @@ func _sun_color(height_factor: float) -> Color:
 	if height_factor > 0.3:
 		return DAY_SUN
 	if height_factor > -0.1:
-		var t := clamp((height_factor + 0.1) / 0.4, 0.0, 1.0)
+		var t := clampf((height_factor + 0.1) / 0.4, 0.0, 1.0)
 		return HORIZON_SUN.lerp(DAY_SUN, t)
-	var t2 := clamp((height_factor + 1.0) / 0.9, 0.0, 1.0)
+	var t2 := clampf((height_factor + 1.0) / 0.9, 0.0, 1.0)
 	return NIGHT_SUN.lerp(HORIZON_SUN, t2)
