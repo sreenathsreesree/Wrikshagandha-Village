@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/world_simulation/world_simulation.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world_simulation/time_of_day.gd" id="2"]
@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://scripts/world_simulation/ambient_controller.gd" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/world_simulation/BirdFlyoverSpawner.tscn" id="7"]
 [ext_resource type="Script" path="res://scripts/world_simulation/environmental_event_controller.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark_controller.gd" id="9"]
 
 [node name="WorldSimulation" type="Node3D"]
 script = ExtResource("1")
@@ -31,3 +32,6 @@ script = ExtResource("6")
 
 [node name="EnvironmentalEvents" type="Node" parent="."]
 script = ExtResource("8")
+
+[node name="ExplorationLandmarks" type="Node" parent="."]
+script = ExtResource("9")

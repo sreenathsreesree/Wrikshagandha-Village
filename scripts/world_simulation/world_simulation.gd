@@ -15,6 +15,7 @@ class_name WorldSimulation
 @onready var wildlife_controller: WildlifeController = $Wildlife
 @onready var ambient_controller: AmbientController = $Ambient
 @onready var environmental_event_controller: EnvironmentalEventController = $EnvironmentalEvents
+@onready var exploration_landmark_controller: ExplorationLandmarkController = $ExplorationLandmarks
 
 func configure(player: Node3D, directional_light: DirectionalLight3D, world_environment: WorldEnvironment) -> void:
 	environment_controller.directional_light = directional_light
@@ -23,6 +24,7 @@ func configure(player: Node3D, directional_light: DirectionalLight3D, world_envi
 	wildlife_controller.player = player
 	wildlife_controller.wire_actors()
 	environmental_event_controller.player = player
+	exploration_landmark_controller.player = player
 
 	time_of_day.time_updated.connect(_on_time_updated)
 	_on_time_updated(time_of_day.day_fraction)

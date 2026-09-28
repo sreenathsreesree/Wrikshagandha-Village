@@ -24,6 +24,8 @@ func _ready() -> void:
 	DiscoveryManager.discovery_made.connect(_on_discovery_made)
 	DiscoveryManager.discovery_repeated.connect(_on_discovery_repeated)
 	ExplorationManager.exploration_bonus_awarded.connect(_on_exploration_bonus_awarded)
+	ExplorationManager.landmark_reached.connect(_on_landmark_reached)
+	ExplorationManager.secret_location_found.connect(_on_secret_location_found)
 	DailyDiscoveryManager.daily_completed.connect(_on_daily_completed)
 
 	interact_button.pivot_offset = interact_button.size / 2.0
@@ -80,6 +82,19 @@ func _on_daily_completed(definition: DiscoveryDefinition, bonus_points: int) -> 
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	notification.show_message("✓ Daily Discovery Complete", definition.display_name, "+%d Wriksha Points" % bonus_points)
+
+func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("◆ Landmark Reached ◆", _format_location_name(landmark_id), "+%d Wriksha Points" % bonus_points)
+
+func _on_secret_location_found(location_id: String, bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("✦ Secret Spot Found ✦", _format_location_name(location_id), "+%d Wriksha Points" % bonus_points)
+
+func _format_location_name(id: String) -> String:
+	return id.replace("_", " ").capitalize()
 
 func _update_discoveries_label() -> void:
 	var found := DiscoveryManager.get_discovered_ids().size()

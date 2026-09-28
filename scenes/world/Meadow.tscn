@@ -1,4 +1,4 @@
-[gd_scene load_steps=43 format=3]
+[gd_scene load_steps=44 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
@@ -36,6 +36,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/props/LilyPad.tscn" id="34"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/Reed.tscn" id="35"]
 [ext_resource type="Script" path="res://scripts/world_simulation/environmental_event.gd" id="36"]
+[ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark.gd" id="37"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -604,6 +605,51 @@ event_type = 0
 trigger_radius = 3.5
 cooldown_seconds = 75.0
 actor_paths = [NodePath("../../Wildlife/SmallBird4"), NodePath("../../Wildlife/SmallBird5")]
+
+[node name="OverlookReveal" type="Node3D" parent="EnvironmentalEvents"]
+script = ExtResource("36")
+position = Vector3(13.3, 0.6, 10.8)
+event_type = 2
+trigger_radius = 4.0
+cooldown_seconds = 120.0
+reveal_node_path = NodePath("../../Terrain/OverlookMotes")
+
+[node name="ExplorationLandmarks" type="Node3D" parent="."]
+
+[node name="OverlookLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(13, 0.6, 11)
+location_id = "overlook"
+kind = 0
+radius = 4.0
+
+[node name="StoneRingLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(13.8, 0, -1.8)
+location_id = "stone_ring"
+kind = 1
+radius = 3.0
+
+[node name="SecludedPondNookLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(14, 0, -12)
+location_id = "secluded_pond_nook"
+kind = 1
+radius = 3.0
+
+[node name="MysteryGroveTreeLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(-3, 0, 14)
+location_id = "mystery_grove_tree"
+kind = 1
+radius = 3.0
+
+[node name="HiddenFlowerPocketLandmark" type="Node3D" parent="ExplorationLandmarks"]
+script = ExtResource("37")
+position = Vector3(17.6, 0, -2.5)
+location_id = "hidden_flower_pocket"
+kind = 1
+radius = 3.0
 
 [node name="WorldSimulation" parent="." instance=ExtResource("28")]
 
