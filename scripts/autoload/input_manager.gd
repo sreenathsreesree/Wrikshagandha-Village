@@ -11,7 +11,11 @@ extends Node
 ##      one lies within TAP_SELECT_TOLERANCE of the tapped ground point —
 ##      interact_target_requested names that exact object (Player walks to
 ##      it and runs its normal interact() once it's in interaction range);
-##   3. otherwise a ray against the world, snapped onto the navigation mesh:
+##   3. a tap on the player itself (its body, or the ground within
+##      PLAYER_TAP_RADIUS of its feet) is the deliberate stop:
+##      stop_requested — cancels a tap-started walk and any pending
+##      interaction;
+##   4. otherwise a ray against the world, snapped onto the navigation mesh:
 ##      move_target_requested gives the destination.
 ## movement_mode (Joystick / Tap to Move) only chooses whether the joystick
 ## is shown; taps work in both. Joystick or keyboard input always takes over
@@ -27,6 +31,7 @@ enum MovementMode { JOYSTICK, TAP_TO_MOVE }
 signal interact_requested
 signal interact_target_requested(target: Interactable)
 signal move_target_requested(destination: Vector3)
+signal stop_requested
 signal movement_mode_changed(mode: MovementMode)
 
 ## A tap, not a drag: released close to where it started, and quickly.
@@ -42,6 +47,11 @@ const WALKABLE_SNAP_VERTICAL := 0.6
 ## Small objects (flowers, mushrooms) have small collision shapes; a tap
 ## that lands on the ground within this distance of one selects it.
 const TAP_SELECT_TOLERANCE := 0.45
+## Tapping the ground this close to the player's feet counts as tapping
+## the player (a deliberate stop), not as a one-step walk.
+const PLAYER_TAP_RADIUS := 0.6
+## The group the Player joins, so a tap can recognise it.
+const PLAYER_GROUP := &"player"
 ## Stands in for a touch index when a real mouse is used without touch
 ## emulation.
 const MOUSE_TAP_INDEX := -100
@@ -179,6 +189,11 @@ func _handle_tap(screen_position: Vector2) -> void:
 	if ground_hit.is_empty():
 		return
 	var tapped_point: Vector3 = ground_hit.get("position", Vector3.ZERO)
+	# Tapping the player itself means "stop". (The player's body is on the
+	# world layer, so the ray can hit it directly.)
+	if _is_player_tap(ground_hit.get("collider") as Node, tapped_point):
+		stop_requested.emit()
+		return
 	# A near miss on a small object still means that object.
 	var near_target := _interactable_near(space, tapped_point)
 	if near_target:
@@ -187,6 +202,15 @@ func _handle_tap(screen_position: Vector2) -> void:
 	var destination: Variant = _walkable_point(camera.get_world_3d().navigation_map, tapped_point)
 	if destination != null:
 		move_target_requested.emit(destination)
+
+func _is_player_tap(collider: Node, point: Vector3) -> bool:
+	if collider != null and collider.is_in_group(PLAYER_GROUP):
+		return true
+	var player := get_tree().get_first_node_in_group(PLAYER_GROUP) as Node3D
+	if player == null:
+		return false
+	var offset := point - player.global_position
+	return Vector2(offset.x, offset.z).length() <= PLAYER_TAP_RADIUS
 
 ## The closest currently-interactable object whose shape lies within
 ## TAP_SELECT_TOLERANCE of a tapped ground point, or null.

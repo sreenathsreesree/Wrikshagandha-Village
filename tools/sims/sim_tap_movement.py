@@ -18,16 +18,18 @@ def _const(name, src=_IM):
 TAP_MAX_MOVE, TAP_MAX_MSEC = _const("TAP_MAX_MOVE"), _const("TAP_MAX_MSEC")
 SNAP_H, SNAP_V = _const("WALKABLE_SNAP_HORIZONTAL"), _const("WALKABLE_SNAP_VERTICAL")
 SELECT_TOL = _const("TAP_SELECT_TOLERANCE")
+PLAYER_TAP_R = _const("PLAYER_TAP_RADIUS")
 ZONE_R = float(re.search(r'SphereShape3D_interact"\]\s*radius = ([0-9.]+)',
                          open(os.path.join(REPO, "scenes", "player", "Player.tscn")).read()).group(1))
 
-def route(gui_consumed, move_px, msec, ray_hit, ray_hit_active, near_active, ground_hit, has_mesh, snap_h, snap_v):
+def route(gui_consumed, move_px, msec, ray_hit, ray_hit_active, player_tap, near_active, ground_hit, has_mesh, snap_h, snap_v):
     """Port of InputManager._track_tap + _handle_tap. Mode is deliberately
     not an input: taps behave the same in Joystick and Tap to Move."""
     if gui_consumed: return None                                   # never reaches _unhandled_input
     if move_px > TAP_MAX_MOVE or msec > TAP_MAX_MSEC: return None   # drag / hold
     if ray_hit and ray_hit_active: return "interact:exact"
     if not ground_hit: return None
+    if player_tap: return "stop"                                    # tap the player = deliberate stop
     if near_active: return "interact:near"                          # small-object tolerance
     if not has_mesh: return "move:direct"                           # mesh not built yet
     if snap_h > SNAP_H or snap_v > SNAP_V: return None              # top of an obstacle / off the edge
@@ -35,21 +37,24 @@ def route(gui_consumed, move_px, msec, ray_hit, ray_hit_active, near_active, gro
 
 rows = 0
 for combo in itertools.product([False, True], [0.0, 10.0, 30.0], [100, 400, 600], [False, True], [False, True],
-                               [False, True], [False, True], [False, True], [0.0, 0.3, 0.9, 1.5], [0.0, 0.8]):
-    gui, move, ms, hit, hit_active, near, ground, mesh, sh, sv = combo
+                               [False, True], [False, True], [False, True], [False, True], [0.0, 0.3, 0.9, 1.5], [0.0, 0.8]):
+    gui, move, ms, hit, hit_active, ptap, near, ground, mesh, sh, sv = combo
     r = route(*combo); rows += 1
     tap = not gui and move <= TAP_MAX_MOVE and ms <= TAP_MAX_MSEC
     if gui: assert r is None, "UI touch leaked into the world"
     if move > TAP_MAX_MOVE: assert r is None, "drag issued a command"
     if tap and hit and hit_active: assert r == "interact:exact", "exact interactable must win"
-    if tap and hit and not hit_active and ground and not near and mesh and sh <= SNAP_H and sv <= SNAP_V:
+    if tap and not (hit and hit_active) and ground and ptap: assert r == "stop", "tapping the player must stop"
+    free = tap and not (hit and hit_active) and ground and not ptap
+    if free and hit and not hit_active and not near and mesh and sh <= SNAP_H and sv <= SNAP_V:
         assert r == "move:snapped", "an inactive interactable must not block the ground"
-    if tap and not (hit and hit_active) and ground and not near and mesh and sh <= SNAP_H and sv <= SNAP_V:
+    if free and not near and mesh and sh <= SNAP_H and sv <= SNAP_V:
         assert r == "move:snapped", "walkable ground tap must move"
-    if tap and not (hit and hit_active) and ground and near: assert r == "interact:near", "small-object tolerance"
-    if tap and not (hit and hit_active) and ground and not near and not mesh: assert r == "move:direct"
-    if r and r.startswith("move"): assert not (hit and hit_active) and not near
-print(f"routing table: {rows} combinations OK (mode-independent; snap {SNAP_H} m, select tolerance {SELECT_TOL} m)")
+    if free and near: assert r == "interact:near", "small-object tolerance"
+    if free and not near and not mesh: assert r == "move:direct"
+    if r and r.startswith("move"): assert not (hit and hit_active) and not near and not ptap
+    if r == "stop": assert not (hit and hit_active), "an exact interactable hit wins over stop"
+print(f"routing table: {rows} combinations OK (mode-independent; snap {SNAP_H} m, select tolerance {SELECT_TOL} m, player tap {PLAYER_TAP_R} m)")
 assert SNAP_H >= 0.5, "snap tolerance must reach past the nav agent radius around obstacles"
 
 # ------------------------------------------------------------ 2. player model
@@ -67,6 +72,7 @@ class Player:
         if t["id"] in p.nearby: p.stop(); p.interacted.append(t["id"]); return
         p.start(t["pos"]); p.approach = t
     def on_move(p, d): p.start(d)
+    def on_stop(p): p.stop()
     def zone_update(p, objects):  # area_entered / area_exited
         for t in objects:
             inside = p.in_zone(t)
@@ -107,6 +113,11 @@ p = Player(); p.on_move((10.0, 0.0)); p.on_move((0.0, 10.0)); assert p.dest == (
 p = Player(); p.on_move((10.0, 0.0)); p.on_interact_target(objs[0]); assert p.approach["id"] == "flower", "interactable replaces move target"
 p = Player(); p.on_interact_target(objs[0]); p.physics((1.0, 0.0), objs); assert not p.nav and p.approach is None, "joystick/keyboard cancels"
 p = Player(); p.pos = (19.0, 0.0); p.zone_update(objs); p.on_interact_target(objs[0]); assert p.interacted == ["flower"] and not p.nav, "in range: immediate"
+p = Player(); p.on_move((10.0, 0.0)); p.on_stop(); assert not p.nav and p.approach is None, "tap-player stops a walk"
+p = Player(); p.on_interact_target(objs[0]); p.on_stop()
+for _ in range(2000): p.physics(None, objs)
+assert p.interacted == [] and not p.nav, "stop cancels a pending interaction"
+p = Player(); p.on_stop(); assert not p.nav and p.interacted == [], "stop while idle is harmless"
 
 stats = dict(taps=0, approaches=0, zone_interactions=0, cancels=0, retargets=0)
 for trial in range(2000):
@@ -118,6 +129,8 @@ for trial in range(2000):
             if p.nav: stats["retargets"] += 1
             p.on_move(d); stats["taps"] += 1
             assert p.nav and p.dest == d and p.approach is None
+        elif ev < 0.1 and ev >= 0.09:
+            p.on_stop(); assert not p.nav and p.approach is None
         elif ev < 0.09:
             t = rnd.choice(objs); before = list(p.interacted); was_near = t["id"] in p.nearby
             p.on_interact_target(t)

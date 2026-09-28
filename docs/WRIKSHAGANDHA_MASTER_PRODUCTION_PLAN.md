@@ -145,7 +145,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 |---|---|---|
 | Movement (joystick) | `[~]` implemented | Not tested in Godot/Android |
 | Tap-to-move + navigation | `[~]` implemented | Navmesh baked at runtime from static colliders; never executed |
-| Tap-to-interact | `[~]` implemented | Area raycast + small-object tolerance; walk to the object, interact on entering the interaction zone (M01.2a) |
+| Tap-to-interact | `[~]` implemented | Area raycast + small-object tolerance; walk to the object, interact on entering the interaction zone (M01.3) |
 | Camera | Partial | Follow + look-ahead; no bounds or zoom |
 | Farming | Advanced prototype, **frozen** | 4 crops, quality, basket, 7 plots, Elderbloom, exploration seeds, milestones, persistence |
 | Exploration | Partial | Landmarks, secrets, bonuses; place list hard-coded; progress not saved |
@@ -232,7 +232,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 
 Goal: comfortable, reliable movement in both modes on a real phone.
 
-**M01.1 — Physics layer constants** `[~]` (verified in code; no runtime-visible change — confirmed at M01.5)
+**M01.1 — Physics layer constants** `[~]` (verified in code; no runtime-visible change — confirmed at M01.6)
 - **Objective:** replace numeric masks in code with the named layers (one shared definition).
 - **Inputs:** layer names (M00.5).
 - **Files:**
@@ -279,7 +279,8 @@ Goal: comfortable, reliable movement in both modes on a real phone.
 - **Done when:** desktop movement works without mouse emulation (awaiting the Godot run).
 - **Commit:** §15.
 
-**M01.2a — Touch interaction correction** `[~]` (verified in code; **PLAYTEST REQUIRED**)
+**M01.3 — Touch interaction: tap-to-move / tap-to-interact** `[~]` (implemented `b663d76`; verified in code; **PLAYTEST REQUIRED**)
+- *Numbering:* recorded as "M01.2a" until the developer's reconciliation; renumbered M01.3. The former M01.3 (cancel + water) was split: cancellation is M01.4, and the water decision (O-07) moved to M07.3.
 - **Why:** a developer desktop test found that some ground taps didn't move the player, and tapped objects only worked when already within reach. This was inserted before M01.3.
 - **Root causes (from the code):**
   1. Ground taps were ignored unless the mode was Tap to Move; the default is Joystick.
@@ -311,18 +312,34 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - [ ] Feel: "I tap what I want and the character handles the rest."
 - **Commit:** §15.
 
-**M01.3 — Movement cancel + water decision** `[!]` blocked on decision O-07
-- **Objective:** a deliberate way to stop tap-to-move (e.g. tap the player); pond walkability per the developer's decision.
-- **Files:** `input_manager.gd`, `player.gd`, possibly `Meadow.tscn`.
-- **Done when:** the player can stop a walk; the pond behaves as decided.
+**M01.4 — Movement cancellation** `[~]` (verified in code; needs a Godot/Android run)
+- **Objective:** a deliberate way to stop a tap-started walk (tap the player). Not blocked: pond walkability (O-07) is a separate world/navigation decision, now under M07.3.
+- **Audit:**
+  - A walk already stopped on joystick/keyboard input, a new tap, a mode change, arrival, the target disappearing, or the 1 s stall.
+  - A touch-only player had no deliberate stop.
+  - Tapping the player made a small sideways step: the player body is on the `world` layer, so the ground ray hit it and snapped to walkable ground up to 1 m away.
+- **Files:** `input_manager.gd`, `player.gd`, `tools/check_project.py`, `tools/sims/sim_tap_movement.py`, docs.
+- **Implementation:**
+  - A tap whose world ray hits the player's body, or lands within `PLAYER_TAP_RADIUS` (0.6 m) of its feet, emits `InputManager.stop_requested`. The Player joins `InputManager.PLAYER_GROUP` and stops the walk, dropping any pending interaction.
+  - An exact interactable hit still wins; a stop while idle is a no-op.
+  - No scene edits, no new loops or autoloads.
+- **Verification:**
+  - `tools/run_all.sh` passes; 3 new tap contracts; the routing table and player model include the stop.
+  - Mutation-tested: 4 GDScript and 2 model mutations caught.
+- **Runtime test** (in the M01.6 checklist):
+  - Tap the player while it walks → it stops.
+  - Tap the player while it's heading to an object → the interaction doesn't happen.
+  - Tapping ground just beside the player doesn't cause a jitter step.
+- **Done when:** the player can stop a walk (and cancel a pending interaction) without joystick or keyboard. ✔ in code.
+- **Commit:** §15.
 
-**M01.4 — Animation state hooks** `[ ]`
+**M01.5 — Animation state hooks** `[ ]`
 - **Objective:** Player emits idle/walk/interact state changes for future character rigs; the current procedural bob/squash is unchanged.
 - **Files:** `player.gd`.
 - **Verification:** toolkit.
 - **Done when:** signals fire on state changes (verified in code).
 
-**M01.5 — Android movement playtest** `[ ]` → **PLAYTEST REQUIRED**
+**M01.6 — Android movement playtest** `[ ]` → **PLAYTEST REQUIRED**
 - **Objective:** confirm movement on a phone and decide the default mode (O-06).
 - **Checklist:**
   - project opens in Godot 4.7.2 with no errors;
@@ -331,6 +348,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - tap on ground walks there and paths go around trees, rocks, logs and the monolith;
   - mound steps are climbable;
   - a tap while walking retargets;
+  - tapping the player stops a walk and cancels a pending interaction;
   - taps on buttons, screens and the seed picker never move the player;
   - a drag does not move the player;
   - note the load time (navmesh bake);
@@ -346,8 +364,8 @@ Goal: one generic interaction architecture for everything touchable.
 |---|---|---|---|---|
 | M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[ ]` |
 | M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[ ]` |
-| M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.2a, D-16) | Player faces what it interacts with | Android: approach feel | `[ ]` |
-| M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.2a | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
+| M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[ ]` |
+| M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
 | M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
 
@@ -403,7 +421,7 @@ Goal: the small playable test area (placeholders).
 |---|---|---|---|---|
 | M07.1 | Slice layout plan (meadow, garden, pond, forest edge, path, house slot, NPC spot) | Developer-approved layout | — | `[ ]` |
 | M07.2 | Reusable placeholder scenes for the developer to place in the editor | Placement needs no code | Godot: place and run | `[ ]` |
-| M07.3 | Navigation, bounds and entry points for the slice | Whole slice reachable | Walk everything | `[ ]` |
+| M07.3 | Navigation, bounds and entry points for the slice, including the pond walkability decision (O-07) | Whole slice reachable; the pond behaves as decided | Walk everything | `[ ]` (O-07 open) |
 
 ### PHASE 08 — HOUSES / NPCS
 | Milestone | Objective | Done when | Runtime test | Status |
@@ -509,9 +527,10 @@ No large world expansion before this gate passes.
 | M00.1–M00.5 | `9da18a6` |
 | M01.1 | `e678d45` |
 | M01.2 | `d316ecc` |
-| M01.2a | `b663d76` |
+| M01.3 (was M01.2a) | `b663d76` |
+| M01.4 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 01 — Player. M01.1, M01.2 and the M01.2a touch correction implemented (`[~]`); M01.2a **needs its playtest** before M01.3. Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.3 — Movement cancel + water decision**. It is blocked on decision O-07, and starts only on the developer's instruction.
-- **First runtime gate:** M01.5 — Android movement playtest.
+- **Current phase:** 01 — Player. M01.1–M01.4 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.5 — Animation state hooks**. It starts only on the developer's instruction.
+- **First runtime gate:** M01.6 — Android movement playtest.

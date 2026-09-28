@@ -66,6 +66,8 @@ func _ready() -> void:
 	InputManager.interact_requested.connect(_on_interact_requested)
 	InputManager.interact_target_requested.connect(_on_interact_target_requested)
 	InputManager.move_target_requested.connect(_on_move_target_requested)
+	InputManager.stop_requested.connect(_on_stop_requested)
+	add_to_group(InputManager.PLAYER_GROUP)
 	InputManager.movement_mode_changed.connect(_on_movement_mode_changed)
 	_facing_angle = visual.rotation.y
 
@@ -217,6 +219,11 @@ func _on_move_target_requested(destination: Vector3) -> void:
 		_spawn_destination_marker(destination)
 
 func _on_movement_mode_changed(_mode: int) -> void:
+	_stop_navigation()
+
+## Tapping the player: the deliberate stop. Ends a tap-started walk and
+## drops any pending interaction; harmless when already standing still.
+func _on_stop_requested() -> void:
 	_stop_navigation()
 
 # --- Tap to Move -----------------------------------------------------------------

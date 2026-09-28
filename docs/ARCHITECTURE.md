@@ -95,7 +95,8 @@ Main (Node3D)                       scenes/Main.tscn
      - If an active Interactable lies within `TAP_SELECT_TOLERANCE` (0.45 m) of it, that object is selected. This covers small flowers and mushrooms.
      - Otherwise the point is snapped to the nearest navigation-mesh point within 1 m → `move_target_requested(destination)`. Farther means the top of an obstacle or off the edge: ignored.
      - Before the mesh exists, the tapped point is used directly.
-  5. **Taps behave the same in both movement modes** (decision D-15).
+  5. **Tapping the player** is the deliberate stop. That's its body (on the `world` layer, so the ground ray can hit it) or the ground within `PLAYER_TAP_RADIUS` (0.6 m) of its feet → `stop_requested`. The Player (group `InputManager.PLAYER_GROUP`) cancels the walk and any pending interaction. This is checked after the exact interactable ray and before small-object selection and movement.
+  6. **Taps behave the same in both movement modes** (decision D-15).
 - **Desktop:** the mouse emulates touch (`emulate_touch_from_mouse`), so a click takes the same path.
 - **Keyboard (desktop fallback):**
   - InputMap actions `move_up/down/left/right` (W/S/A/D + arrows) are read in `_input` on key events only (non-consuming) via `Input.get_vector()`.

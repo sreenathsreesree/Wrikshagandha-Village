@@ -53,7 +53,7 @@ blocked (`[!]`) until the developer records a decision here.
 | O-04 | Final progression structure: how discovery → understanding → world change → new access is expressed | Phase 13 | — |
 | O-05 | Final area structure: which areas, how they connect, elemental regions' layout | After Phase 16 | The vertical-slice layout is enough until then |
 | O-06 | Default movement mode: joystick shown or hidden by default (taps work either way, D-15) | Phase 01 | Decide after the Android movement playtest |
-| O-07 | Is water (the pond) walkable? | Phase 01 | Currently walkable: the pond has no collision |
+| O-07 | Is water (the pond) walkable? | Phase 07 (M07.3, slice navigation) | Currently walkable: the pond has no collision. Does not block Phase 01 |
 | O-09 | Each element's distinct gameplay mechanic | Phase 11, per element | Themes are decided (D-04); mechanics are not |
 
 ## Proposed — production recommendations awaiting approval

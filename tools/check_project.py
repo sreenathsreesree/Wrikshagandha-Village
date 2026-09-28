@@ -533,6 +533,13 @@ contracts = [
      "reaching the tapped object's range must trigger its interaction"),
     (PL, "_physics_process", lambda b: re.search(r"if direction != Vector3\.ZERO:\s*_stop_navigation\(\)", b) is not None,
      "joystick/keyboard input must cancel a tap-started walk"),
+    (IM, "_handle_tap", lambda b: "_is_player_tap(" in b and "stop_requested.emit()" in b
+         and b.find("stop_requested.emit()") < b.find("move_target_requested.emit"),
+     "tapping the player must request a stop, before any ground movement"),
+    (PL, "_ready", lambda b: "stop_requested.connect(_on_stop_requested)" in b and "PLAYER_GROUP" in b,
+     "the player must join PLAYER_GROUP and listen for stop requests"),
+    (PL, "_on_stop_requested", lambda b: "_stop_navigation()" in b,
+     "a stop request must cancel the walk and any pending interaction"),
 ]
 for f, fn, ok, why in contracts:
     body = func_body(scripts.get(f, ""), fn)
