@@ -22,8 +22,8 @@ a Direction note exists yet.
 
 ## 2. Scene architecture
 ```
-Main (Node3D)                       scenes/Main.tscn
-├── Meadow (Node3D, group navigation_source)   scenes/world/Meadow.tscn, scripts/world/meadow.gd
+Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
+├── Meadow (Node3D, group navigation_source) — the current area   scenes/world/Meadow.tscn, scripts/world/meadow.gd (MeadowArea)
 │   ├── WorldEnvironment, DirectionalLight3D
 │   ├── NavigationRegion3D          navmesh baked at load from static colliders
 │   ├── Terrain / Water / Vegetation / Discoverables / Clues / SecretSpots
@@ -32,20 +32,22 @@ Main (Node3D)                       scenes/Main.tscn
 │   ├── Ambient / EnvironmentalEvents / ExplorationLandmarks
 │   ├── WorldSimulation              TimeOfDay, Environment, Vegetation, Wildlife,
 │   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers
-│   ├── PlayerSpawn, Player          scenes/player/Player.tscn
-│   └── FollowCamera                 scenes/camera/FollowCamera.tscn
-└── HUD (CanvasLayer)                scenes/ui/HUD.tscn
+│   └── PlayerSpawn                  Marker3D (world content; unused by code yet — M03.2 entry markers)
+├── Player                           scenes/player/Player.tscn      (shell)
+├── FollowCamera                     scenes/camera/FollowCamera.tscn (shell; the only Camera3D)
+└── HUD (CanvasLayer)                scenes/ui/HUD.tscn             (shell)
     ├── TopBar, NotificationRoot, MobileControls/Joystick, ScreenButtons
     └── SeedPicker, CollectionScreen, JournalScreen, DailyDiscoveryScreen, BasketScreen
 ```
 - **Current:**
   - World content is placed in the editor. Scripts find world objects through groups (`wildlife_actor`, `environmental_event`, `exploration_landmark`) or registration (`FarmManager.register_plot`), not hard-coded positions.
-  - `meadow.gd` wires the camera and WorldSimulation to the Player and bakes navigation.
-- **Known issue (Phase 03):**
-  - Player and FollowCamera are children of `Meadow.tscn`, so an area can't be swapped (e.g. entering a house) without destroying them.
-  - FarmManager also assumes plots never unload.
+  - **Scene ownership (M03.1):** `Main` is the persistent runtime shell and owns exactly one Player, one FollowCamera (the only Camera3D) and one HUD, as direct children. The area (`Meadow`, instanced at the origin) is world content only and owns none of them. The startup scene is `Main.tscn`.
+  - `main.gd` wires the shell once, after every child is ready: the camera follows the player, and `MeadowArea.attach_player()` hands the player to the area's WorldSimulation. `meadow.gd` only bakes navigation and configures its own world simulation.
+  - Navigation stays with the area: the Meadow's NavigationRegion3D (settings unchanged, baked from its static colliders) and the Player's NavigationAgent3D share the one World3D navigation map.
+  - Tree order keeps the old processing order: the area first, then Player, then FollowCamera, then HUD.
+- **Known issue (Phase 03):** FarmManager still assumes plots never unload (M03.3); areas can't be swapped yet (M03.2).
 - **Direction (Phase 03):**
-  - A persistent shell (`Main`: Player, Camera, HUD) plus swappable area scenes loaded by an area loader at named entry markers.
+  - Swappable area scenes loaded into the persistent shell by an area loader at named entry markers (M03.2).
   - Each area owns its NavigationRegion3D.
   - World state is restored by stable id when an area registers, as FarmPlot already does.
 

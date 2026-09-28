@@ -166,7 +166,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 
 | # | Risk | Resolved in |
 |---|---|---|
-| A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Phase 03 |
+| A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Ownership resolved in M03.1 (in code); area loading M03.2; plot unloading M03.3 |
 | A2 | `Interactable` base is discovery-specific | M02.1 (in code; runtime test pending) |
 | A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
@@ -399,7 +399,14 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - **M02.4 small objects:**
     - exact flower tap; slightly off-centre; just outside the collision; between two nearby objects; beside a rock; an unavailable object next to an available one;
     - no unexpected target is ever selected; note any miss on mushrooms/flowers (tolerance 0.45 m);
-  - after M02.4: M02.3 facing, the M01.5 INTERACT state and M01.4 player-tap cancellation still work.
+  - after M02.4: M02.3 facing, the M01.5 INTERACT state and M01.4 player-tap cancellation still work;
+  - **M03.1 persistent shell (full Meadow walk-through):**
+    - the project opens and runs `Main.tscn` with no errors or warnings (no missing nodes, no "node not found");
+    - the player starts where it did; the camera follows exactly as before (same angle, distance, smoothing, look-ahead);
+    - the HUD shows as before (buttons, joystick, notifications, screens);
+    - tap-to-move paths still work (the navigation mesh bakes); tap-to-interact, cancellation, facing and feedback unchanged;
+    - wildlife, vegetation, time of day, environmental events and landmarks still react to the player;
+    - discoveries, farm, saving and reloading work as before.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -563,12 +570,36 @@ Goal: persistent Player/Camera/HUD with swappable areas.
 
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
-| M03.1 | Persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1) | Meadow loads as a child area; everything works as before | Full Meadow walk-through | `[ ]` |
+| M03.1 | Persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1) | Meadow loads as a child area; everything works as before | Full Meadow walk-through | `[~]` |
 | M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[ ]` |
 | M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[ ]` |
 | M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[ ]` |
 | M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[ ]` |
 | M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[ ]` |
+
+**M03.1 — Persistent Main scene (shell)** `[~]` Implemented — runtime testing pending (M01.6 checklist)
+- **Objective:** Main owns the persistent Player, Camera and HUD; the Meadow is world content only.
+- **Audit:**
+  - `scenes/Main.tscn` already existed and was already the startup scene (`run/main_scene`). It held `Meadow` and `HUD`. **HUD was already in Main**; **Player** and **FollowCamera** (plus `PlayerSpawn`) were children of `Meadow.tscn`.
+  - The only structural dependency: `meadow.gd` used `$Player` and `$FollowCamera` to set the camera's target and position and to call `WorldSimulation.configure(player, light, environment)`.
+  - No script uses `owner`, `%Unique` names, `current_scene`, root paths, `find_child` or `PlayerSpawn`. InputManager finds the player through `PLAYER_GROUP` and the camera through `get_viewport().get_camera_3d()` — both hierarchy-independent. Player's `get_parent().add_child()` (destination marker) works under Main (a Node3D). SaveManager/GameState/HUD hold no scene paths; HUD's `_ready` only connects autoload signals.
+  - Navigation: NavigationRegion3D in the Meadow, navmesh baked at load from **static colliders** of the `navigation_source` group (the Meadow root). The Player (a CharacterBody3D) never contributed geometry; its NavigationAgent3D uses the same World3D map. No relocation needed.
+  - One Camera3D in the project (FollowCamera). 12 autoloads, none scene-bound.
+  - Tools: `sim_tap_movement.py` read the player spawn from Meadow's `Player` node.
+- **Files:** `scenes/Main.tscn`, `scenes/world/Meadow.tscn`, `scripts/world/meadow.gd`, new `scripts/main.gd`, `tools/check_project.py`, `tools/sims/sim_tap_movement.py`, docs.
+- **Implementation:**
+  - `Main.tscn`: `Main` (script `main.gd`) → `Meadow` (at the origin), `Player` and `FollowCamera` (both at their old position (0, 0.2, 5) — identical world coordinates), `HUD`. Tree order keeps the old processing order (area, then Player, then camera).
+  - `Meadow.tscn`: the Player and FollowCamera nodes and their two ext_resources removed; nothing else touched (`PlayerSpawn` kept as world content).
+  - `main.gd`: once, in `_ready` (after all children): `follow_camera.target = player`, `follow_camera.global_position = player.global_position`, `area.attach_player(player)`.
+  - `meadow.gd` (`class_name MeadowArea`): `_ready` bakes navigation; `attach_player(player)` configures the WorldSimulation. The configure call now runs at the end of the same ready pass (after Player, camera and HUD are ready) instead of in the Meadow's `_ready` — no frame passes in between, and nothing read it earlier.
+  - **Player, InputManager, camera, HUD: byte-for-byte unchanged** (and now pinned).
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: startup scene is `Main.tscn`; in the fully expanded Main tree (822 nodes) exactly one Player, FollowCamera and HUD, each a direct child of Main; exactly one Camera3D (inside FollowCamera); no SubViewport; the Meadow instanced once at the origin; the expanded Meadow tree owns no Player/camera/HUD/joystick; `main.gd` wiring; `meadow.gd` gets the player only via `attach_player()`; navigation mesh settings, region placement, bake and the Player's agent pinned; the 12 autoloads pinned; **deliberate-change pins** (content hashes) for `player.gd`, `input_manager.gd`, `follow_camera.gd`, `FollowCamera.tscn`, `Player.tscn`, `HUD.tscn`. Existing `$`/NodePath checks cover `main.gd` and `meadow.gd`.
+  - `sim_tap_movement.py` reads the spawn from `Main.tscn` (and checks the Meadow sits at the origin); geometry: spawn and 16 interactables clear of obstacles.
+  - Mutation-tested: 29 GDScript/scene mutations and 3 model mutations caught.
+- **Runtime:** no Godot executable in this environment, so no headless load — **the scene change is verified statically only**. PLAYTEST REQUIRED (M01.6 checklist, "M03.1 persistent shell").
+- **Commit:** §15.
 
 ### PHASE 04 — INVENTORY
 Goal: one universal item model.
@@ -725,8 +756,9 @@ No large world expansion before this gate passes.
 | M02.4 | `0dfbdbe` |
 | M02.5 | `f0003dd` |
 | M02.6 | `c067fe3` |
+| M03.1 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 02's milestone table is complete. Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's and M02.4's runtime tests). Phase 02's table ends at M02.6; the next development milestone is **M03.1 — persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1)**. Either starts only on the developer's instruction.
+- **Current phase:** 03 — Camera / world shell. M03.1 implemented (`[~]`, runtime test pending). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's and M03.1's runtime tests). The next development milestone is **M03.2 — area loader with named entry markers**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

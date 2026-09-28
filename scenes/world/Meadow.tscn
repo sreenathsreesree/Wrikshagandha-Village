@@ -1,13 +1,11 @@
-[gd_scene load_steps=48 format=3]
+[gd_scene load_steps=46 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
-[ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/MeadowFlower.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/WildMint.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/SmallMushroom.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/HealingHerb.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/RiverStone.tscn" id="7"]
-[ext_resource type="PackedScene" path="res://scenes/camera/FollowCamera.tscn" id="8"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/TreeRound.tscn" id="9"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/TreeTall.tscn" id="10"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/TreeWide.tscn" id="11"]
@@ -873,9 +871,3 @@ radius = 5.0
 
 [node name="PlayerSpawn" type="Marker3D" parent="."]
 position = Vector3(0, 0, 5)
-
-[node name="Player" parent="." instance=ExtResource("2")]
-position = Vector3(0, 0.2, 5)
-
-[node name="FollowCamera" parent="." instance=ExtResource("8")]
-position = Vector3(0, 0.2, 5)

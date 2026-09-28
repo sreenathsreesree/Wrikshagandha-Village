@@ -1,21 +1,23 @@
 extends Node3D
+class_name MeadowArea
 
-## Wires the world's follow camera and WorldSimulation to the player/light/
-## environment nodes that live in this scene. Kept deliberately tiny —
-## world-building itself lives entirely in the scene tree (Meadow.tscn).
+## The Meadow area: world content only. The player, camera and HUD belong to
+## the persistent Main scene (M03.1), which hands the player over through
+## attach_player(). Kept deliberately tiny — world-building itself lives
+## entirely in the scene tree (Meadow.tscn).
 
-@onready var player: Node3D = $Player
-@onready var follow_camera: FollowCamera = $FollowCamera
 @onready var world_simulation: WorldSimulation = $WorldSimulation
 @onready var directional_light: DirectionalLight3D = $DirectionalLight3D
 @onready var world_environment: WorldEnvironment = $WorldEnvironment
 @onready var navigation_region: NavigationRegion3D = $NavigationRegion3D
 
 func _ready() -> void:
-	follow_camera.target = player
-	follow_camera.global_position = player.global_position
-	world_simulation.configure(player, directional_light, world_environment)
 	_bake_navigation()
+
+## Called once by Main when the shell is ready: the area's world simulation
+## (wildlife, vegetation, events, landmarks) follows this player.
+func attach_player(player: Node3D) -> void:
+	world_simulation.configure(player, directional_light, world_environment)
 
 ## Tap-to-move walks on a navigation mesh built from the world's own
 ## static colliders (ground, mounds, trees, rocks, bushes, logs, the

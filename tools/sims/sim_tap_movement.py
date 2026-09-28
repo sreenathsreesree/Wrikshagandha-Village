@@ -219,7 +219,14 @@ for chunk in s.split("\n[")[1:]:
         obstacles.append((name, x, z, FOOT[inst.group(1)] * k))
     if inst and inst.group(1) in ("3", "4", "5", "6", "7", "19", "20", "21", "22", "23", "38"):
         points.append((name, x, z))
-    if name == "Player": points.append(("PlayerSpawn", x, z))
+# The player now lives in the persistent Main scene (M03.1), with the Meadow
+# instanced at the origin — so its position there is its Meadow position.
+_main = open(os.path.join(REPO, "scenes", "Main.tscn")).read()
+assert not re.search(r'\[node name="Meadow"[^\n]*\]\n(position|transform)', _main), "Meadow instanced at the origin"
+_pp = re.search(r'\[node name="Player" parent="\." [^\n]*\]\nposition = Vector3\(([^)]*)\)', _main)
+assert _pp, "Main.tscn places the Player"
+_px, _, _pz = [float(v) for v in _pp.group(1).split(",")]
+points.append(("PlayerSpawn", _px, _pz))
 bad = []
 for pn, px, pz in points:
     for on, ox, oz, r in obstacles:

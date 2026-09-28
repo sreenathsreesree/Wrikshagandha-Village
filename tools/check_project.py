@@ -853,6 +853,91 @@ if found != sorted(tuple(x) for x in PER_FRAME):
     err(f"per-frame callbacks changed: added {sorted(set(found) - set(map(tuple, PER_FRAME)))}, removed {sorted(set(map(tuple, PER_FRAME)) - set(found))}")
 notes.append("tap feedback + selection contracts checked: 18; per-frame callbacks: %d" % len(PER_FRAME))
 
+# ------------------------------------------------------------ persistent shell (M03.1)
+# Main is the persistent runtime shell: it owns the Player, the FollowCamera
+# and the HUD (one of each, as direct children); an area (the Meadow) is
+# world content only and owns none of them.
+import hashlib
+MAIN_SCENE, MEADOW_SCENE = "scenes/Main.tscn", "scenes/world/Meadow.tscn"
+SHELL = {"Player": "scenes/player/Player.tscn", "FollowCamera": "scenes/camera/FollowCamera.tscn", "HUD": "scenes/ui/HUD.tscn"}
+def expand(scene, prefix="", depth=0):
+    """Every node of a scene with instanced scenes expanded: (path, type, instanced scene or None)."""
+    out = []
+    if depth > 12 or not os.path.exists(scene): return out
+    _, secs, ext, _ = load_scene_info(scene)
+    for k, a, b in secs:
+        if k != "node": continue
+        name = a["name"].strip('"'); par = a.get("parent", None)
+        par = par.strip('"') if par is not None else None
+        rel = "." if par is None else (name if par == "." else par + "/" + name)
+        full = prefix if rel == "." else (f"{prefix}/{rel}" if prefix else rel)
+        inst = None
+        if "instance" in a:
+            inst = script_for_ext(ext, re.search(r'ExtResource\("([^"]+)"\)', a["instance"]).group(1))
+            inner = expand(inst, full, depth + 1)
+            root_type = inner[0][1] if inner else ""
+            out.append((full or ".", root_type, inst)); out.extend(inner[1:])
+        else:
+            out.append((full or ".", a.get("type", "").strip('"'), None))
+    return out
+main_cfg = re.search(r'^run/main_scene="res://([^"]+)"', cfg, re.M)
+if not main_cfg or main_cfg.group(1) != MAIN_SCENE:
+    err(f"project.godot: the startup scene must be res://{MAIN_SCENE} (found {main_cfg.group(1) if main_cfg else None})")
+if not os.path.exists(MAIN_SCENE):
+    err(f"{MAIN_SCENE} missing")
+else:
+    main_tree = expand(MAIN_SCENE)
+    for name, scene in SHELL.items():
+        where = [pth for pth, _, inst in main_tree if inst == scene]
+        if where != [name]:
+            err(f"{MAIN_SCENE}: exactly one {name} ({scene}), owned directly by Main (found at {where})")
+    cams = [pth for pth, t, _ in main_tree if t == "Camera3D"]
+    if len(cams) != 1 or not cams[0].startswith("FollowCamera/"):
+        err(f"{MAIN_SCENE}: exactly one Camera3D, inside the FollowCamera (found {cams})")
+    if [pth for pth, t, _ in main_tree if t in ("SubViewport", "Viewport")]:
+        err(f"{MAIN_SCENE}: no SubViewport — the player's navigation agent and the area's navigation mesh share one World3D")
+    areas = [pth for pth, _, inst in main_tree if inst == MEADOW_SCENE]
+    main_src = open(MAIN_SCENE, encoding="utf-8").read()
+    if areas != ["Meadow"] or re.search(r'\[node name="Meadow"[^\n]*\]\n(position|transform|rotation|scale)', main_src):
+        err(f"{MAIN_SCENE}: the Meadow is instanced once, directly under Main, at the origin (world coordinates unchanged)")
+meadow_tree = expand(MEADOW_SCENE)
+for pth, t, inst in meadow_tree:
+    if inst in SHELL.values() or t == "Camera3D" or t == "CanvasLayer" or inst == "scenes/ui/VirtualJoystick.tscn":
+        err(f"{MEADOW_SCENE}: {pth} — an area must not own the persistent Player/Camera/HUD")
+MAIN_GD, MEADOW_GD = "scripts/main.gd", "scripts/world/meadow.gd"
+mready = func_body(scripts.get(MAIN_GD, ""), "_ready") or ""
+if not re.search(r"follow_camera\.target = player\s*follow_camera\.global_position = player\.global_position\s*area\.attach_player\(player\)", mready):
+    err(f"{MAIN_GD}: _ready() must point the camera at the player and hand the player to the area")
+mcode = code_only(scripts.get(MEADOW_GD, ""))
+if re.search(r"\$(Player|FollowCamera|HUD)\b|\bFollowCamera\b|\bHUD\b", mcode) or \
+   "world_simulation.configure(player, directional_light, world_environment)" not in (func_body(scripts.get(MEADOW_GD, ""), "attach_player") or ""):
+    err(f"{MEADOW_GD}: the area owns no shell node and gets the player only through attach_player()")
+NAV_PINS = {"geometry_parsed_geometry_type": "1", "geometry_source_geometry_mode": "1", "geometry_source_group_name": '&"navigation_source"',
+            "cell_size": "0.25", "cell_height": "0.25", "agent_height": "1.3", "agent_radius": "0.35", "agent_max_climb": "0.25", "agent_max_slope": "37.0"}
+mead = open(MEADOW_SCENE, encoding="utf-8").read()
+navm = re.search(r'\[sub_resource type="NavigationMesh"[^\]]*\]\n(.*?)\n\n', mead, re.S)
+navsettings = dict(re.findall(r"^(\w+) = (.+)$", navm.group(1), re.M)) if navm else {}
+if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D" groups=\["navigation_source"\]\]', mead) \
+   or not re.search(r'\[node name="NavigationRegion3D" type="NavigationRegion3D" parent="\."\]', mead) \
+   or "NavigationAgent3D" not in open(SHELL["Player"], encoding="utf-8").read() or "_bake_navigation()" not in (func_body(scripts.get(MEADOW_GD, ""), "_ready") or ""):
+    err("navigation: the Meadow keeps its NavigationRegion3D (settings unchanged, baked at load from the navigation_source group); the Player keeps its NavigationAgent3D")
+AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
+             "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager"]
+found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
+if found_al != AUTOLOADS:
+    err(f"project.godot: autoloads changed {found_al} — adding one is a documented decision, never a side effect")
+# Deliberate-change pins: files a milestone promised not to touch. Changing
+# one is allowed only on purpose — update its pin in the same commit and
+# say why in the plan.
+PINNED = {"scripts/player/player.gd": "17c051f39f44d2e1", "scripts/autoload/input_manager.gd": "bd56f4c597de8b35",
+          "scripts/camera/follow_camera.gd": "defdcc07193979c4", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
+          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053"}
+for f, h in PINNED.items():
+    got = hashlib.sha256(open(f, "rb").read()).hexdigest()[:16] if os.path.exists(f) else None
+    if got != h:
+        err(f"{f}: changed (sha256 {got}, pinned {h}) — if deliberate, update the pin in tools/check_project.py and record why")
+notes.append(f"persistent shell: Main owns {sorted(SHELL)}; startup {MAIN_SCENE}; {len(PINNED)} pinned files; {len(AUTOLOADS)} autoloads")
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).
