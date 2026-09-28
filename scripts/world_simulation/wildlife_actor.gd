@@ -24,6 +24,18 @@ signal state_changed(state: String)
 ## noticing the player before actually reacting.
 @export var alert_distance: float = 4.0
 
+## Optional handful of notable nearby spots (pond edge, a flower patch, a
+## tree line) in the same position space as this actor — not necessarily
+## close to wander_radius. Left empty, wandering behaves exactly as
+## before (a random point near home). With points set, each time the
+## actor starts wandering there's an interest_chance roll to head toward
+## one of them instead — an occasional, non-repeating "going somewhere"
+## moment rather than a fixed patrol, since it's decided fresh every
+## wander cycle and still returns to ordinary near-home wandering the
+## rest of the time.
+@export var interest_points: Array[Vector3] = []
+@export_range(0.0, 1.0) var interest_chance: float = 0.35
+
 ## Set by WildlifeController once, after every actor in the scene exists —
 ## never touched by the actor itself.
 var player: Node3D
@@ -128,9 +140,12 @@ func _enter_pause() -> void:
 
 func _enter_wander() -> void:
 	state = "wander"
-	var angle := randf_range(0.0, TAU)
-	var radius := randf_range(0.3, wander_radius)
-	_target_position = _home_position + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+	if not interest_points.is_empty() and randf() < interest_chance:
+		_target_position = interest_points[randi() % interest_points.size()]
+	else:
+		var angle := randf_range(0.0, TAU)
+		var radius := randf_range(0.3, wander_radius)
+		_target_position = _home_position + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
 	state_changed.emit(state)
 
 func _enter_flee() -> void:

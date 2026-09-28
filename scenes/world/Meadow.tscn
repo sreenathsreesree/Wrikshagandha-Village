@@ -405,6 +405,12 @@ position = Vector3(5.2, 0, 6.8)
 [node name="WildflowerClearingMotes" parent="Vegetation" instance=ExtResource("24")]
 position = Vector3(5.3, 0.1, 5.2)
 
+[node name="WildflowerClearingPatch2" parent="Vegetation" instance=ExtResource("27")]
+position = Vector3(4.2, 0, 7.4)
+
+[node name="WildflowerClearingGrass3" parent="Vegetation" instance=ExtResource("13")]
+position = Vector3(6.6, 0, 6.6)
+
 [node name="Discoverables" type="Node3D" parent="."]
 
 [node name="MeadowFlowerSpawn" parent="Discoverables" instance=ExtResource("19")]
@@ -478,6 +484,10 @@ rotation_degrees = Vector3(0, 131, 0)
 [node name="UnusualFlowerPatchTrailStart" parent="Clues" instance=ExtResource("27")]
 position = Vector3(-7, 0, -6)
 
+[node name="FootprintsTowardMysteryGroveTree" parent="Clues" instance=ExtResource("26")]
+position = Vector3(-1, 0, 9)
+rotation_degrees = Vector3(0, 338, 0)
+
 [node name="SecretSpots" type="Node3D" parent="."]
 
 [node name="StoneRing1" parent="SecretSpots" instance=ExtResource("12")]
@@ -528,18 +538,22 @@ position = Vector3(17.3, 0, -2.0)
 
 [node name="Rabbit1" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(5, 0.15, 4)
+interest_points = [Vector3(2.5, 0.15, -1)]
 
 [node name="Rabbit2" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(-16, 0.15, 8)
 
 [node name="SmallBird1" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(7, 0.12, 8.5)
+interest_points = [Vector3(9, 0.12, -7.5)]
 
 [node name="SmallBird2" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(-14, 0.12, -3)
+interest_points = [Vector3(-10.5, 0.12, -9.5)]
 
 [node name="WildlifeButterfly1" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(4, 0.4, 1)
+interest_points = [Vector3(5.2, 0.4, 6.8)]
 
 [node name="WildlifeButterfly2" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(9, 0.4, -6)
@@ -549,9 +563,11 @@ position = Vector3(-4, 0.4, 9)
 
 [node name="WildlifeButterfly4" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(5, 0.4, 5.5)
+interest_points = [Vector3(5.2, 0.4, 6.8)]
 
 [node name="SmallBird3" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(8, 0.12, -11.5)
+interest_points = [Vector3(16, 0.12, -6)]
 
 [node name="WildlifeButterfly5" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(17.8, 0.4, -2.5)
