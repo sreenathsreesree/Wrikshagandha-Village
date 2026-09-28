@@ -253,14 +253,14 @@ func _walkable_point(map: RID, point: Vector3) -> Variant:
 	return closest
 
 ## The hit collider itself, or the Interactable it belongs to — if it can
-## be interacted with right now. An Interactable that isn't monitorable
-## (a locked plot, a discovery mid-harvest) is ignored, so the tap falls
-## through to the ground.
+## be interacted with right now. An unavailable Interactable (see
+## Interactable.is_interaction_available(): a locked plot, a discovery
+## mid-harvest) is ignored, so the tap falls through to the ground.
 func _find_interactable(node: Node) -> Interactable:
 	while node:
 		if node is Interactable:
 			var interactable := node as Interactable
-			if not interactable.monitorable:
+			if not interactable.is_interaction_available():
 				return null
 			return interactable
 		node = node.get_parent()

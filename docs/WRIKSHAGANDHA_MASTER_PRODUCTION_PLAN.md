@@ -167,7 +167,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 | # | Risk | Resolved in |
 |---|---|---|
 | A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Phase 03 |
-| A2 | `Interactable` base is discovery-specific | Phase 02 |
+| A2 | `Interactable` base is discovery-specific | M02.1 (in code; runtime test pending) |
 | A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
 | A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | Phases 01, 03 |
@@ -389,12 +389,39 @@ Goal: one generic interaction architecture for everything touchable.
 
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
-| M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[ ]` |
+| M02.1 | Split `Interactable` into a generic base + discovery behaviour, with no behaviour change (A2) | All existing interactions behave the same; toolkit passes | Tap every existing interactable | `[~]` |
 | M02.2 | Generic verbs as data (Inspect, Collect, Harvest, Talk, Open, Enter, Exit, Use, Give, Plant, Water, Feed, Read) | Verb declared per interactable; Player/Input never branch on type | — | `[ ]` |
 | M02.3 | Facing the object on arrival (walking to it within interaction range already done in M01.3, D-16) | Player faces what it interacts with | Android: approach feel | `[ ]` |
 | M02.4 | Interaction feedback on tap (reuse the indicator); tune the small-object tolerance added in M01.3 | Small objects reliably tappable | Android: hit rate on mushrooms | `[ ]` |
 | M02.5 | Remove or bind the unused `interact_requested` path (A6) | One interaction entry point | — | `[ ]` |
 | M02.6 | Placeholder Inspect/Open/Read interactables as test fixtures, with zero Player changes | New types work without touching Player | Godot: tap each fixture | `[ ]` |
+
+**M02.1 — Generic interaction foundation** `[~]` Implemented — runtime testing pending
+- **Objective:** make the existing `Interactable` a small generic contract, with all discovery behaviour moved into a discovery implementation, unchanged.
+- **Audit:**
+  - The base mixed generic presentation (indicator, proximity, burst scene, harvest sound) with discovery logic: `discovery_id`, the `DiscoveryDatabase` lookup in `_ready`, `DiscoveryManager.discover()`, the `harvested` signal and the category/rarity windup.
+  - The 9 discovery scenes used the base script directly. A new object type (door, NPC) extending it would have inherited a discovery lookup and a discovery `interact()` that warns without a `discovery_id`.
+  - Player and InputManager were already type-agnostic (`interact()`, `set_highlighted`, `update_proximity`, `remove_on_harvest`, `monitorable`). Availability was an implicit rule: `monitorable`, read directly by InputManager.
+  - `FarmPlot` overrides `interact()` and uses the base's `RARITY_INTENSITY`, `_play_harvest_sound()` and `HarvestBurstScene`.
+- **Files:** `scripts/interactables/interactable.gd` (generic base), new `scripts/interactables/discovery_interactable.gd`, `scripts/interactables/discovery_spawn_point.gd` (instance type), the 9 discovery scenes (script path only), `input_manager.gd` and `player.gd` (availability call), new `tools/fixtures/generic_interactable_probe.gd`, `tools/check_project.py`, new `tools/sims/sim_interaction.py`, docs.
+- **Implementation:**
+  - **Base `Interactable`** (Area3D): `is_interaction_available()` (= `monitorable`), `interact() -> bool` (default `false`), `get_interaction_metadata() -> Dictionary` (default empty; nothing reads it yet), `remove_on_harvest` (one-shot vs persistent), `set_highlighted()`, `update_proximity()`, and shared presentation (`HarvestBurstScene`, `RARITY_INTENSITY`, `_play_harvest_sound()`). No discovery, farm or signal code.
+  - **`DiscoveryInteractable`** extends it: `discovery_id`, `harvested`, the definition lookup, `interact()`, spawn animation and harvest feedback, moved byte-for-byte (rewards, points, animations, removal, one-shot and persistence all unchanged).
+  - **`FarmPlot`:** unchanged; it already implements the contract.
+  - **InputManager** asks `is_interaction_available()` instead of reading `monitorable`. **Player's** single `interact()` call site also refuses an unavailable object (defence in depth: such objects can't reach it today). `@warning_ignore("redundant_await")` on the awaited call, since some implementations return at once.
+  - No verb enum (verbs are M02.2). No new loops, timers, autoloads, masks, scene nodes or `.tres` changes.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - Interaction contract checks: base API present; availability backed by `monitorable`; no object-specific code in the base; every implementation has `interact() -> bool`; Player/InputManager name no implementation or discovery/farm member; one `interact()` call site; no second class hierarchy; no scene on the bare base; the probe is outside game content.
+  - `sim_interaction.py`: discovery, farm plot and the probe through one Player path; unavailable objects refused; one-shot objects never interacted with twice (including a failed discovery that stays available); 2,000 random sequences.
+  - Mutation-tested: 18 GDScript/scene and 6 model mutations caught.
+- **Runtime test (PLAYTEST REQUIRED):**
+  - The project opens with no script errors or new warnings.
+  - Tap each of the 9 discoveries: same windup, burst, sound, points, journal entry and removal as before. Respawning ones respawn.
+  - Farm plot: prepare, plant, water and harvest as before; a locked plot and a plot mid-harvest can't be tapped.
+  - Walk-to-interact, tap cancellation and the INTERACT state behave as in M01.3–M01.5.
+  - Save, quit and reload: discoveries, points and farm restored as before.
+- **Commit:** §15.
 
 ### PHASE 03 — CAMERA / WORLD SHELL
 Goal: persistent Player/Camera/HUD with swappable areas.
@@ -557,8 +584,9 @@ No large world expansion before this gate passes.
 | M01.3 (was M01.2a) | `b663d76` |
 | M01.4 | `443503f` |
 | M01.5 | `9ec60f1` |
+| M02.1 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 01 — Player. M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED). It starts only on the developer's instruction.
+- **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's runtime test). In Phase 02 the next is **M02.2 — generic verbs as data**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

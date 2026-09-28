@@ -513,7 +513,7 @@ for f, s2 in scripts.items():
 #  - a tapped Interactable is walked to and interacted with on entering the
 #    player's InteractionZone, never by a separate distance rule;
 #  - joystick/keyboard input cancels a tap-started walk;
-#  - inactive (non-monitorable) interactables never capture a tap.
+#  - unavailable interactables never capture a tap.
 def func_body(src, name):
     m = re.search(rf"^func {name}\(.*?(?=^func |\Z)", src, re.M | re.S)
     return m.group(0) if m else None
@@ -523,8 +523,8 @@ contracts = [
      "tap routing must not depend on the movement mode"),
     (IM, "_handle_tap", lambda b: "_interactable_near(" in b and "move_target_requested.emit" in b,
      "tap routing must try small-object selection and emit ground movement"),
-    (IM, "_find_interactable", lambda b: "monitorable" in b,
-     "inactive (non-monitorable) interactables must not capture taps"),
+    (IM, "_find_interactable", lambda b: "is_interaction_available()" in b,
+     "unavailable interactables must not capture taps"),
     (PL, "_on_interact_target_requested", lambda b: "_nearby_interactables.has(target)" in b and "_approach_target = target" in b,
      "a tapped interactable is interacted with in InteractionZone range, otherwise walked to"),
     (PL, "_on_interact_target_requested", lambda b: not re.search(r"distance_to|REACH", b),
@@ -548,6 +548,63 @@ for f, fn, ok, why in contracts:
     elif not ok(body):
         err(f"{f}: {fn}() breaks tap contract: {why}")
 notes.append(f"tap contracts checked: {len(contracts)}")
+
+# ------------------------------------------------------------ interaction contract
+# One generic interaction architecture (docs/ARCHITECTURE.md §6): the
+# Interactable base holds only the contract; object behaviour lives in
+# subclasses; Player and InputManager use only the contract, never a
+# concrete type; interact() has exactly one call site.
+BASE = "scripts/interactables/interactable.gd"
+PROBE = "tools/fixtures/generic_interactable_probe.gd"
+def code_only(src):
+    return "\n".join(line.split("#")[0] if not line.lstrip().startswith("##") else "" for line in src.splitlines())
+base_src = scripts.get(BASE, "")
+base_code = code_only(base_src)
+for fn in ("is_interaction_available", "interact", "get_interaction_metadata", "set_highlighted", "update_proximity"):
+    if func_body(base_src, fn) is None:
+        err(f"{BASE}: generic contract function {fn}() missing")
+if BASE not in scripts or "remove_on_harvest" not in own_members(BASE):
+    err(f"{BASE}: generic contract member remove_on_harvest missing")
+avail = func_body(base_src, "is_interaction_available") or ""
+if "return monitorable" not in avail:
+    err(f"{BASE}: is_interaction_available() must be backed by monitorable (the InteractionZone and tap rays agree)")
+OBJECT_SPECIFIC = re.compile(r"\bDiscovery(Manager|Database|Definition|Interactable)\b|\bdiscovery_id\b|\b_definition\b|"
+                             r"\bFarm(Manager|Plot)\b|\bCrop\w*|\bCATEGORY_WINDUP\b|^signal\s", re.M)
+for m in OBJECT_SPECIFIC.finditer(base_code):
+    err(f"{BASE}: object-specific '{m.group(0).strip()}' in the generic Interactable base")
+subclasses = sorted(f for f in scripts if f != BASE and BASE in chain(f))
+sub_names = sorted(file_class[f] for f in subclasses if f in file_class)
+for f in subclasses:
+    body = func_body(scripts[f], "interact")
+    if body is None or not re.match(r"func interact\(\)\s*->\s*bool:", body):
+        err(f"{f}: an Interactable must implement interact() -> bool")
+for f in (PL, IM):
+    code = code_only(scripts.get(f, ""))
+    for name in sub_names + ["discovery_id", "DiscoveryManager", "FarmManager", "harvested", "plot_state", "crop_definition"]:
+        if re.search(rf"\b{name}\b", code):
+            err(f"{f}: object-specific '{name}' — Player/InputManager must use only the Interactable contract")
+calls = [(f, n) for f, s2 in scripts.items() if not f.startswith("tools/")
+         for n in [len(re.findall(r"\.interact\(\)", code_only(s2)))] if n]
+if calls != [(PL, 1)]:
+    err(f"interact() must have exactly one call site (Player._interact_with); found {calls}")
+iw = func_body(scripts.get(PL, ""), "_interact_with") or ""
+if "is_interaction_available()" not in iw or iw.find("is_interaction_available()") > iw.find("_begin_interaction("):
+    err(f"{PL}: _interact_with() must refuse unavailable objects before interacting")
+for f, s2 in scripts.items():
+    if not f.startswith("tools/") and re.search(r"^class\s+\w+\s+extends\s+(Area3D|Interactable)", s2, re.M):
+        err(f"{f}: a second interaction class hierarchy (inner class) — extend Interactable instead")
+bare = [f for f in glob.glob("**/*.tscn", recursive=True) if f'path="res://{BASE}"' in open(f, encoding="utf-8").read()]
+if bare:
+    err(f"scenes use the bare Interactable base, which does nothing: {bare}")
+if PROBE not in scripts or PROBE not in subclasses or re.search(r"^class_name", scripts[PROBE], re.M):
+    err(f"{PROBE}: the generic probe must exist, extend Interactable and have no class_name (never game content)")
+elif not os.path.exists("tools/.gdignore"):
+    err("tools/.gdignore missing: the interaction probe would become game content")
+refs = [f for f in glob.glob("**/*.tscn", recursive=True) + glob.glob("**/*.tres", recursive=True) + ["project.godot"]
+        if "res://tools/" in open(f, encoding="utf-8").read()]
+if refs:
+    err(f"game content must not reference tools/: {refs}")
+notes.append(f"interaction contract: {len(subclasses)} Interactable implementations {sub_names + ['(probe)']}")
 
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from

@@ -76,7 +76,7 @@ Main (Node3D)                       scenes/Main.tscn
     - A tapped Interactable already inside `InteractionZone` is interacted with at once.
     - Otherwise the player walks toward it (NavigationAgent3D path to the nearest walkable point) and interacts on the zone's `area_entered` for that exact object. Event-driven, no distance polling.
     - With no navigation path yet (mesh still building at load), it heads straight for the target; collisions still block, and the stall timeout ends the walk.
-    - `_interact_with()` is the single call site of `interact()`, with a double-harvest guard for one-shot discoveries.
+    - `_interact_with()` is the single call site of `interact()`. It refuses unavailable objects and has a double-interaction guard for one-shot objects (`remove_on_harvest`).
 - **Animation state hook** (`class_name Player`):
   - `AnimState { IDLE, WALK, INTERACT }`, read with `get_animation_state()`, announced by `animation_state_changed(state, previous)` only on change.
   - It describes gameplay; it never drives movement or interaction.
@@ -94,7 +94,7 @@ Main (Node3D)                       scenes/Main.tscn
   1. **The GUI consumes its own touches.** Joystick zone, buttons, seed picker and screens have `mouse_filter` STOP. Only `_unhandled_input` reaches the world.
   2. **A tap is a short, still touch** (≤ 24 px, ≤ 450 ms). Drags never issue commands.
   3. **On the next physics frame** (one-off await), a ray against `interactables` (areas only) finds an active **Interactable** → `interact_target_requested(target)`.
-     - Non-monitorable ones (locked plots, items mid-harvest) are skipped.
+     - Unavailable ones (`is_interaction_available()` false: locked plots, items mid-harvest) are skipped.
   4. **Otherwise,** a ray against `world` gives the tapped ground point.
      - If an active Interactable lies within `TAP_SELECT_TOLERANCE` (0.45 m) of it, that object is selected. This covers small flowers and mushrooms.
      - Otherwise the point is snapped to the nearest navigation-mesh point within 1 m → `move_target_requested(destination)`. Farther means the top of an obstacle or off the edge: ignored.
@@ -112,14 +112,19 @@ Main (Node3D)                       scenes/Main.tscn
 - **Direction:** no second input system, ever.
 
 ## 7. Interaction system
-- **Current:**
-  - `Interactable` (`scripts/interactables/interactable.gd`, Area3D on layer 3) provides the indicator show/hide, a proximity reaction and a harvest presentation.
-  - Its default `interact()` is **discovery-specific:** it calls `DiscoveryManager.discover(discovery_id)` and plays a rarity/category windup.
-  - `FarmPlot` extends it and fully overrides `interact()` with the farming state machine.
-- **Direction (Phase 02):**
-  - Split into a **generic base** (range, verb, feedback, enabled state, approach point) and behaviours (discovery, farm plot, NPC talk, door enter/exit, container open, collect, read, give, feed…).
-  - Verbs are data (decision D-09).
-  - Player and InputManager stay type-agnostic: they only ever call `interact()` on the touched object.
+- **Current (M02.1):** one generic contract, `Interactable` (`scripts/interactables/interactable.gd`, Area3D on layer 3):
+  - `is_interaction_available()`: availability, backed by `monitorable`, so the InteractionZone and tap rays agree. Implementations change it by toggling `monitorable`.
+  - `interact() -> bool`: the one entry point. It may await; the Player's INTERACT state lasts until it returns.
+  - `remove_on_harvest`: one-shot (gone after a successful interaction) or persistent.
+  - `get_interaction_metadata()`: optional read-only facts, empty by default; nothing reads it yet.
+  - `set_highlighted()` / `update_proximity()`: in-range presentation on the `Indicator` child.
+  - Shared presentation: `HarvestBurstScene`, `RARITY_INTENSITY`, `_play_harvest_sound()`.
+- **Implementations:**
+  - `DiscoveryInteractable` (`discovery_interactable.gd`): collects a discovery through `DiscoveryManager`, emits `harvested` (used by `DiscoverySpawnPoint` to respawn), plays the category/rarity windup and removes itself.
+  - `FarmPlot`: the farming state machine, persistent.
+  - A non-game probe (`tools/fixtures/generic_interactable_probe.gd`, never imported by Godot) proves the contract works for an object that is neither.
+- **Rules (toolkit-enforced):** Player and InputManager use only the contract and never name an implementation; `interact()` has one call site (`Player._interact_with`); the base holds no object-specific code; no second interaction hierarchy.
+- **Direction (Phase 02):** verbs as data (M02.2, decision D-09); further behaviours (NPC talk, door enter/exit, container open, read, give, feed…) are new implementations of the same contract.
 
 ## 8. Farming — FarmManager (frozen, decision D-11)
 - **Current:**

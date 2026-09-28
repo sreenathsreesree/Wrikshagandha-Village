@@ -1,6 +1,6 @@
 [gd_scene load_steps=7 format=3]
 
-[ext_resource type="Script" path="res://scripts/interactables/interactable.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/interactables/discovery_interactable.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator.tscn" id="2"]
 [ext_resource type="Shader" path="res://shaders/sway.gdshader" id="3"]
 

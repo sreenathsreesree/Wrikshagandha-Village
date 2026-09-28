@@ -21,7 +21,7 @@ func _ready() -> void:
 func _spawn() -> void:
 	if discovery_scene == null:
 		return
-	var instance: Interactable = discovery_scene.instantiate()
+	var instance: DiscoveryInteractable = discovery_scene.instantiate()
 	instance.harvested.connect(_on_harvested)
 	add_child(instance)
 	instance.play_spawn_animation()

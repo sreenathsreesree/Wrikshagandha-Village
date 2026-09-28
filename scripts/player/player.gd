@@ -328,7 +328,7 @@ func _interact_with(target: Interactable) -> void:
 	_spent_interactables = _spent_interactables.filter(
 		func(spent: Interactable) -> bool: return is_instance_valid(spent)
 	)
-	if _spent_interactables.has(target):
+	if _spent_interactables.has(target) or not target.is_interaction_available():
 		return
 	# Only stop tracking it if it's actually gone (or about to be) after
 	# this interaction — a one-shot discovery with remove_on_harvest is
@@ -340,6 +340,8 @@ func _interact_with(target: Interactable) -> void:
 		_nearby_interactables.erase(target)
 		_spent_interactables.append(target)
 	var serial := _begin_interaction(target)
+	# interact() may or may not await, depending on the object.
+	@warning_ignore("redundant_await")
 	await target.interact()
 	_end_interaction(serial)
 
