@@ -12,7 +12,7 @@ a Direction note exists yet.
 - **Physics layers** (named in `project.godot`):
   - layer 1 `world`: ground, mounds, trees, rocks, bushes, logs, monolith; everything solid.
   - layer 3 `interactables`: every Interactable Area3D. Collision value 4.
-  - Code still uses the numeric masks (`InputManager.WORLD_LAYER_MASK = 1`, `INTERACTABLE_LAYER_MASK = 4`, Player `InteractionZone` mask 4).
+  - Scripts use the masks in `PhysicsLayers` (`scripts/data/physics_layers.gd`: `PhysicsLayers.WORLD`, `PhysicsLayers.INTERACTABLES`), the only layer numbers in code. Scenes set layers in the inspector (e.g. Player `InteractionZone` mask = interactables). `tools/check_project.py` enforces both.
 - **Folders:**
   - `scenes/` — scenes, by domain (world, player, camera, ui, farming, interactables, wildlife, world_simulation)
   - `scripts/` — the same domains + `autoload/`

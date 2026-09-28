@@ -29,11 +29,7 @@ signal movement_mode_changed(mode: MovementMode)
 ## A tap, not a drag: released close to where it started, and quickly.
 const TAP_MAX_MOVE := 24.0
 const TAP_MAX_MSEC := 450
-## The physics layer every Interactable (discoveries, farm plots) is on.
-const INTERACTABLE_LAYER_MASK := 4
 const RAY_LENGTH := 100.0
-## The physics layer the ground and every solid obstacle are on.
-const WORLD_LAYER_MASK := 1
 ## A ground hit counts as walkable only if the navigation mesh is right
 ## there: tapping a rock, a tree trunk or off the edge of the world lands
 ## too far from any walkable surface and is ignored.
@@ -126,7 +122,7 @@ func _handle_tap(screen_position: Vector2) -> void:
 
 	# Interactables first (areas only, so terrain and props can't block or
 	# be picked).
-	var query := PhysicsRayQueryParameters3D.create(from, to, INTERACTABLE_LAYER_MASK)
+	var query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.INTERACTABLES)
 	query.collide_with_areas = true
 	query.collide_with_bodies = false
 	var hit := space.intersect_ray(query)
@@ -140,7 +136,7 @@ func _handle_tap(screen_position: Vector2) -> void:
 		return
 	# Then the world: the first solid surface under the tap, which must sit
 	# on the navigation mesh to be a destination.
-	var ground_query := PhysicsRayQueryParameters3D.create(from, to, WORLD_LAYER_MASK)
+	var ground_query := PhysicsRayQueryParameters3D.create(from, to, PhysicsLayers.WORLD)
 	var ground_hit := space.intersect_ray(ground_query)
 	if ground_hit.is_empty():
 		return

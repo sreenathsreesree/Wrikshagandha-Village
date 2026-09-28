@@ -435,6 +435,36 @@ for f, s in scripts.items():
     if re.search(r"HTTPRequest|StreamPeerTCP|PacketPeerUDP|WebSocket|HTTPClient|ENetMultiplayer", s):
         err(f"{f}: network API")
 
+# ------------------------------------------------------------ physics layers
+# PhysicsLayers (scripts/data/physics_layers.gd) is the only place layer
+# numbers may appear in code, and each *_LAYER must match its name in
+# project.godot's [layer_names].
+LAYERS_SCRIPT = "scripts/data/physics_layers.gd"
+layer_names = dict(re.findall(r'^3d_physics/layer_(\d+)="([^"]*)"', cfg, re.M))
+if LAYERS_SCRIPT in scripts:
+    declared = re.findall(r"^const\s+(\w+)_LAYER\s*:=\s*(\d+)", scripts[LAYERS_SCRIPT], re.M)
+    if not declared:
+        err(f"{LAYERS_SCRIPT}: no *_LAYER constants found")
+    for prefix, num in declared:
+        name = layer_names.get(num)
+        if name is None:
+            err(f"{LAYERS_SCRIPT}: {prefix}_LAYER = {num} but project.godot has no name for 3D physics layer {num}")
+        elif name.lower() != prefix.lower():
+            err(f"{LAYERS_SCRIPT}: {prefix}_LAYER = {num} but project.godot names layer {num} '{name}'")
+    notes.append(f"physics layers: {', '.join(f'{p}={n}' for p, n in declared)}")
+else:
+    err(f"{LAYERS_SCRIPT} missing")
+MAGIC_MASK = re.compile(
+    r"(collision_(layer|mask)\s*=\s*\d)|((_MASK|_LAYER)\s*:?=\s*\d)|"
+    r"(set_collision_(layer|mask)(_value)?\(\s*\d)|(PhysicsRayQueryParameters3D\.create\([^)]*,\s*\d+\s*[,)])")
+for f, s2 in scripts.items():
+    if f == LAYERS_SCRIPT:
+        continue
+    for ln, line in enumerate(s2.split("\n"), 1):
+        code = line.split("#", 1)[0]
+        if MAGIC_MASK.search(code):
+            err(f"{f}:{ln}: numeric physics layer/mask; use PhysicsLayers ({code.strip()})")
+
 print("NOTES:"); [print("  " + n) for n in notes]
 print(f"{len(scripts)} scripts, {len(all_res)} resources checked")
 if errors:

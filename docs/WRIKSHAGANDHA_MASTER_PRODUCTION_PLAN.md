@@ -232,15 +232,24 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 
 Goal: comfortable, reliable movement in both modes on a real phone.
 
-**M01.1 — Physics layer constants** `[ ]`
+**M01.1 — Physics layer constants** `[~]` (verified in code; no runtime-visible change — confirmed at M01.5)
 - **Objective:** replace numeric masks in code with the named layers (one shared definition).
 - **Inputs:** layer names (M00.5).
-- **Files:** `input_manager.gd`, `Player.tscn` (InteractionZone mask stays the same value).
+- **Files:**
+  - new `scripts/data/physics_layers.gd` (`class_name PhysicsLayers`, constants only, not an autoload);
+  - `scripts/autoload/input_manager.gd` (uses `PhysicsLayers.INTERACTABLES` / `PhysicsLayers.WORLD`; its two local numeric constants removed);
+  - `tools/check_project.py` (enforcement);
+  - `docs/ARCHITECTURE.md`.
+  - `Player.tscn` unchanged: its InteractionZone mask stays 4.
 - **Dependencies:** M00.5.
-- **Implementation:** constants derived from layer numbers in one place; no behaviour change.
-- **Verification:** toolkit; tap-routing simulation.
-- **Runtime test:** covered by M01.5.
-- **Done when:** no magic mask numbers remain in scripts.
+- **Implementation:** masks derived from layer numbers in one place (`1 << (layer - 1)`). Values identical to before (world 1, interactables 4), so no behaviour change.
+- **Verification:**
+  - `tools/run_all.sh` passes.
+  - New checks: every `*_LAYER` constant must match its name in `project.godot`; any numeric layer/mask in other scripts fails.
+  - Mutation-tested: a magic number in a ray query, a constant drifting from the project setting, a renamed layer, and a new numeric mask constant are all caught.
+- **Runtime test:** none of its own (identical values); taps on objects and ground are exercised in the M01.5 playtest.
+- **Done when:** no magic mask numbers remain in scripts, enforced by the toolkit. ✔
+- **Commit:** §15.
 
 **M01.2 — Keyboard fallback (desktop testing)** `[ ]`
 - **Objective:** WASD/arrow movement through `InputManager.move_vector`, the same path as the joystick.
@@ -447,8 +456,9 @@ No large world expansion before this gate passes.
 | Milestone | Commit |
 |---|---|
 | M00.1–M00.5 | `9da18a6` |
+| M01.1 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 00 — Foundation (implemented in `9da18a6`; M00.5 awaits the Godot 4.7.2 open check).
-- **Next milestone:** **M01.1 — Physics layer constants** (Phase 01). It starts only on the developer's instruction.
+- **Current phase:** 01 — Player. M01.1 implemented; Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.2 — Keyboard fallback**. It starts only on the developer's instruction.
 - **First runtime gate:** M01.5 — Android movement playtest.
