@@ -565,6 +565,20 @@ plot_id = "farm_plot_05"
 position = Vector3(12.0, 0, 4.0)
 rotation_degrees = Vector3(0, -30, 0)
 
+[node name="FarmPlot6" parent="Farm" instance=ExtResource("38")]
+plot_id = "farm_plot_06"
+unlocked = false
+unlock_on_milestone = "first_harvest"
+position = Vector3(10.6, 0, 5.0)
+rotation_degrees = Vector3(0, -20, 0)
+
+[node name="FarmPlot7" parent="Farm" instance=ExtResource("38")]
+plot_id = "farm_plot_07"
+unlocked = false
+unlock_on_milestone = "all_starter_crops"
+position = Vector3(13.6, 0, 5.1)
+rotation_degrees = Vector3(0, 15, 0)
+
 [node name="FarmGrass1" parent="Farm" instance=ExtResource("13")]
 position = Vector3(10.2, 0, 0.2)
 
@@ -598,12 +612,12 @@ position = Vector3(14.8, 0.1, 2.6)
 
 [node name="Rabbit1" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(5, 0.15, 4)
-interest_points = [Vector3(9.3, 0.15, 1.4), Vector3(2.5, 0.15, -1)]
+interest_points = [Vector3(8.7, 0.15, 2.0), Vector3(2.5, 0.15, -1)]
 interest_chance = 0.45
 interest_look_targets = [Vector3(12.1, 0.15, 2.2)]
 attraction_key = "garden"
-keep_out_center = Vector3(12.1, 0, 2.2)
-keep_out_radius = 2.6
+keep_out_center = Vector3(12.2, 0, 2.8)
+keep_out_radius = 3.3
 
 [node name="Rabbit2" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(-16, 0.15, 8)

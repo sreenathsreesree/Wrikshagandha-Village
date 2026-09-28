@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="CropDefinition" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/farming/crop_definition.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/farming/crops/Elderbloom.tscn" id="2"]
+
+[resource]
+script = ExtResource("1")
+crop_id = "elderbloom"
+display_name = "Elderbloom"
+category = "flower"
+rarity = "rare"
+harvest_style = "bloom"
+points_value = 30
+seed_duration = 0.0
+sprout_duration = 22.0
+growing_duration = 34.0
+identity_color = Color(0.5, 0.82, 0.8, 1)
+icon_glyph = "🌷"
+starting_seeds = 0
+mature_scale = 1.2
+sway_amount = 0.7
+wildlife_interest = 0.4
+ready_pulse = 0.06
+found_seed_source = "discovery"
+found_seed_source_id = "ancient_seed"
+found_seed_note = "The Ancient Seed was still alive. It might grow."
+visual_scene = ExtResource("2")

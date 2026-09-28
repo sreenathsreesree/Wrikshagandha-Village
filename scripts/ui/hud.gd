@@ -94,11 +94,13 @@ func _on_daily_completed(definition: DiscoveryDefinition, bonus_points: int) -> 
 
 ## Reuses the exact same notification card as a discovery harvest — a
 ## crop is presented the same way, not a separate farming UI. The seed that
-## came back is mentioned in the same line, not as a second card.
-func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int) -> void:
+## came back is mentioned in the same line, not as a second card, and the
+## quality it grew at sits beside its name.
+func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
-	notification.show_message("✦ Harvested ✦", crop_definition.display_name, "+%d Wriksha Points · +1 seed" % points_awarded)
+	var name_line := "%s · %s" % [crop_definition.display_name, FarmManager.get_quality_name(quality)]
+	notification.show_message("✦ Harvested ✦", name_line, "+%d Wriksha Points · +1 seed" % points_awarded)
 
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
@@ -113,13 +115,14 @@ func _on_secret_location_found(location_id: String, bonus_points: int) -> void:
 ## A quiet note for an everyday planting. When the planting itself was a
 ## milestone (the garden's first seed), FarmManager says so and the
 ## milestone card stands in for this one — one card per moment.
-func _on_crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool) -> void:
+func _on_crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool, quality: int) -> void:
 	if announced_by_milestone:
 		return
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	var left := FarmManager.get_seed_count(crop_definition.crop_id)
-	notification.show_compact("%s planted" % crop_definition.display_name, _seeds_left_text(left))
+	var detail := "%s · %s" % [FarmManager.get_soil_note(quality), _seeds_left_text(left)]
+	notification.show_compact("%s planted" % crop_definition.display_name, detail)
 
 ## Farm milestones are quiet sentences, not "achievements": FarmManager
 ## decides when and what; the HUD only shows it on the shared card.

@@ -104,11 +104,15 @@ func _build_garden_section() -> Control:
 		box.add_child(_build_note("\n".join(lines)))
 
 	var grown := FarmManager.get_grown_crop_names()
-	var harvested := FarmManager.get_harvested_crop_names()
 	if not grown.is_empty():
 		box.add_child(_build_note("Grown: %s" % ", ".join(grown)))
-	if not harvested.is_empty():
-		box.add_child(_build_note("Harvested: %s" % ", ".join(harvested)))
+	var basket := _basket_summary()
+	if basket != "":
+		box.add_child(_build_note("Basket: %s" % basket))
+		# The soil rule, said once in words until the player has seen it
+		# pay off; the seed picker shows it on every choice anyway.
+		if FarmManager.get_produce_total(FarmManager.QUALITY_FINE) == 0:
+			box.add_child(_build_note("The soil remembers: a different crop than last time grows Fine."))
 
 	var marks: PackedStringArray = []
 	for milestone: Dictionary in FarmManager.get_milestones():
@@ -119,11 +123,24 @@ func _build_garden_section() -> Control:
 	return box
 
 ## "Wild Carrot ×2, Meadow Herb ×1, Golden Sunflower ×0" — read straight
-## from FarmManager's session inventory, in its crop order.
+## from FarmManager's session inventory, in its crop order. Only crops the
+## player knows, so an exploration-only crop stays a surprise.
 func _seed_summary() -> String:
 	var parts: PackedStringArray = []
-	for crop in FarmManager.get_crops():
+	for crop in FarmManager.get_known_crops():
 		parts.append("%s ×%d" % [crop.display_name, FarmManager.get_seed_count(crop.crop_id)])
+	return ", ".join(parts)
+
+## "Wild Carrot ×3 (1 Fine), Meadow Herb ×1" — everything harvested this
+## session, with the Fine ones called out. Empty string = empty basket.
+func _basket_summary() -> String:
+	var parts: PackedStringArray = []
+	for row: Dictionary in FarmManager.get_basket():
+		var crop: CropDefinition = row.crop
+		var part := "%s ×%d" % [crop.display_name, int(row.total)]
+		if int(row.fine) > 0:
+			part += " (%d Fine)" % int(row.fine)
+		parts.append(part)
 	return ", ".join(parts)
 
 ## A found seed's origin as the player knows it: the place's name, or the

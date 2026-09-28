@@ -75,8 +75,10 @@ func _ready() -> void:
 	_apply()
 
 ## Called by FarmPlot right after instancing, before appear().
-func configure(crop: CropDefinition) -> void:
-	_mature_scale = maxf(crop.mature_scale, 0.1)
+## size_factor: the planting's quality, shown as a slightly smaller (Plain)
+## or larger (Fine) mature crop.
+func configure(crop: CropDefinition, size_factor: float = 1.0) -> void:
+	_mature_scale = maxf(crop.mature_scale * size_factor, 0.1)
 	_sway_amount = maxf(crop.sway_amount, 0.0)
 	_ready_pulse = maxf(crop.ready_pulse, 0.0)
 	_apply()

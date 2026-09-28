@@ -22,6 +22,11 @@ class_name FarmPlot
 ## plant() back with whichever seed the player chose (having checked and
 ## consumed the seed). While a crop grows, the plot's indicator takes that
 ## crop's identity color. Plot state is session-only (never saved).
+##
+## The soil remembers: each harvest's crop id is kept (the last
+## FarmManager.SOIL_MEMORY of them), and FarmManager rates the next
+## planting from that memory. The rated quality travels with the crop —
+## a slightly smaller or larger mature crop, and its harvest points.
 
 enum PlotState { EMPTY, SOIL, PLANTED, GROWING, READY }
 
@@ -32,9 +37,15 @@ enum PlotState { EMPTY, SOIL, PLANTED, GROWING, READY }
 ## plot_id and unlocked = false, opened later via FarmManager.unlock_plot().
 ## A locked plot is invisible to interaction and shows nothing.
 @export var unlocked: bool = true
+## Gradual garden: the FarmManager milestone id that opens this plot while
+## it starts locked (e.g. "first_harvest"). Empty = only unlock_plot().
+@export var unlock_on_milestone: String = ""
 
 ## The crop currently in the ground — set by plant(), cleared on harvest.
 var crop_definition: CropDefinition
+## The quality this crop is growing at (FarmManager.QUALITY_*), rated when
+## it was planted.
+var crop_quality: int = 1
 
 const SOIL_COLOR_FRESH := Color(0.5, 0.4, 0.27, 1.0)
 const SOIL_COLOR_DRY := Color(0.42, 0.32, 0.22, 1.0)
@@ -65,6 +76,8 @@ var _ripple_tween: Tween
 var _seed_material: StandardMaterial3D
 var _ripple_material: StandardMaterial3D
 var _last_action_msec: int = -ACTION_COOLDOWN_MSEC
+## Crop ids of this plot's past harvests, oldest first.
+var _recent_crop_ids: Array[String] = []
 
 ## Guards _run_harvest_sequence()'s awaited animation. A FarmPlot stays in
 ## the player's nearby-interactables list (remove_on_harvest is false), so a
@@ -100,8 +113,24 @@ func _ready() -> void:
 	FarmManager.register_plot(self)
 
 func set_unlocked(value: bool) -> void:
+	var opening := value and not unlocked and is_node_ready()
 	unlocked = value
 	_apply_unlocked()
+	if opening and plot_state == PlotState.EMPTY:
+		_play_unlock_reveal()
+
+## A newly opened plot: the worn patch spreads out of the grass with a
+## small puff of dust — seen if the player is nearby, harmless if not.
+func _play_unlock_reveal() -> void:
+	patch_mesh.scale = Vector3(0.2, 1.0, 0.2)
+	var tween := create_tween()
+	tween.tween_property(patch_mesh, "scale", Vector3.ONE, 0.6) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_spawn_burst(DUST_TINT, 0.45, 0.45, 0.04)
+
+## The soil's memory, oldest first — read by FarmManager to rate a planting.
+func get_recent_crop_ids() -> Array[String]:
+	return _recent_crop_ids.duplicate()
 
 ## Locked: not detectable by the player's interaction zone (so it can never
 ## be targeted) and no worn patch in the grass. Unlocking reveals the patch.
@@ -164,11 +193,12 @@ func _prepare_soil() -> void:
 	_pulse_indicator(0.25)
 	AmbientAudioManager.play_soil_sound()
 
-## Called by FarmManager with the player's chosen seed, after it has
-## verified a seed is available (it consumes the seed only if this returns
-## true). A seed in the crop's identity color drops into the soil; when it
-## lands, the mound rises with a small puff and the seedling emerges.
-func plant(crop: CropDefinition) -> bool:
+## Called by FarmManager with the player's chosen seed and the quality it
+## rated for this soil, after it has verified a seed is available (it
+## consumes the seed only if this returns true). A seed in the crop's
+## identity color drops into the soil; when it lands, the mound rises with
+## a small puff and the seedling emerges.
+func plant(crop: CropDefinition, quality: int) -> bool:
 	if not can_plant() or crop == null or crop.visual_scene == null:
 		return false
 	var node := crop.visual_scene.instantiate()
@@ -179,6 +209,7 @@ func plant(crop: CropDefinition) -> bool:
 		return false
 
 	crop_definition = crop
+	crop_quality = quality
 	plot_state = PlotState.PLANTED
 	_stage_index = 0
 	_needs_water = true
@@ -188,7 +219,7 @@ func plant(crop: CropDefinition) -> bool:
 	# than the cooldown).
 	_last_action_msec = Time.get_ticks_msec()
 	_crop_visual = visual
-	_crop_visual.configure(crop)
+	_crop_visual.configure(crop, FarmManager.get_quality_size(quality))
 	crop_root.add_child(_crop_visual)
 	crop_root.visible = true
 
@@ -323,9 +354,10 @@ func _run_harvest_sequence() -> void:
 	_spawn_burst(crop_definition.identity_color, 0.35, 0.6, 0.25)
 	_play_harvest_sound()
 
-	var points_awarded := crop_definition.points_value
+	var points_awarded := FarmManager.get_harvest_points(crop_definition, crop_quality)
 	PointsManager.add_points(points_awarded)
-	FarmManager.notify_crop_harvested(plot_id, crop_definition, points_awarded)
+	_remember_harvest(crop_definition.crop_id)
+	FarmManager.notify_crop_harvested(plot_id, crop_definition, points_awarded, crop_quality)
 
 	_play_seed_return(crop_definition.identity_color)
 	if _crop_visual:
@@ -351,6 +383,11 @@ func _play_seed_return(color: Color) -> void:
 	_seed_tween.parallel().tween_property(seed_mesh, "scale", Vector3.ONE * 1.2, 0.3)
 	_seed_tween.tween_property(seed_mesh, "scale", Vector3.ZERO, 0.15)
 	_seed_tween.tween_callback(seed_mesh.hide)
+
+func _remember_harvest(crop_id: String) -> void:
+	_recent_crop_ids.append(crop_id)
+	while _recent_crop_ids.size() > FarmManager.SOIL_MEMORY:
+		_recent_crop_ids.remove_at(0)
 
 func _reset_to_soil() -> void:
 	plot_state = PlotState.SOIL

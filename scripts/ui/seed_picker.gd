@@ -10,9 +10,16 @@ class_name SeedPicker
 ## playable underneath. It opens and closes entirely on FarmManager's
 ## signals, and closes on its own when the player walks away from the plot
 ## (FarmPlot cancels the choice when it leaves interaction range). Built
-## from FarmManager.get_crops(), so a new crop appears here automatically.
+## from FarmManager.get_known_crops(), so a new crop appears here
+## automatically once the player knows it. Each card also shows what the
+## soil would grow for that crop (FarmManager's rating), so the rotation
+## rule is visible right where the choice is made.
 
-const CHOICE_SIZE := Vector2(206, 230)
+const CHOICE_SIZE := Vector2(206, 256)
+## The panel's inner width; with more crops than fit at full size, cards
+## narrow evenly instead of pushing the panel wider than the screen.
+const CHOICES_WIDTH := 700.0
+const CHOICE_MIN_WIDTH := 128.0
 const SWATCH_SIZE := 84.0
 
 @onready var panel: PanelContainer = $Panel
@@ -62,15 +69,24 @@ func _rebuild() -> void:
 		choices.remove_child(child)
 		child.queue_free()
 	var any_seeds := false
-	for crop in FarmManager.get_crops():
+	var crops := FarmManager.get_known_crops()
+	var width := _choice_width(crops.size())
+	for crop in crops:
 		var count := FarmManager.get_seed_count(crop.crop_id)
 		any_seeds = any_seeds or count > 0
-		choices.add_child(_build_choice(crop, count))
+		choices.add_child(_build_choice(crop, count, width))
 	hint_label.visible = not any_seeds
 
-func _build_choice(crop: CropDefinition, count: int) -> Button:
+func _choice_width(crop_count: int) -> float:
+	if crop_count <= 1:
+		return CHOICE_SIZE.x
+	var separation := float(choices.get_theme_constant("separation"))
+	var fitted := (CHOICES_WIDTH - separation * (crop_count - 1)) / crop_count
+	return clampf(fitted, CHOICE_MIN_WIDTH, CHOICE_SIZE.x)
+
+func _build_choice(crop: CropDefinition, count: int, width: float) -> Button:
 	var button := Button.new()
-	button.custom_minimum_size = CHOICE_SIZE
+	button.custom_minimum_size = Vector2(width, CHOICE_SIZE.y)
 	button.focus_mode = Control.FOCUS_NONE
 	button.disabled = count <= 0
 	button.add_theme_stylebox_override("normal", _card_style(crop.identity_color, 0.6))
@@ -91,6 +107,8 @@ func _build_choice(crop: CropDefinition, count: int) -> Button:
 	column.add_child(_build_swatch(crop))
 	column.add_child(_build_label(crop.display_name, 22))
 	column.add_child(_build_label(_seed_count_text(count), 20))
+	if count > 0:
+		column.add_child(_build_label(FarmManager.get_soil_note(FarmManager.get_planting_quality(crop)), 18))
 	return button
 
 ## A round swatch in the crop's identity color with its glyph on top — the
