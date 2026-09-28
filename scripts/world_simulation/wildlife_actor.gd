@@ -9,8 +9,6 @@ class_name WildlifeActor
 ## script unchanged with different exported tuning; Butterfly subclasses it
 ## for hover/landing behavior.
 
-signal state_changed(state: String)
-
 @export var wander_radius: float = 2.5
 @export var move_speed: float = 0.8
 @export var idle_time_min: float = 1.5
@@ -129,14 +127,12 @@ func _enter_idle() -> void:
 	_state_timer = randf_range(idle_time_min, idle_time_max)
 	_idle_base_rotation = rotation.y
 	_idle_wiggle_time = 0.0
-	state_changed.emit(state)
 
 func _enter_pause() -> void:
 	state = "pause"
 	_state_timer = randf_range(idle_time_min, idle_time_max)
 	_idle_base_rotation = rotation.y
 	_idle_wiggle_time = 0.0
-	state_changed.emit(state)
 
 func _enter_wander() -> void:
 	state = "wander"
@@ -146,9 +142,7 @@ func _enter_wander() -> void:
 		var angle := randf_range(0.0, TAU)
 		var radius := randf_range(0.3, wander_radius)
 		_target_position = _home_position + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
-	state_changed.emit(state)
 
 func _enter_flee() -> void:
 	state = "flee"
 	_state_timer = randf_range(1.0, 2.0)
-	state_changed.emit(state)
