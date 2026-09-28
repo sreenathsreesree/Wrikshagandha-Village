@@ -25,6 +25,14 @@ class_name FarmPlot
 
 enum PlotState { EMPTY, SOIL, PLANTED, GROWING, READY }
 
+## Stable identity, set per instance in the scene ("farm_plot_01"...). Never
+## derived from the node name or tree order. FarmManager tracks plots by it.
+@export var plot_id: String = ""
+## Expansion-ready: a future plot is just another FarmPlot with a new
+## plot_id and unlocked = false, opened later via FarmManager.unlock_plot().
+## A locked plot is invisible to interaction and shows nothing.
+@export var unlocked: bool = true
+
 ## The crop currently in the ground — set by plant(), cleared on harvest.
 var crop_definition: CropDefinition
 
@@ -88,6 +96,19 @@ func _ready() -> void:
 	var indicator := _get_indicator()
 	if indicator:
 		_default_indicator_tint = indicator.tint
+	_apply_unlocked()
+	FarmManager.register_plot(self)
+
+func set_unlocked(value: bool) -> void:
+	unlocked = value
+	_apply_unlocked()
+
+## Locked: not detectable by the player's interaction zone (so it can never
+## be targeted) and no worn patch in the grass. Unlocking reveals the patch.
+func _apply_unlocked() -> void:
+	monitorable = unlocked and not _is_harvesting
+	if plot_state == PlotState.EMPTY:
+		patch_mesh.visible = unlocked
 
 ## Leaving range also closes this plot's seed picker if it's the one open,
 ## so a picker can never outlive the player standing at its plot.
@@ -98,9 +119,11 @@ func set_highlighted(active: bool) -> void:
 
 ## True only for prepared, empty soil — the one state a seed can go into.
 func can_plant() -> bool:
-	return plot_state == PlotState.SOIL and not _is_harvesting
+	return unlocked and plot_state == PlotState.SOIL and not _is_harvesting
 
 func interact() -> bool:
+	if not unlocked:
+		return true
 	var now := Time.get_ticks_msec()
 	if now - _last_action_msec < ACTION_COOLDOWN_MSEC:
 		return true
@@ -302,7 +325,7 @@ func _run_harvest_sequence() -> void:
 
 	var points_awarded := crop_definition.points_value
 	PointsManager.add_points(points_awarded)
-	FarmManager.notify_crop_harvested(crop_definition, points_awarded)
+	FarmManager.notify_crop_harvested(plot_id, crop_definition, points_awarded)
 
 	_play_seed_return(crop_definition.identity_color)
 	if _crop_visual:
@@ -310,8 +333,8 @@ func _run_harvest_sequence() -> void:
 		_crop_visual.queue_free()
 		_crop_visual = null
 	_reset_to_soil()
-	monitorable = true
 	_is_harvesting = false
+	monitorable = unlocked
 
 ## The seed that comes back with every harvest, shown in the world: it
 ## pops up out of the soil in the crop's color and is gone.

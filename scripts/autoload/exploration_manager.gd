@@ -26,16 +26,6 @@ signal rare_discovery_noted(definition: DiscoveryDefinition)
 signal all_secret_locations_found(bonus_points: int)
 signal curiosity_bonus_awarded(location_id: String, bonus_points: int)
 signal session_summary_ready(summary: Dictionary)
-## One acknowledgement per planting, decided here so the HUD shows exactly
-## one card: moment is "garden_first" (the first seed after finding the
-## Quiet Garden — the discovery continuing), "first" (first seed, garden
-## not yet formally found), or "" (every later planting).
-signal crop_planting_noted(crop_definition: CropDefinition, moment: String)
-signal first_crop_harvested(crop_definition: CropDefinition, bonus_points: int)
-signal all_starter_crops_harvested(bonus_points: int)
-## Reaching a place a crop is linked to (CropDefinition.found_seed_place_id)
-## tucks one extra seed of it into the pouch, once per session.
-signal seed_found(crop_definition: CropDefinition, place_id: String)
 
 const THRESHOLDS := {3: 20, 5: 40}
 const LANDMARK_BONUS := 15
@@ -43,13 +33,6 @@ const SECRET_LOCATION_BONUS := 15
 const ALL_SECRET_LOCATIONS_BONUS := 50
 const CURIOSITY_BONUS := 20
 const RARE_RARITIES := ["rare", "very_rare", "legendary"]
-
-## Farming session milestones — deliberately just three, no ranks or XP.
-## First planting carries no points at all; it's only an acknowledgement.
-const FIRST_HARVEST_BONUS := 10
-const ALL_STARTER_CROPS_BONUS := 40
-const STARTER_CROP_IDS := ["wild_carrot", "meadow_herb", "golden_sunflower"]
-const GARDEN_PLACE_ID := "quiet_farm"
 
 ## The full "Exploration Memory" — fixed order, each id resolved through
 ## has_reached_landmark()/has_found_secret_location() so the underlying
@@ -87,18 +70,9 @@ var _rare_discovery_announced: bool = false
 var _all_secrets_bonus_awarded: bool = false
 var _curiosity_bonus_given: bool = false
 var _summary_shown: bool = false
-var _first_planted_crop_name: String = ""
-var _first_planted_after_discovery: bool = false
-var _crops_planted_count: int = 0
-var _crops_harvested_count: int = 0
-var _first_harvested_crop_name: String = ""
-var _harvested_crop_ids: Array[String] = []
-var _all_starter_crops_awarded: bool = false
 
 func _ready() -> void:
 	DiscoveryManager.discovery_made.connect(_on_discovery_made)
-	FarmManager.crop_planted.connect(_on_crop_planted)
-	FarmManager.crop_harvested.connect(_on_crop_harvested)
 
 func _on_discovery_made(definition: DiscoveryDefinition) -> void:
 	_session_discovery_count += 1
@@ -130,7 +104,7 @@ func mark_landmark_reached(landmark_id: String) -> void:
 	_reached_landmarks.append(landmark_id)
 	PointsManager.add_points(LANDMARK_BONUS)
 	landmark_reached.emit(landmark_id, LANDMARK_BONUS)
-	_grant_found_seeds(landmark_id)
+	FarmManager.notify_place_reached(landmark_id)
 
 func has_found_secret_location(location_id: String) -> bool:
 	return _found_secret_locations.has(location_id)
@@ -141,7 +115,7 @@ func mark_secret_location_found(location_id: String) -> void:
 	_found_secret_locations.append(location_id)
 	PointsManager.add_points(SECRET_LOCATION_BONUS)
 	secret_location_found.emit(location_id, SECRET_LOCATION_BONUS)
-	_grant_found_seeds(location_id)
+	FarmManager.notify_place_reached(location_id)
 
 	_maybe_award_curiosity_bonus(location_id)
 
@@ -199,53 +173,6 @@ func _show_session_summary() -> void:
 		return
 	_summary_shown = true
 	session_summary_ready.emit(get_session_summary())
-
-func _on_crop_planted(crop_definition: CropDefinition) -> void:
-	_crops_planted_count += 1
-	var moment := ""
-	if _first_planted_crop_name == "":
-		_first_planted_crop_name = crop_definition.display_name
-		_first_planted_after_discovery = _reached_landmarks.has(GARDEN_PLACE_ID)
-		moment = "garden_first" if _first_planted_after_discovery else "first"
-	crop_planting_noted.emit(crop_definition, moment)
-
-func _on_crop_harvested(crop_definition: CropDefinition, _points_awarded: int) -> void:
-	_crops_harvested_count += 1
-	if _first_harvested_crop_name == "":
-		_first_harvested_crop_name = crop_definition.display_name
-		PointsManager.add_points(FIRST_HARVEST_BONUS)
-		first_crop_harvested.emit(crop_definition, FIRST_HARVEST_BONUS)
-
-	if not _harvested_crop_ids.has(crop_definition.crop_id):
-		_harvested_crop_ids.append(crop_definition.crop_id)
-
-	if not _all_starter_crops_awarded and _has_harvested_all_starter_crops():
-		_all_starter_crops_awarded = true
-		PointsManager.add_points(ALL_STARTER_CROPS_BONUS)
-		all_starter_crops_harvested.emit(ALL_STARTER_CROPS_BONUS)
-
-func _grant_found_seeds(place_id: String) -> void:
-	for crop in FarmManager.grant_found_seeds(place_id):
-		seed_found.emit(crop, place_id)
-
-func _has_harvested_all_starter_crops() -> bool:
-	for crop_id: String in STARTER_CROP_IDS:
-		if not _harvested_crop_ids.has(crop_id):
-			return false
-	return true
-
-## Session-only garden record for the Journal. Empty strings mean "hasn't
-## happened yet this session" — the Journal simply omits those lines.
-func get_garden_journal() -> Dictionary:
-	return {
-		"found": _reached_landmarks.has(GARDEN_PLACE_ID),
-		"place_name": get_place_display_name(GARDEN_PLACE_ID),
-		"first_planted": _first_planted_crop_name,
-		"first_planted_after_discovery": _first_planted_after_discovery,
-		"crops_planted": _crops_planted_count,
-		"crops_harvested": _crops_harvested_count,
-		"first_harvested": _first_harvested_crop_name,
-	}
 
 func get_place_display_name(place_id: String) -> String:
 	var place := _find_place(place_id)

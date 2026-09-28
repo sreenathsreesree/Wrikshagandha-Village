@@ -31,9 +31,8 @@ func _refresh() -> void:
 	list_container.add_child(_build_places_section())
 	list_container.add_child(_build_spacer())
 
-	var garden := ExplorationManager.get_garden_journal()
-	if garden.found or garden.first_planted != "":
-		list_container.add_child(_build_garden_section(garden))
+	if FarmManager.is_garden_found() or int(FarmManager.get_activity_counts().planted) > 0:
+		list_container.add_child(_build_garden_section())
 		list_container.add_child(_build_spacer())
 
 	var discoveries_header := Label.new()
@@ -73,32 +72,45 @@ func _build_places_section() -> Control:
 
 	return box
 
-## The garden's small session-only record — hidden entirely until the
-## garden has been found (or something planted), and each line only once
-## it has actually happened, so it never reads like a checklist.
-func _build_garden_section(garden: Dictionary) -> Control:
+## The garden's small session-only record, shown once the garden has been
+## found (or something planted). A few compact lines of state, then the
+## milestones as one wrapped line. Everything is read from FarmManager —
+## the Journal only displays, it never decides progression — and every
+## crop-specific line is built from crop data, so a new crop needs no code.
+func _build_garden_section() -> Control:
 	var box := VBoxContainer.new()
 
 	var header := Label.new()
-	header.text = String(garden.place_name)
+	header.text = ExplorationManager.get_place_display_name(FarmManager.GARDEN_PLACE_ID)
 	header.add_theme_font_size_override("font_size", 18)
 	header.modulate.a = 0.8
 	box.add_child(header)
 
-	if garden.found:
-		box.add_child(_build_note("Found the Meadow's little growing place."))
-	if garden.first_planted != "":
-		var first_line := "Planted the garden's first seed: %s" if garden.first_planted_after_discovery else "First crop planted: %s"
-		box.add_child(_build_note(first_line % garden.first_planted))
-	if garden.first_harvested != "":
-		box.add_child(_build_note("First crop harvested: %s" % garden.first_harvested))
+	var plots := FarmManager.get_plot_counts()
+	var garden_line := "%d plots to tend" % int(plots.unlocked)
+	if int(plots.total) > int(plots.unlocked):
+		garden_line += " · room to grow"
+	if FarmManager.is_garden_found():
+		garden_line = "Found the Meadow's little growing place. " + garden_line + "."
+	box.add_child(_build_note(garden_line))
 
 	box.add_child(_build_note("Seeds: %s" % _seed_summary()))
 	var found := FarmManager.get_found_seed_names()
 	if not found.is_empty():
 		box.add_child(_build_note("Found while exploring: %s" % ", ".join(found)))
-	box.add_child(_build_note("Crops planted: %d" % int(garden.crops_planted)))
-	box.add_child(_build_note("Crops harvested: %d" % int(garden.crops_harvested)))
+
+	var grown := FarmManager.get_grown_crop_names()
+	var harvested := FarmManager.get_harvested_crop_names()
+	if not grown.is_empty():
+		box.add_child(_build_note("Grown: %s" % ", ".join(grown)))
+	if not harvested.is_empty():
+		box.add_child(_build_note("Harvested: %s" % ", ".join(harvested)))
+
+	var marks: PackedStringArray = []
+	for milestone: Dictionary in FarmManager.get_milestones():
+		var mark := "✓ %s" if milestone.reached else "○ %s"
+		marks.append(mark % milestone.label)
+	box.add_child(_build_note("  ".join(marks)))
 
 	return box
 

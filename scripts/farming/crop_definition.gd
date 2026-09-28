@@ -31,6 +31,9 @@ class_name CropDefinition
 ## Seeds the player starts each session with. Harvesting returns exactly
 ## one seed of the harvested crop, so this is also the most of this crop
 ## that can ever be growing at once — renewable, never accumulating.
+## A crop with starting_seeds > 0 is a *starter* crop: FarmManager's
+## "all starter crops grown" milestone is derived from this, so no list of
+## crop ids is ever written in code.
 @export var starting_seeds: int = 1
 
 ## Growth personality, read by the shared CropVisual (never by FarmPlot):
@@ -42,10 +45,12 @@ class_name CropDefinition
 @export var sway_amount: float = 1.0
 @export var ready_pulse: float = 0.0
 
-## Optional exploration link: reaching this place (an ExplorationManager
-## place id) once per session tucks one extra seed of this crop into the
-## player's pouch. Empty = no link. found_seed_note is the line shown then.
-@export var found_seed_place_id: String = ""
+## Optional exploration reward, granted by FarmManager at most once per
+## session: reaching a place (an ExplorationManager place id) or finding a
+## discovery (a DiscoveryDefinition id) reveals one extra seed of this crop.
+## "none" = no link. found_seed_note is the line shown when it's found.
+@export_enum("none", "place", "discovery") var found_seed_source: String = "none"
+@export var found_seed_source_id: String = ""
 @export var found_seed_note: String = ""
 
 ## Seconds spent in each growth stage before it can advance to the next —

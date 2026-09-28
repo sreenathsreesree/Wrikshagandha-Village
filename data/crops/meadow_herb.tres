@@ -20,4 +20,7 @@ starting_seeds = 2
 mature_scale = 1.0
 sway_amount = 1.6
 ready_pulse = 0.0
+found_seed_source = "discovery"
+found_seed_source_id = "hidden_herb"
+found_seed_note = "The Hidden Herb had gone to seed."
 visual_scene = ExtResource("2")

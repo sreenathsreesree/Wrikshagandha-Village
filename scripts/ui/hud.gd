@@ -31,12 +31,11 @@ func _ready() -> void:
 	ExplorationManager.all_secret_locations_found.connect(_on_all_secret_locations_found)
 	ExplorationManager.curiosity_bonus_awarded.connect(_on_curiosity_bonus_awarded)
 	ExplorationManager.session_summary_ready.connect(_on_session_summary_ready)
-	ExplorationManager.crop_planting_noted.connect(_on_crop_planting_noted)
-	ExplorationManager.first_crop_harvested.connect(_on_first_crop_harvested)
-	ExplorationManager.all_starter_crops_harvested.connect(_on_all_starter_crops_harvested)
-	ExplorationManager.seed_found.connect(_on_seed_found)
 	DailyDiscoveryManager.daily_completed.connect(_on_daily_completed)
 	FarmManager.crop_harvested.connect(_on_crop_harvested)
+	FarmManager.crop_planted.connect(_on_crop_planted)
+	FarmManager.milestone_reached.connect(_on_farm_milestone)
+	FarmManager.seed_found.connect(_on_seed_found)
 
 	interact_button.pivot_offset = interact_button.size / 2.0
 	interact_button.pressed.connect(_on_interact_button_pressed)
@@ -111,44 +110,37 @@ func _on_secret_location_found(location_id: String, bonus_points: int) -> void:
 	notification_root.add_child(notification)
 	notification.show_message("✦ Secret Spot Found ✦", ExplorationManager.get_place_display_name(location_id), "+%d Wriksha Points" % bonus_points)
 
-## Exactly one card per planting. The first seed after finding the Quiet
-## Garden reads as that discovery continuing; the first seed otherwise gets
-## a gentle hint at the next step; every later planting is a quiet compact
-## note with the seeds left. No points — growing it is the achievement.
-func _on_crop_planting_noted(crop_definition: CropDefinition, moment: String) -> void:
+## A quiet note for an everyday planting. When the planting itself was a
+## milestone (the garden's first seed), FarmManager says so and the
+## milestone card stands in for this one — one card per moment.
+func _on_crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool) -> void:
+	if announced_by_milestone:
+		return
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
-	match moment:
-		"garden_first":
-			notification.show_message("🌱", "The garden takes its first seed.", "%s · it will need water" % crop_definition.display_name)
-		"first":
-			notification.show_message("🌱", "Your first seed is in the ground.", "It will need water.")
-		_:
-			var left := FarmManager.get_seed_count(crop_definition.crop_id)
-			notification.show_compact("%s planted" % crop_definition.display_name, _seeds_left_text(left))
+	var left := FarmManager.get_seed_count(crop_definition.crop_id)
+	notification.show_compact("%s planted" % crop_definition.display_name, _seeds_left_text(left))
+
+## Farm milestones are quiet sentences, not "achievements": FarmManager
+## decides when and what; the HUD only shows it on the shared card.
+func _on_farm_milestone(_milestone_id: String, message: String, bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	var detail := "+%d Wriksha Points" % bonus_points if bonus_points > 0 else ""
+	notification.show_message("🌱", message, detail)
 
 func _seeds_left_text(count: int) -> String:
 	if count <= 0:
 		return "no seeds left"
 	return "1 seed left" if count == 1 else "%d seeds left" % count
 
-func _on_first_crop_harvested(crop_definition: CropDefinition, bonus_points: int) -> void:
-	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
-	notification_root.add_child(notification)
-	notification.show_message("✦ First Harvest ✦", crop_definition.display_name, "+%d Wriksha Points" % bonus_points)
-
 ## Exploration feeding the garden: a quiet card, no points — the seed is
 ## the reward.
-func _on_seed_found(crop_definition: CropDefinition, _place_id: String) -> void:
+func _on_seed_found(crop_definition: CropDefinition) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	var note := crop_definition.found_seed_note if crop_definition.found_seed_note != "" else "You found a seed here."
 	notification.show_message(crop_definition.icon_glyph, note, "+1 %s seed" % crop_definition.display_name)
-
-func _on_all_starter_crops_harvested(bonus_points: int) -> void:
-	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
-	notification_root.add_child(notification)
-	notification.show_message("★ A Full Garden ★", "You've grown every starter crop.", "+%d Wriksha Points" % bonus_points)
 
 ## The very first discovery of the session — a mood beat, not a reward, so
 ## it carries no points and no fanfare title.
