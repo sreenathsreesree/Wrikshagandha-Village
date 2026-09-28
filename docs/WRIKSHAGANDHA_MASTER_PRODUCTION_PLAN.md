@@ -220,7 +220,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
   - Physics layers named (`world`, `interactables`) in `project.godot`.
   - Stale code comments corrected (comment lines only: "session-only", "Interact button").
   - v1 plan replaced.
-  - Stale branch `claude/wrikshagandha-repo-audit-afzvtu` deleted (0 unique commits).
+  - Stale branch `claude/wrikshagandha-repo-audit-afzvtu` (0 unique commits): local copy deleted; **remote deletion refused (HTTP 403) by the cloud environment's git permissions**, so the developer deletes it in the GitHub UI.
 - **Not in scope:** any code, scene or data change.
 - **Verification:** the diff shows comment-only `.gd` changes; the toolkit passes.
 - **Runtime test:** open the project in Godot 4.7.2 and confirm there are no errors (first item of the Phase 01 playtest).
@@ -446,9 +446,9 @@ No large world expansion before this gate passes.
 ## 15. Commit log for milestones
 | Milestone | Commit |
 |---|---|
-| M00.1–M00.5 | *(recorded after the Phase 00 commit)* |
+| M00.1–M00.5 | `9da18a6` |
 
 ## 16. Current position
-- **Current phase:** 00 — Foundation (complete once committed).
+- **Current phase:** 00 — Foundation (implemented in `9da18a6`; M00.5 awaits the Godot 4.7.2 open check).
 - **Next milestone:** **M01.1 — Physics layer constants** (Phase 01). It starts only on the developer's instruction.
 - **First runtime gate:** M01.5 — Android movement playtest.
