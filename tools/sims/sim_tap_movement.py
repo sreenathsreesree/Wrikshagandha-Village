@@ -115,4 +115,38 @@ print(f"geometry: {len(obstacles)} solid obstacles, {len(points)} interactables/
 for b in bad: print("  ", b)
 print(f"nav agent radius {AGENT_R} >= capsule 0.32: {AGENT_R >= 0.32}; mound tier step 0.15 <= max_climb 0.25: {0.15 <= 0.25}")
 assert not bad
+# ------------------------------------------------ 4. keyboard + joystick combine
+# Port of InputManager: set_move_vector (joystick, every frame), _input
+# (keyboard, on key events), focus-out, and movement-mode change.
+class Input:
+    def __init__(i): i.joy = (0.0, 0.0); i.kb = (0.0, 0.0); i.move = (0.0, 0.0)
+    def _update(i):
+        x, y = i.joy[0] + i.kb[0], i.joy[1] + i.kb[1]; n = math.hypot(x, y)
+        i.move = (x / n, y / n) if n > 1.0 else (x, y)
+    def joystick_frame(i, v): i.joy = v; i._update()
+    def keys(i, held):  # get_vector(left, right, up, down): normalized
+        x = (1 if "right" in held else 0) - (1 if "left" in held else 0)
+        y = (1 if "down" in held else 0) - (1 if "up" in held else 0)
+        n = math.hypot(x, y); i.kb = (x / n, y / n) if n > 0 else (0.0, 0.0); i._update()
+    def focus_out(i): i.kb = (0.0, 0.0); i._update()
+    def mode_change(i): i.joy = (0.0, 0.0); i._update()
+
+inp = Input()
+inp.keys({"up"})
+for _ in range(120): inp.joystick_frame((0.0, 0.0))          # joystick idle writes every frame
+assert inp.move == (0.0, -1.0), "joystick frames must not erase held keys"
+inp.keys({"up", "right"}); assert abs(math.hypot(*inp.move) - 1.0) < 1e-9, "diagonal clamped to 1"
+inp.joystick_frame((1.0, 0.0)); assert math.hypot(*inp.move) <= 1.0 + 1e-9, "combined input clamped"
+inp.keys(set()); assert inp.move == (1.0, 0.0), "key release returns to joystick value"
+inp.joystick_frame((0.0, 0.0)); inp.keys({"left"}); inp.focus_out(); assert inp.move == (0.0, 0.0), "focus-out clears keys"
+inp.keys({"down"}); inp.mode_change(); assert inp.move == (0.0, 1.0), "mode change keeps held keys"
+rnd = random.Random(3)
+for _ in range(20000):
+    ev = rnd.random()
+    if ev < 0.5: inp.joystick_frame((rnd.uniform(-1, 1), rnd.uniform(-1, 1)) if rnd.random() < 0.5 else (0.0, 0.0))
+    elif ev < 0.9: inp.keys(set(rnd.sample(["up", "down", "left", "right"], rnd.randint(0, 3))))
+    elif ev < 0.95: inp.focus_out()
+    else: inp.mode_change()
+    assert math.hypot(*inp.move) <= 1.0 + 1e-9
+print("keyboard/joystick combine: scripted cases + 20000 random events OK")
 print("ALL TAP SIMULATIONS PASSED")

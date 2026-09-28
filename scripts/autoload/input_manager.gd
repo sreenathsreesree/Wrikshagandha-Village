@@ -1,7 +1,7 @@
 extends Node
 
-## Single source of truth for player intent. The virtual joystick writes
-## move_vector; Player reads it. A tap on the game world is resolved here,
+## Single source of truth for player intent. The virtual joystick and the
+## keyboard (desktop fallback) both feed move_vector; Player reads it. A tap on the game world is resolved here,
 ## in this order:
 ##   1. the GUI keeps its own touches (joystick zone, buttons, seed picker,
 ##      screens) — only unhandled input reaches the world;
@@ -38,7 +38,14 @@ const WALKABLE_SNAP_VERTICAL := 0.6
 ## Stands in for a touch index when a real mouse is used without touch
 ## emulation.
 const MOUSE_TAP_INDEX := -100
+## Keyboard movement actions (project.godot [input]: WASD + arrow keys).
+const MOVE_LEFT := &"move_left"
+const MOVE_RIGHT := &"move_right"
+const MOVE_UP := &"move_up"
+const MOVE_DOWN := &"move_down"
 
+## What Player moves by: the joystick's and the keyboard's contributions
+## combined (clamped to length 1), so both share one movement path.
 var move_vector: Vector2 = Vector2.ZERO
 ## Joystick stays the default until Tap to Move has been play-tested.
 var movement_mode: MovementMode = MovementMode.JOYSTICK
@@ -46,12 +53,19 @@ var movement_mode: MovementMode = MovementMode.JOYSTICK
 ## touch index -> [start position, start msec] for presses the GUI didn't take.
 var _tap_starts: Dictionary = {}
 var _mouse_emulates_touch: bool = false
+var _joystick_vector: Vector2 = Vector2.ZERO
+var _keyboard_vector: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	_mouse_emulates_touch = bool(ProjectSettings.get_setting("input_devices/pointing/emulate_touch_from_mouse", false))
 
+## Called by the virtual joystick every frame with its (smoothed) deflection.
 func set_move_vector(vector: Vector2) -> void:
-	move_vector = vector
+	_joystick_vector = vector
+	_update_move_vector()
+
+func _update_move_vector() -> void:
+	move_vector = (_joystick_vector + _keyboard_vector).limit_length(1.0)
 
 ## Interact with whatever is nearest the player (kept for non-touch input).
 func request_interact() -> void:
@@ -61,7 +75,8 @@ func set_movement_mode(mode: MovementMode) -> void:
 	if mode == movement_mode:
 		return
 	movement_mode = mode
-	move_vector = Vector2.ZERO
+	_joystick_vector = Vector2.ZERO
+	_update_move_vector()
 	movement_mode_changed.emit(mode)
 
 func set_tap_to_move(enabled: bool) -> void:
@@ -80,6 +95,24 @@ func get_settings_data() -> Dictionary:
 func apply_settings_data(data: Dictionary) -> void:
 	var mode_name := String(data.get("movement_mode", "joystick"))
 	set_tap_to_move(mode_name == "tap_to_move")
+
+## Keyboard movement (desktop fallback), event-driven: on any movement key
+## press/release, the keyboard vector is re-read from the actions' actual
+## state. Read in _input, and never consumed, so a focused HUD button can't
+## swallow a key release and leave the player walking.
+func _input(event: InputEvent) -> void:
+	if not (event is InputEventKey):
+		return
+	if event.is_action(MOVE_LEFT) or event.is_action(MOVE_RIGHT) or event.is_action(MOVE_UP) or event.is_action(MOVE_DOWN):
+		_keyboard_vector = Input.get_vector(MOVE_LEFT, MOVE_RIGHT, MOVE_UP, MOVE_DOWN)
+		_update_move_vector()
+
+## Losing window focus can swallow key releases; never keep walking on a
+## key that's no longer known to be held.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_keyboard_vector = Vector2.ZERO
+		_update_move_vector()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:

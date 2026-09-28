@@ -465,6 +465,47 @@ for f, s2 in scripts.items():
         if MAGIC_MASK.search(code):
             err(f"{f}:{ln}: numeric physics layer/mask; use PhysicsLayers ({code.strip()})")
 
+# ------------------------------------------------------------ input map
+# Movement must come from InputMap actions (never raw key polling), the
+# desktop movement keys must stay mapped, and every action a script uses
+# must be defined in project.godot (or be a built-in ui_* action).
+REQUIRED_MOVE_KEYS = {  # action -> physical keycodes that must stay mapped
+    "move_up": {87: "W", 4194320: "Up"},
+    "move_down": {83: "S", 4194322: "Down"},
+    "move_left": {65: "A", 4194319: "Left"},
+    "move_right": {68: "D", 4194321: "Right"},
+}
+input_sec = re.search(r"^\[input\]\n(.*?)(?=^\[|\Z)", cfg, re.M | re.S)
+defined_actions = {}
+if input_sec:
+    for m in re.finditer(r'^(\w+)=\{(.*?)^\}', input_sec.group(1), re.M | re.S):
+        defined_actions[m.group(1)] = {int(k) for k in re.findall(r'"physical_keycode":(\d+)', m.group(2))} | \
+                                      {int(k) for k in re.findall(r'"keycode":(\d+)', m.group(2)) if k != "0"}
+for action, keys in REQUIRED_MOVE_KEYS.items():
+    if action not in defined_actions:
+        err(f"project.godot: input action '{action}' missing")
+        continue
+    for code, label in keys.items():
+        if code not in defined_actions[action]:
+            err(f"project.godot: input action '{action}' lost its {label} key")
+notes.append(f"input actions: {', '.join(sorted(defined_actions))}")
+ACTION_CALL = re.compile(r"(?:is_action\w*|get_vector|get_axis|get_action_\w+|action_press|action_release)\(([^)]*)\)")
+RAW_KEYS = re.compile(r"\bis_(physical_)?key_pressed\(|\bKEY_[A-Z0-9_]+\b|\.(physical_)?keycode\b")
+for f, s2 in scripts.items():
+    consts = dict(re.findall(r'^const\s+(\w+)\s*:?=\s*&?"(\w+)"', s2, re.M))
+    for ln, line in enumerate(s2.split("\n"), 1):
+        code = re.sub(r"#.*", "", line)
+        if RAW_KEYS.search(code):
+            err(f"{f}:{ln}: raw key handling; use an InputMap action ({code.strip()})")
+        for args in ACTION_CALL.findall(code):
+            for tok in [t.strip() for t in args.split(",")]:
+                name = None
+                lit = re.fullmatch(r'&?"(\w+)"', tok)
+                if lit: name = lit.group(1)
+                elif tok in consts: name = consts[tok]
+                if name and not name.startswith("ui_") and name not in defined_actions:
+                    err(f"{f}:{ln}: input action '{name}' is not defined in project.godot")
+
 print("NOTES:"); [print("  " + n) for n in notes]
 print(f"{len(scripts)} scripts, {len(all_res)} resources checked")
 if errors:

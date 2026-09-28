@@ -90,12 +90,14 @@ Main (Node3D)                       scenes/Main.tscn
   2. **A tap is a short, still touch** (≤ 24 px, ≤ 450 ms). Drags never issue commands.
   3. **On the next physics frame** (one-off await), a ray against layer 3 (areas only) finds an **Interactable** → `interact_target_requested(target)`.
   4. **Otherwise, in Tap to Move only,** a ray against layer 1 is snapped onto the navigation mesh (rejected if off-mesh) → `move_target_requested(destination)`.
-- **Desktop:** the mouse emulates touch (`emulate_touch_from_mouse`), so a click takes the same path. There is no keyboard input map.
+- **Desktop:** the mouse emulates touch (`emulate_touch_from_mouse`), so a click takes the same path.
+- **Keyboard (desktop fallback):**
+  - InputMap actions `move_up/down/left/right` (W/S/A/D + arrows) are read in `_input` on key events only (non-consuming) via `Input.get_vector()`.
+  - InputManager combines joystick (`set_move_vector`, every frame) and keyboard into the one `move_vector`, clamped to length 1. Player is unaware of the source.
+  - Focus loss clears keys. Raw key polling is not allowed (toolkit-enforced).
 - **Movement mode:** `movement_mode` (JOYSTICK default, TAP_TO_MOVE) is the single switch. It's saved in `settings`. The HUD hides the joystick in Tap to Move.
 - **Legacy:** `interact_requested` (interact with the nearest object in the zone) is still connected in Player, but nothing emits it. Resolve in Phase 02.
-- **Direction:**
-  - Keyboard fallback via an input map feeding the same `move_vector` (Phase 01).
-  - No second input system, ever.
+- **Direction:** no second input system, ever.
 
 ## 7. Interaction system
 - **Current:**

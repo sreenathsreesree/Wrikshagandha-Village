@@ -251,14 +251,33 @@ Goal: comfortable, reliable movement in both modes on a real phone.
 - **Done when:** no magic mask numbers remain in scripts, enforced by the toolkit. ✔
 - **Commit:** §15.
 
-**M01.2 — Keyboard fallback (desktop testing)** `[ ]`
+**M01.2 — Keyboard fallback (desktop testing)** `[~]` (verified in code; needs a Godot run)
 - **Objective:** WASD/arrow movement through `InputManager.move_vector`, the same path as the joystick.
-- **Files:** `project.godot` (`[input]` map), `input_manager.gd`.
+- **Files:**
+  - `project.godot`: new `[input]` actions `move_up`/`move_down`/`move_left`/`move_right`, with W/S/A/D and arrow keys as physical keys.
+  - `scripts/autoload/input_manager.gd`.
+  - `tools/check_project.py`, `tools/sims/sim_tap_movement.py`.
+  - Docs.
 - **Dependencies:** none.
-- **Implementation:** read actions inside the existing joystick flow; no new loop.
-- **Verification:** toolkit.
-- **Runtime test:** move with the keyboard in the editor.
-- **Done when:** desktop movement works without mouse emulation.
+- **Implementation:**
+  - InputManager keeps the joystick's and the keyboard's contributions separately and combines them, clamped to length 1, into the one `move_vector`. This is needed because the joystick writes every frame.
+  - Keys are read in `_input` (non-consuming, so a focused HUD button can't swallow a key release) and only on movement-key events. The value comes from `Input.get_vector()` over the actions.
+  - Losing window focus clears the keyboard part.
+  - No new `_process`; Player, joystick, tap-to-move and tap-to-interact unchanged. Keyboard input cancels a tap-to-move path, exactly like the joystick.
+- **Verification:**
+  - `tools/run_all.sh` passes.
+  - **New checks:** the four actions must exist with both keys; every action a script uses must be defined; no raw key polling (`KEY_*`, `is_key_pressed`).
+  - **Model check:** joystick frames never erase held keys; clamping; release, focus-out and mode change.
+  - **Mutation-tested:** action removed, arrow key lost, undefined action (constant and literal), raw key polling, joystick-overwrites-keyboard.
+- **Runtime test (Godot, desktop):**
+  - WASD and arrows move the player in the expected directions (W/Up = away from the camera);
+  - diagonals aren't faster;
+  - releasing stops;
+  - after clicking a HUD button, the arrow keys still move the player and releasing still stops;
+  - keyboard + joystick drag together behave sensibly;
+  - in Tap to Move, a key press stops the walk.
+- **Done when:** desktop movement works without mouse emulation (awaiting the Godot run).
+- **Commit:** §15.
 
 **M01.3 — Movement cancel + water decision** `[!]` blocked on decision O-07
 - **Objective:** a deliberate way to stop tap-to-move (e.g. tap the player); pond walkability per the developer's decision.
@@ -457,8 +476,9 @@ No large world expansion before this gate passes.
 |---|---|
 | M00.1–M00.5 | `9da18a6` |
 | M01.1 | `e678d45` |
+| M01.2 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 01 — Player. M01.1 implemented; Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.2 — Keyboard fallback**. It starts only on the developer's instruction.
+- **Current phase:** 01 — Player. M01.1 and M01.2 implemented (`[~]`); Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.3 — Movement cancel + water decision**. It is blocked on decision O-07, and starts only on the developer's instruction.
 - **First runtime gate:** M01.5 — Android movement playtest.
