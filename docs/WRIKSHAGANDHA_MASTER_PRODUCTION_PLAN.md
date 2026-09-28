@@ -611,7 +611,7 @@ No large world expansion before this gate passes.
 | M01.4 | `443503f` |
 | M01.5 | `9ec60f1` |
 | M02.1 | `1a6b2cd` |
-| M02.2 | *(recorded after commit)* |
+| M02.2 | `3a26ee4` |
 
 ## 16. Current position
 - **Current phase:** 02 — Interaction (started on the developer's instruction). M02.1–M02.2 implemented (`[~]`, runtime test pending). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
