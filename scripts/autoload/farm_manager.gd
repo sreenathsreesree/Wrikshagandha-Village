@@ -1,16 +1,17 @@
 extends Node
 
-## The single authority for farming beyond an individual plot. Session-only
-## by design: everything here starts fresh at launch from data and is never
-## saved (there is no scene reload anywhere, so a session = an app launch).
+## The single authority for farming beyond an individual plot. Saved and
+## restored through SaveManager (get_save_data / apply_save_data, see
+## docs/farming_persistence_plan.md); a player with no farm save starts
+## fresh from data. Exploration seed rewards are granted once ever.
 ##
 ## Owns:
 ## - Crops, loaded data-driven from res://data/crops/ (a new crop is a new
 ##   CropDefinition .tres + CropVisual scene — no code change anywhere).
 ## - Seeds: each crop's starting_seeds, minus one per planting, plus one
 ##   back per harvest, plus at most one exploration reward per crop.
-##   Invariant: seeds in hand + crops in the ground =
-##   starting seeds + exploration seeds found. Never negative.
+##   Invariant (across sessions): seeds in hand + crops in the ground =
+##   starting seeds + exploration seeds found (ever). Never negative.
 ## - Exploration seed rewards (CropDefinition.found_seed_source/_id):
 ##   granted once per session when ExplorationManager reports a place
 ##   reached, or DiscoveryManager reports that discovery found.
@@ -56,6 +57,7 @@ signal milestone_reached(milestone_id: String, message: String, bonus_points: in
 signal garden_interest_changed(level: float)
 
 const CROPS_PATH := "res://data/crops/"
+const SAVE_VERSION := 1
 ## The attraction key garden-noticing wildlife is configured with.
 const WILDLIFE_ATTRACTION_KEY := "garden"
 ## Cap on the summed interest, so a garden full of ripe sunflowers is a
@@ -132,6 +134,10 @@ var _plots: Dictionary = {}
 var _starter_plot_ids: Array[String] = []
 var _harvested_plot_ids: Array[String] = []
 var _pending_plot: FarmPlot
+## Saved plot states waiting for their FarmPlot to register (the save is
+## loaded by an autoload, before the world scene exists). Carried forward
+## into the next save untouched if a plot never shows up.
+var _saved_plot_states: Dictionary = {}
 
 func _ready() -> void:
 	_load_crops()
@@ -291,6 +297,17 @@ func register_plot(plot: FarmPlot) -> void:
 		_starter_plot_ids.append(plot.plot_id)
 	elif not plot.unlocked and plot.unlock_on_milestone != "" and _milestones_reached.has(plot.unlock_on_milestone):
 		plot.set_unlocked(true)
+	if _saved_plot_states.has(plot.plot_id):
+		var data: Dictionary = _saved_plot_states[plot.plot_id]
+		_saved_plot_states.erase(plot.plot_id)
+		var restored := plot.restore(data, _find_crop(String(data.get("crop", ""))))
+		if restored and plot.plot_state == FarmPlot.PlotState.READY:
+			# Counted quietly — no ripening moment or milestone replay. It
+			# did ripen while the player was away, so the garden may greet
+			# them on their first visit this session.
+			_ready_by_crop[restored.crop_id] = int(_ready_by_crop.get(restored.crop_id, 0)) + 1
+			_last_ripened_msec = maxi(_last_ripened_msec, 0)
+			_update_garden_interest()
 
 ## The one entry point a future expansion would use — no UI or cost here.
 func unlock_plot(plot_id: String) -> void:
@@ -450,6 +467,81 @@ func get_grown_crop_names() -> PackedStringArray:
 
 func get_activity_counts() -> Dictionary:
 	return {"planted": _planted_count, "harvested": _harvested_count}
+
+# --- Persistence ----------------------------------------------------------------
+
+## Everything the farm needs to come back exactly as it was. Derived state
+## (ready counts, garden interest, unlocked plots) is rebuilt, never saved.
+func get_save_data() -> Dictionary:
+	var plots := _saved_plot_states.duplicate(true)
+	for plot_id: String in _plots:
+		var plot := _get_plot(plot_id)
+		if plot:
+			plots[plot_id] = plot.capture()
+	var basket := {}
+	for crop_id: String in _produce:
+		basket[crop_id] = Array(_produce[crop_id])
+	return {
+		"version": SAVE_VERSION,
+		"seeds": _seeds.duplicate(),
+		"found_seeds": _found_seed_origins.duplicate(true),
+		"grown": Array(_grown_crop_ids),
+		"basket": basket,
+		"milestones": Array(_milestones_reached),
+		"counts": {"planted": _planted_count, "harvested": _harvested_count},
+		"harvested_plots": Array(_harvested_plot_ids),
+		"garden_found": _garden_found,
+		"plots": plots,
+	}
+
+## Called by SaveManager.load_game() at boot, before any FarmPlot exists.
+## An empty dictionary (no farm in the save yet) keeps the fresh farm.
+## Unknown crop ids (crop removed from data) are dropped.
+func apply_save_data(data: Dictionary) -> void:
+	if data.is_empty():
+		return
+	for crop in _crops:
+		var saved_seeds: Variant = data.get("seeds", {}).get(crop.crop_id)
+		_seeds[crop.crop_id] = maxi(int(saved_seeds), 0) if saved_seeds != null else maxi(crop.starting_seeds, 0)
+	_found_seed_crop_ids.clear()
+	_found_seed_origins.clear()
+	var found: Dictionary = data.get("found_seeds", {})
+	for crop_id: String in found:
+		if _find_crop(crop_id) == null:
+			continue
+		var origin: Dictionary = found[crop_id]
+		_found_seed_crop_ids.append(crop_id)
+		_found_seed_origins[crop_id] = {"source": String(origin.get("source", "")), "source_id": String(origin.get("source_id", ""))}
+	_grown_crop_ids.clear()
+	for crop_id: Variant in data.get("grown", []):
+		if _find_crop(String(crop_id)):
+			_grown_crop_ids.append(String(crop_id))
+	_produce.clear()
+	var basket: Dictionary = data.get("basket", {})
+	for crop_id: String in basket:
+		var counts: Array = basket[crop_id]
+		if _find_crop(crop_id) and counts.size() == 3:
+			_produce[crop_id] = [maxi(int(counts[0]), 0), maxi(int(counts[1]), 0), maxi(int(counts[2]), 0)]
+	_milestones_reached.clear()
+	for milestone_id: Variant in data.get("milestones", []):
+		_milestones_reached.append(String(milestone_id))
+	var counts_data: Dictionary = data.get("counts", {})
+	_planted_count = int(counts_data.get("planted", 0))
+	_harvested_count = int(counts_data.get("harvested", 0))
+	_harvested_plot_ids.clear()
+	for plot_id: Variant in data.get("harvested_plots", []):
+		_harvested_plot_ids.append(String(plot_id))
+	_garden_found = bool(data.get("garden_found", false))
+	_saved_plot_states = data.get("plots", {}).duplicate(true)
+	_update_garden_interest()
+	seeds_changed.emit()
+	produce_changed.emit()
+
+func _find_crop(crop_id: String) -> CropDefinition:
+	for crop in _crops:
+		if crop.crop_id == crop_id:
+			return crop
+	return null
 
 # --- Internals ----------------------------------------------------------------
 

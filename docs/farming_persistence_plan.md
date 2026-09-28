@@ -1,9 +1,11 @@
 # Farming persistence — readiness audit and migration plan
 
-Status: **not implemented.** Farming is session-only by design today;
-`SaveManager` is untouched. This document records exactly what would need
-saving, what must *not* be saved, and the hazards to fix first, so turning
-persistence on later is additive and doesn't reshape `FarmManager`.
+Status: **implemented (format version 1).** `FarmManager.get_save_data()` /
+`apply_save_data()`, `FarmPlot.capture()` / `restore()`, a `"farm"` block
+in `SaveManager`, and autosave points in `GameState` (plant, harvest, found
+seed, farm milestone, app paused/closed). Hazards 1–3 below are fixed by
+it; 4 is handled by the new save points; 5 by dropping unknown crop ids.
+The rest of this document is the audit it was built from.
 
 ## How saving works today
 
@@ -11,7 +13,8 @@ persistence on later is additive and doesn't reshape `FarmManager`.
   `discovered_ids`, `journal_entries`, `daily_discovery`. Every field is
   read with a default, so a new top-level key is backwards compatible.
 - `GameState._ready()` calls `load_game()` (autoloads are ready, **no world
-  scene or FarmPlot exists yet**) and autosaves only on
+  scene or FarmPlot exists yet**), so saved plot states wait in FarmManager
+  until each plot registers. Before farming persistence it autosaved only on
   `DiscoveryManager.discovery_made`.
 
 ## State inventory

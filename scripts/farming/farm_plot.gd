@@ -98,6 +98,11 @@ var _longest_thirst_seconds: float = 0.0
 ## rapid second Interact press during the harvest animation would otherwise
 ## re-enter this coroutine and double-award points.
 var _is_harvesting: bool = false
+## Set once a harvest in progress has been reported to FarmManager (seed
+## returned, produce in the basket) — from then on a save must see this
+## plot as the empty soil it's about to become, or the harvest would count
+## twice after a reload.
+var _harvest_paid: bool = false
 
 ## The plot's own quiet green, restored when the soil is empty again.
 var _default_indicator_tint: Color = Color(0, 0, 0, 0)
@@ -402,6 +407,7 @@ func _harvest_crop() -> bool:
 ## returns to prepared soil, ready to plant again.
 func _run_harvest_sequence() -> void:
 	_is_harvesting = true
+	_harvest_paid = false
 	monitorable = false
 	var intensity: float = RARITY_INTENSITY.get(crop_definition.rarity, 1.0)
 	if _crop_visual:
@@ -412,6 +418,7 @@ func _run_harvest_sequence() -> void:
 	var points_awarded := FarmManager.get_harvest_points(crop_definition, crop_quality)
 	PointsManager.add_points(points_awarded)
 	_remember_harvest(crop_definition.crop_id)
+	_harvest_paid = true
 	FarmManager.notify_crop_harvested(plot_id, crop_definition, points_awarded, crop_quality, crop_care)
 
 	_play_seed_return(crop_definition.identity_color)
@@ -421,6 +428,7 @@ func _run_harvest_sequence() -> void:
 		_crop_visual = null
 	_reset_to_soil()
 	_is_harvesting = false
+	_harvest_paid = false
 	monitorable = unlocked
 
 ## The seed that comes back with every harvest, shown in the world: it
@@ -460,6 +468,103 @@ func _reset_to_soil() -> void:
 	_mound_tween.tween_property(seed_mound, "scale", MOUND_HIDDEN_SCALE, 0.2)
 	_mound_tween.tween_callback(seed_mound.hide)
 	_tween_soil_color(SOIL_COLOR_DRY, 0.4)
+
+# --- Persistence (called by FarmManager only) --------------------------------
+
+## This plot's saveable state (see docs/farming_persistence_plan.md). Times
+## are stored as durations, never as session clock values. Unlocked-ness
+## is not saved — FarmManager derives it from milestones.
+func capture() -> Dictionary:
+	var state := String(PlotState.keys()[plot_state])
+	var crop_id := crop_definition.crop_id if crop_definition else ""
+	if _is_harvesting and _harvest_paid:
+		# Already paid out; it's soil in every way that matters.
+		state = "SOIL"
+		crop_id = ""
+	var data := {"state": state, "soil_memory": Array(_recent_crop_ids)}
+	if crop_id == "":
+		return data
+	var thirsty_for := -1.0
+	if _thirsty_since_msec >= 0:
+		thirsty_for = (Time.get_ticks_msec() - _thirsty_since_msec) / 1000.0
+	data.merge({
+		"crop": crop_id,
+		"stage": _stage_index,
+		"needs_water": _needs_water,
+		"stage_time_left": growth_timer.time_left if not growth_timer.is_stopped() else 0.0,
+		"soil": crop_soil,
+		"care": crop_care,
+		"quality": crop_quality,
+		"longest_thirst": _longest_thirst_seconds,
+		"thirsty_for": thirsty_for,
+	})
+	return data
+
+## Puts a saved state back without any planting/growth animation. Returns
+## the crop now in the ground (null if none). A crop id with no matching
+## CropDefinition (removed from data) leaves the plot as prepared soil.
+func restore(data: Dictionary, crop: CropDefinition) -> CropDefinition:
+	_recent_crop_ids.clear()
+	for crop_id: Variant in data.get("soil_memory", []):
+		_recent_crop_ids.append(String(crop_id))
+	while _recent_crop_ids.size() > FarmManager.SOIL_MEMORY:
+		_recent_crop_ids.remove_at(0)
+	var state_name := String(data.get("state", "EMPTY"))
+	# Enum values are 0..n in declaration order, so the key's index is it.
+	var restored_state := PlotState.keys().find(state_name)
+	if restored_state <= PlotState.EMPTY:
+		return null
+	_show_soil()
+	if restored_state == PlotState.SOIL or crop == null or crop.visual_scene == null:
+		plot_state = PlotState.SOIL
+		return null
+	var visual := crop.visual_scene.instantiate() as CropVisual
+	if visual == null:
+		plot_state = PlotState.SOIL
+		return null
+	crop_definition = crop
+	plot_state = restored_state as PlotState
+	_stage_index = clampi(int(data.get("stage", 0)), 0, CropVisual.MATURE_STAGE)
+	_needs_water = bool(data.get("needs_water", false)) and plot_state != PlotState.READY
+	crop_soil = clampi(int(data.get("soil", FarmManager.QUALITY_GOOD)), 0, 2)
+	crop_care = clampi(int(data.get("care", FarmManager.CARE_CAREFUL)), 0, 2)
+	crop_quality = clampi(int(data.get("quality", FarmManager.QUALITY_GOOD)), 0, 2)
+	_longest_thirst_seconds = maxf(float(data.get("longest_thirst", 0.0)), 0.0)
+	var thirsty_for := float(data.get("thirsty_for", -1.0))
+	_thirsty_since_msec = -1
+	if _needs_water:
+		# Time away from the app doesn't count as thirst: resume the wait
+		# where it was when the game was saved.
+		_thirsty_since_msec = Time.get_ticks_msec() - int(maxf(thirsty_for, 0.0) * 1000.0)
+
+	_crop_visual = visual
+	_crop_visual.configure(crop)
+	crop_root.add_child(_crop_visual)
+	crop_root.visible = true
+	if plot_state == PlotState.READY:
+		_crop_visual.set_size_factor(FarmManager.get_quality_size(crop_quality))
+	_crop_visual.snap_to(_stage_index, _needs_water)
+	seed_mound.visible = true
+	seed_mound.scale = Vector3.ONE
+	if _soil_material:
+		_soil_material.albedo_color = SOIL_COLOR_DRY if _needs_water or plot_state == PlotState.READY else SOIL_COLOR_WET
+	var indicator := _get_indicator()
+	if indicator:
+		indicator.set_tint(crop.identity_color)
+	if plot_state == PlotState.GROWING and not _needs_water:
+		growth_timer.start(maxf(float(data.get("stage_time_left", 0.0)), 0.1))
+	return crop
+
+func _show_soil() -> void:
+	plot_state = PlotState.SOIL
+	patch_mesh.visible = false
+	soil_mesh.visible = true
+	soil_mesh.scale = Vector3.ONE
+	if _soil_material:
+		_soil_material.albedo_color = SOIL_COLOR_DRY
+	var overgrowth := _get_overgrowth()
+	if overgrowth:
+		overgrowth.visible = false
 
 ## Reuses the discovery harvest's own tiny tween-driven burst scene, tinted
 ## for soil dust / water droplets (alpha-0 tint = its original gold).

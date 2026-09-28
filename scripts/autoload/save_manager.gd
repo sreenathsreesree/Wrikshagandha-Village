@@ -13,6 +13,7 @@ func save_game() -> void:
 		"discovered_ids": DiscoveryManager.get_discovered_ids(),
 		"journal_entries": JournalManager.get_save_data(),
 		"daily_discovery": DailyDiscoveryManager.get_save_data(),
+		"farm": FarmManager.get_save_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -38,6 +39,7 @@ func load_game() -> bool:
 	DiscoveryManager.set_discovered_ids(parsed.get("discovered_ids", []))
 	JournalManager.apply_save_data(parsed.get("journal_entries", {}))
 	DailyDiscoveryManager.apply_save_data(parsed.get("daily_discovery", {}))
+	FarmManager.apply_save_data(parsed.get("farm", {}))
 	return true
 
 func has_save_file() -> bool:

@@ -89,6 +89,23 @@ func set_size_factor(size_factor: float) -> void:
 	_mature_scale = maxf(_base_mature_scale * size_factor, 0.1)
 	_apply()
 
+## Restoring a saved crop: jump straight to its stage and posture with no
+## growth animation, then start the idle that matches. Called after the
+## visual is in the tree (its materials are made unique in _ready).
+func snap_to(stage_index: int, thirsty: bool) -> void:
+	_stop_all_tweens()
+	_current_stage = clampi(stage_index, 0, MATURE_STAGE)
+	_thirsty = thirsty
+	stage_scale = STAGE_SCALES[_current_stage]
+	droop = 1.0 if thirsty else 0.0
+	squash = Vector3.ONE
+	lift = 0.0
+	sway = 0.0
+	if _current_stage == MATURE_STAGE:
+		for i in _materials.size():
+			_materials[i].albedo_color = _base_albedo[i].lightened(READY_LIGHTEN)
+	_resume_idle()
+
 ## Planting: the seedling starts slightly sunk and flattened, then rises
 ## and un-squashes out of the soil — a tiny upward emergence cue.
 func appear() -> void:
