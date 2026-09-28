@@ -21,6 +21,7 @@ func _ready() -> void:
 	_apply_camera_bounds()
 	follow_camera.snap_to_target()
 	area.attach_player(player)
+	InputManager.zoom_requested.connect(follow_camera.zoom_by)
 
 ## Swaps the current area for `scene` and places the player on its entry
 ## `entry_id`. Deferred, so it never runs inside a callback from the area

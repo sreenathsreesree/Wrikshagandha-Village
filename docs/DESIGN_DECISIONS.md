@@ -64,4 +64,5 @@ blocked (`[!]`) until the developer records a decision here.
 | ID | Proposal | Why |
 |---|---|---|
 | P-01 | Pull a **minimal save-versioning step** (top-level save version + one migration hook) into Phase 04 (milestone M04.0), ahead of the full Save phase (15) | Inventory will move seeds/basket out of FarmManager, changing existing save keys; without versioning, old saves lose farm data |
+| P-03 | **Zoom range 7–15 m** (camera distance = spring-arm length; the scene's 11 m stays the starting value) and a **1.1× distance change per mouse-wheel notch**. Provisional values in `follow_camera.gd` / `input_manager.gd`, to be tuned or approved after the Android playtest (M01.6, "M03.5 zoom") | The plan (M03.5) asks for clamped zoom but gives no limits; nothing in the project defined any. The range keeps the current view in the middle (≈ ±35 % distance) |
 | P-02 | Persist exploration progress as part of Phase 05's repeat-reward protection (milestone M05.2) | Exploration bonuses currently re-award on every launch while points are saved |

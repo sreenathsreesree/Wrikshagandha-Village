@@ -25,6 +25,15 @@ class_name FollowCamera
 @export var screen_offset := Vector2(0.0, 0.08)
 
 @onready var _camera: Camera3D = get_node_or_null("SpringArm3D/Camera3D") as Camera3D
+@onready var _spring_arm: SpringArm3D = get_node_or_null("SpringArm3D") as SpringArm3D
+
+## Zoom (M03.5) is the spring arm's length — the camera's distance from the
+## point it follows (11 m in the scene). Pinch and mouse wheel both come
+## through zoom_by() (wired by Main from InputManager.zoom_requested), and
+## set_zoom_distance() is the only place the length changes: always within
+## these limits (provisional, proposal P-03 — tune at the playtest).
+const ZOOM_MIN_DISTANCE := 7.0
+const ZOOM_MAX_DISTANCE := 15.0
 
 var _last_target_position: Vector3
 var _has_last_position: bool = false
@@ -89,3 +98,17 @@ func _clamp_to_bounds(point: Vector3) -> Vector3:
 	point.x = clampf(point.x, _bounds.position.x, _bounds.end.x)
 	point.z = clampf(point.z, _bounds.position.y, _bounds.end.y)
 	return point
+
+## factor < 1 brings the camera closer, > 1 moves it away; clamped.
+func zoom_by(factor: float) -> void:
+	if _spring_arm == null or not is_finite(factor) or factor <= 0.0:
+		return
+	set_zoom_distance(_spring_arm.spring_length * factor)
+
+func set_zoom_distance(distance: float) -> void:
+	if _spring_arm == null:
+		return
+	_spring_arm.spring_length = clampf(distance, ZOOM_MIN_DISTANCE, ZOOM_MAX_DISTANCE)
+
+func get_zoom_distance() -> float:
+	return _spring_arm.spring_length if _spring_arm else 0.0

@@ -929,8 +929,8 @@ if found_al != AUTOLOADS:
 # Deliberate-change pins: files a milestone promised not to touch. Changing
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
-PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "bd56f4c597de8b35",
-          "scripts/camera/follow_camera.gd": "dadb14f88b8ea211", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
+PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
+          "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           "scripts/autoload/farm_manager.gd": "5593d2e984680ab2", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
@@ -1076,6 +1076,70 @@ bcallers = sorted(fn for fn in re.findall(r"^func (\w+)\(", main_src, re.M)
 if bcallers != ["_ready", "_swap_area"] or [f for f, s2 in scripts.items() if f not in (MAIN_GD, CAM_GD) and re.search(r"\.(set_bounds|clear_bounds|snap_to_target)\(", code_only(s2))]:
     err(f"camera bounds are applied only by Main, at start and on every area swap (found {bcallers})")
 notes.append("camera bounds: one AreaCameraBounds per area, applied by Main on load")
+
+# ------------------------------------------------------------ pinch / wheel zoom (M03.5)
+# One zoom path: InputManager turns a two-finger pinch or a mouse-wheel
+# notch into zoom_requested(factor); Main connects it once to
+# FollowCamera.zoom_by(); set_zoom_distance() is the only writer of the
+# spring arm's length and clamps it. Two fingers on the world never tap.
+def _hash_body(src, n):
+    m = re.search(rf"^func {n}\(.*?(?=^func |^## |\Z)", src, re.M | re.S)
+    return hashlib.sha256(m.group(0).strip().encode()).hexdigest()[:12] if m else None
+TAP_ROUTING = {"_track_tap": "f5463beadc8c", "_handle_tap": "2250c9598daa", "_is_player_tap": "af8f36edd1df",
+               "_interactable_near": "d7b7f30b456b", "_tap_distance": "92f36e7bb53a", "_walkable_point": "f4cb1a094bae",
+               "_find_interactable": "25ab3beea88c"}
+changed_routing = [n for n, h in TAP_ROUTING.items() if _hash_body(im_src, n) != h]
+if changed_routing:
+    err(f"{IM}: tap routing changed {changed_routing} — M03.5 may add zoom but never alter how taps are routed")
+zmin, zmax = const_val(cam_src, "ZOOM_MIN_DISTANCE"), const_val(cam_src, "ZOOM_MAX_DISTANCE")
+arm = re.search(r'\[node name="SpringArm3D"[^\]]*\][^\[]*?spring_length = ([0-9.]+)', open("scenes/camera/FollowCamera.tscn", encoding="utf-8").read())
+if zmin is None or zmax is None or not (0 < zmin < zmax) or not arm or not (zmin <= float(arm.group(1)) <= zmax):
+    err(f"{CAM_GD}: explicit zoom limits ZOOM_MIN_DISTANCE < ZOOM_MAX_DISTANCE around the scene's spring_length ({zmin}, {zmax}, {arm.group(1) if arm else None})")
+if "_spring_arm.spring_length = clampf(distance, ZOOM_MIN_DISTANCE, ZOOM_MAX_DISTANCE)" not in (func_body(cam_src, "set_zoom_distance") or ""):
+    err(f"{CAM_GD}: set_zoom_distance() clamps to [ZOOM_MIN_DISTANCE, ZOOM_MAX_DISTANCE]")
+zb = code_only(func_body(cam_src, "zoom_by") or "")
+if not re.search(r"if _spring_arm == null or not is_finite\(factor\) or factor <= 0\.0:\s*return\s*set_zoom_distance\(_spring_arm\.spring_length \* factor\)", zb):
+    err(f"{CAM_GD}: zoom_by() scales the distance by a valid factor through set_zoom_distance()")
+arm_writers = sorted({(f, fn) for f, s2 in scripts.items() for fn in re.findall(r"^func (\w+)\(", s2, re.M)
+                      if re.search(r"spring_length\s*=[^=]|\.set_length\(|\bspring_length\s*[-+*/]=", code_only(func_body(s2, fn) or ""))})
+if arm_writers != [(CAM_GD, "set_zoom_distance")]:
+    err(f"the camera distance is written only by FollowCamera.set_zoom_distance() (found {arm_writers})")
+if re.search(r"spring_length|zoom|ZOOM", code_only(func_body(cam_src, "_physics_process") or "")):
+    err(f"{CAM_GD}: no zoom work per frame — zoom changes only on input")
+zem = [(f, len(re.findall(r"zoom_requested\.emit\(", code_only(s2)))) for f, s2 in scripts.items()]
+zem = [z for z in zem if z[1]]
+if zem != [(IM, 2)]:
+    err(f"zoom_requested is emitted only by InputManager's pinch and wheel paths (found {zem})")
+zcalls = [(f, n) for f, s2 in scripts.items() for n in re.findall(r"\.(zoom_by|set_zoom_distance)\b", code_only(s2)) if f != CAM_GD]
+if zcalls != [(MAIN_GD, "zoom_by")] or "InputManager.zoom_requested.connect(follow_camera.zoom_by)" not in (func_body(main_src, "_ready") or "") \
+   or code_only(main_src).count("zoom_requested.connect") != 1:
+    err(f"Main connects InputManager.zoom_requested to FollowCamera.zoom_by once, in _ready (found {zcalls})")
+ui = code_only(func_body(im_src, "_unhandled_input") or "")
+if not re.search(r"_track_touch\(touch\.index, touch\.pressed, touch\.position\)\s*if _world_touches\.size\(\) >= 2:\s*.*?_tap_starts\.clear\(\)\s*return\s*_track_tap\(touch\.index", ui, re.S):
+    err(f"{IM}: with two fingers on the world no touch is a tap (tap candidates cleared before any tap tracking)")
+wb = re.search(r"elif event is InputEventMouseButton and _is_wheel\(event as InputEventMouseButton\):(.*?)elif event is InputEventMouseButton and not _mouse_emulates_touch:", ui, re.S)
+if not wb or not re.search(r"if wheel\.pressed:\s*zoom_requested\.emit\(1\.0 / WHEEL_ZOOM_STEP if wheel\.button_index == MOUSE_BUTTON_WHEEL_UP else WHEEL_ZOOM_STEP\)", wb.group(1)) \
+   or "_track_tap" in wb.group(1) or not (const_val(im_src, "WHEEL_ZOOM_STEP") or 0) > 1.0:
+    err(f"{IM}: the wheel (before clicks) zooms on press only: up = closer, down = farther, never a tap")
+if not re.search(r"MOUSE_BUTTON_WHEEL_UP or event\.button_index == MOUSE_BUTTON_WHEEL_DOWN", func_body(im_src, "_is_wheel") or ""):
+    err(f"{IM}: _is_wheel() recognises both wheel directions")
+tp = code_only(func_body(im_src, "_track_pinch") or "")
+if not re.search(r"if not _world_touches\.has\(index\):\s*return", tp) or "zoom_requested.emit(_pinch_distance / distance)" not in tp \
+   or not re.search(r"if _pinch_distance > 0\.0 and distance > 0\.0:", tp) or not tp.rstrip().endswith("_pinch_distance = distance"):
+    err(f"{IM}: a pinch emits old/new finger distance (apart = closer) from tracked world fingers only")
+if "if _world_touches.size() != 2:" not in (func_body(im_src, "_two_finger_distance") or "") or \
+   not re.search(r"_world_touches\.erase\(index\)\s*_pinch_distance = _two_finger_distance\(\)", func_body(im_src, "_track_touch") or ""):
+    err(f"{IM}: only exactly two fingers pinch, and every finger change restarts the pinch (no jumps)")
+if re.search(r"^func _(unhandled_)?input\(|^func _gui_input\(|InputEvent", cam_src, re.M):
+    err(f"{CAM_GD}: the camera reads no input — zoom reaches it only through zoom_by()")
+for f, s2 in scripts.items():
+    if f != IM and re.search(r"InputEventMagnifyGesture|InputEventPanGesture|MOUSE_BUTTON_WHEEL", code_only(s2)):
+        err(f"{f}: zoom gestures and the wheel are read only by InputManager (one zoom path)")
+fov_writers = [(f, fn) for f, s2 in scripts.items() for fn in re.findall(r"^func (\w+)\(", s2, re.M)
+               if re.search(r"\.fov\s*[-+*/]?=[^=]", code_only(func_body(s2, fn) or ""))]
+if fov_writers != [(CAM_GD, "_physics_process")]:
+    err(f"the camera's FOV is written only by its existing speed widening (found {fov_writers}) — zoom is the arm length")
+notes.append(f"zoom: [{zmin}, {zmax}] m around {arm.group(1) if arm else '?'} m; one path (pinch + wheel -> zoom_requested -> zoom_by)")
 
 # ------------------------------------------------------------ farm across area reload (M03.3)
 # Plots are captured by stable id just before their area unloads and

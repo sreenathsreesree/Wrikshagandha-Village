@@ -25,6 +25,13 @@ extends Node
 ## reaches the world: the joystick's touch zone, HUD buttons, the seed
 ## picker and every open screen all stop their own touches. Desktop: the
 ## project emulates touch from the mouse, so a click takes the same path.
+##
+## Zoom (M03.5): two fingers on the world pinch — the change in their
+## distance becomes zoom_requested(factor) — and the mouse wheel does the
+## same on desktop. Once two fingers are down nothing is a tap (the pivot
+## finger of a pinch must never walk the player); a single finger, or the
+## joystick's own touches, never zoom. Main hands zoom_requested to the
+## camera, which clamps it.
 
 enum MovementMode { JOYSTICK, TAP_TO_MOVE }
 
@@ -32,6 +39,8 @@ signal interact_target_requested(target: Interactable)
 signal move_target_requested(destination: Vector3)
 signal stop_requested
 signal movement_mode_changed(mode: MovementMode)
+## factor < 1 = closer (zoom in), > 1 = farther (zoom out); the camera clamps.
+signal zoom_requested(factor: float)
 
 ## A tap, not a drag: released close to where it started, and quickly.
 const TAP_MAX_MOVE := 24.0
@@ -56,6 +65,8 @@ const PLAYER_GROUP := &"player"
 ## Stands in for a touch index when a real mouse is used without touch
 ## emulation.
 const MOUSE_TAP_INDEX := -100
+## One mouse-wheel notch changes the camera distance by this factor.
+const WHEEL_ZOOM_STEP := 1.1
 ## Keyboard movement actions (project.godot [input]: WASD + arrow keys).
 const MOVE_LEFT := &"move_left"
 const MOVE_RIGHT := &"move_right"
@@ -74,6 +85,10 @@ var _mouse_emulates_touch: bool = false
 var _joystick_vector: Vector2 = Vector2.ZERO
 var _tap_select_shape: SphereShape3D
 var _keyboard_vector: Vector2 = Vector2.ZERO
+## touch index -> current position, for every finger on the world (not the
+## GUI), and the two-finger distance a pinch is measured from (0 = none).
+var _world_touches: Dictionary = {}
+var _pinch_distance: float = 0.0
 
 func _ready() -> void:
 	_mouse_emulates_touch = bool(ProjectSettings.get_setting("input_devices/pointing/emulate_touch_from_mouse", false))
@@ -132,13 +147,56 @@ func _notification(what: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch: InputEventScreenTouch = event
+		_track_touch(touch.index, touch.pressed, touch.position)
+		if _world_touches.size() >= 2:
+			# A second finger: this is a pinch, not a tap — for every finger.
+			_tap_starts.clear()
+			return
 		_track_tap(touch.index, touch.pressed, touch.position)
+	elif event is InputEventScreenDrag:
+		var drag: InputEventScreenDrag = event
+		_track_pinch(drag.index, drag.position)
+	elif event is InputEventMouseButton and _is_wheel(event as InputEventMouseButton):
+		var wheel: InputEventMouseButton = event
+		if wheel.pressed:
+			zoom_requested.emit(1.0 / WHEEL_ZOOM_STEP if wheel.button_index == MOUSE_BUTTON_WHEEL_UP else WHEEL_ZOOM_STEP)
 	elif event is InputEventMouseButton and not _mouse_emulates_touch:
 		# Only a real mouse: touch-emulated mouse events (Android) are
 		# already handled as the touches they came from.
 		var click: InputEventMouseButton = event
 		if click.button_index == MOUSE_BUTTON_LEFT and click.device != InputEvent.DEVICE_ID_EMULATION:
 			_track_tap(MOUSE_TAP_INDEX, click.pressed, click.position)
+
+func _is_wheel(event: InputEventMouseButton) -> bool:
+	return event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN
+
+## Fingers on the world come and go; whenever the set changes, a pinch
+## starts again from the current distance, so a finger added or lifted
+## never makes the zoom jump. Only exactly two fingers pinch.
+func _track_touch(index: int, pressed: bool, screen_position: Vector2) -> void:
+	if pressed:
+		_world_touches[index] = screen_position
+	else:
+		_world_touches.erase(index)
+	_pinch_distance = _two_finger_distance()
+
+func _track_pinch(index: int, screen_position: Vector2) -> void:
+	if not _world_touches.has(index):
+		return
+	_world_touches[index] = screen_position
+	var distance := _two_finger_distance()
+	if _pinch_distance > 0.0 and distance > 0.0:
+		# Fingers apart (distance grows) -> factor < 1 -> closer.
+		zoom_requested.emit(_pinch_distance / distance)
+	_pinch_distance = distance
+
+func _two_finger_distance() -> float:
+	if _world_touches.size() != 2:
+		return 0.0
+	var points := _world_touches.values()
+	var a: Vector2 = points[0]
+	var b: Vector2 = points[1]
+	return a.distance_to(b)
 
 func _track_tap(index: int, pressed: bool, screen_position: Vector2) -> void:
 	if pressed:

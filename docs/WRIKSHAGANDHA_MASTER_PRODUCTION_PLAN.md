@@ -421,7 +421,14 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - away from the edges the camera looks and moves exactly as before (angle, distance, smoothing, look-ahead, FOV widening);
     - walk (joystick, keyboard and tap-to-move) to each of the four ground edges: the camera's focus stops at the edge — no lurch, no jitter, no sideways drift; turning back, it follows smoothly again;
     - note how much beyond the ground is still visible at each edge (for open question O-12);
-    - after a remote-debugger `load_area(...)` round-trip: the camera snaps to the player at the start, still bounded, no glide or look-ahead jump.
+    - after a remote-debugger `load_area(...)` round-trip: the camera snaps to the player at the start, still bounded, no glide or look-ahead jump;
+  - **M03.5 pinch zoom + mouse wheel (pinch vs tap):**
+    - pinch out/in on the world: the camera moves closer/farther smoothly with the fingers; it stops firmly at the nearest and farthest limits (no bounce, no drift when hammering a limit);
+    - **a pinch never moves the player** — including a pinch where one finger stays still, and quick short pinches; lifting one finger mid-pinch doesn't walk or zoom; a third finger doesn't make the zoom jump;
+    - single taps still walk and interact exactly as before; the joystick with a second finger on the world doesn't zoom;
+    - desktop: the mouse wheel zooms (up = closer); clicking still walks/interacts; the wheel over a scrolling screen (journal) scrolls it, not the camera;
+    - zoom survives a `load_area(...)` reload; zooming at a camera-bounds edge doesn't move the focus;
+    - note whether 7–15 m feels right at both ends and the wheel step feels right (proposal P-03).
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -589,7 +596,7 @@ Goal: persistent Player/Camera/HUD with swappable areas.
 | M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[~]` |
 | M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[~]` |
 | M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[~]` |
-| M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[ ]` |
+| M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[~]` |
 | M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[ ]` |
 
 **M03.1 — Persistent Main scene (shell)** `[~]` Implemented — runtime testing pending (M01.6 checklist)
@@ -673,6 +680,26 @@ Goal: persistent Player/Camera/HUD with swappable areas.
   - `sim_camera_bounds.py`: parameters and order read from source; inside the Meadow the bounded camera equals the pre-M03.4 camera exactly; each of the four edges (focus stops at the edge; difference ≤ the 1 m look-ahead); a player beyond the edge; swaps to smaller/other bounds, to no bounds and back; old bounds never leak; 2,000 random swap runs; same target throughout; no look-ahead jump after a snap.
   - Mutation-tested: 23 GDScript/scene mutations plus 2 more camera-behaviour mutations (look-ahead threshold, FOV), all caught by `check_project.py` (the camera ones also with the camera pin disabled); 6 model mutations caught.
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.4 camera bounds").
+- **Commit:** §15.
+
+**M03.5 — Clamped pinch zoom (+ mouse wheel)** `[~]` Implemented — runtime testing pending (M01.6 checklist)
+- **Objective:** clamped camera zoom by two-finger pinch on mobile and the mouse wheel on desktop, one zoom path, no conflict with taps or the joystick.
+- **Audit:**
+  - Camera distance is the SpringArm3D's `spring_length = 11.0` (`FollowCamera.tscn`); FOV 50 is the speed-widening effect (±2). **No zoom, no range defined anywhere**; the plan gives none → provisional 7–15 m and a 1.1 wheel step, recorded as proposal **P-03**.
+  - Touch: InputManager reads world touches in `_unhandled_input` and treats **every touch index as an independent tap candidate** — a pinch's still pivot finger (< 24 px, < 450 ms) would have tapped and walked the player. No `InputEventScreenDrag`, magnify or pan handling existed; Android sends no magnify gestures, so a pinch must be built from raw touches. The joystick consumes its own touches in the GUI (never unhandled).
+  - Desktop: `emulate_touch_from_mouse=true` — clicks arrive as touch index 0; wheel events stay mouse buttons and were ignored.
+  - No camera/zoom references in Main (besides wiring), Player, HUD or input actions; M03.4 bounds act on the focus, independent of distance.
+- **Files:** `scripts/autoload/input_manager.gd` (touch tracking, pinch, wheel, multi-touch tap suppression — pin updated deliberately; tap routing unchanged and pinned by content), `scripts/camera/follow_camera.gd` (zoom API — pin updated deliberately), `scripts/main.gd` (one connection), `tools/check_project.py`, new `tools/sims/sim_camera_zoom.py`, docs; `docs/DESIGN_DECISIONS.md` (P-03).
+- **Implementation:**
+  - InputManager: `signal zoom_requested(factor)`; `_world_touches` (world fingers only); `_track_touch()` restarts the pinch on every finger change; `_track_pinch()` on drag emits `old / new` two-finger distance (exactly two fingers); with ≥ 2 world fingers all tap candidates are cleared (no finger of a pinch taps); the wheel emits `1/1.1` (up) or `1.1` (down) on press, before and separate from click/tap handling.
+  - FollowCamera: `ZOOM_MIN_DISTANCE = 7.0`, `ZOOM_MAX_DISTANCE = 15.0`; `zoom_by(factor)` (rejects non-finite/≤ 0) → `set_zoom_distance()` = the only writer of `spring_length`, clamped; `get_zoom_distance()`. No input handling and no per-frame zoom in the camera; smoothing, look-ahead, FOV and bounds untouched.
+  - Main: `InputManager.zoom_requested.connect(follow_camera.zoom_by)` once, in `_ready`.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: explicit limits around the scene's arm length; the clamp; `zoom_by` validation; one arm-length writer; no zoom per frame; the camera reads no input; only InputManager reads wheel/gesture events and emits `zoom_requested` (two sites), connected once by Main; FOV written only by the speed widening; pinch direction, two-finger rule, restart on finger change, tracked fingers only; two world fingers never tap; wheel on press, up = closer, never a tap; **InputManager's tap-routing functions pinned by content** (unchanged). Existing: one Camera3D under Main, M03.4 bounds rules, Player and farm pins, closed input-action list.
+  - `sim_camera_zoom.py`: limits/between; repeated and limit-crossing pinch and wheel; hammering a limit; pinch → single finger; third finger; tap-to-move without zoom; joystick + world finger; wheel release; invalid factors; zoom after area reload; zoom at each M03.4 edge; 2,000 random input sequences (limits always held; taps only when the last finger lifts; a finger that was part of a pinch never taps; only two fingers zoom).
+  - Mutation-tested: 29 GDScript/scene/config mutations caught by `check_project.py` (run with the InputManager and camera pins disabled, so the content rules alone catch them) and 7 model mutations.
+- **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.5 pinch zoom + mouse wheel").
 - **Commit:** §15.
 
 ### PHASE 04 — INVENTORY
@@ -834,8 +861,9 @@ No large world expansion before this gate passes.
 | M03.2 | `6991da1` |
 | M03.3 | `5cd8692` |
 | M03.4 | `32c98b8` |
+| M03.5 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 03 — Camera / world shell. M03.1–M03.4 implemented (`[~]`, runtime test pending; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's M03.2/M03.3's and M03.4's runtime tests). The next development milestone is **M03.5 — clamped pinch zoom (+ mouse wheel)**. Either starts only on the developer's instruction.
+- **Current phase:** 03 — Camera / world shell. M03.1–M03.5 implemented (`[~]`, runtime test pending; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's and M03.5's runtime tests). The next development milestone is **M03.6 — place data out of code (A5)**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.
