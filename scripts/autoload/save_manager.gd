@@ -14,6 +14,7 @@ func save_game() -> void:
 		"journal_entries": JournalManager.get_save_data(),
 		"daily_discovery": DailyDiscoveryManager.get_save_data(),
 		"farm": FarmManager.get_save_data(),
+		"settings": InputManager.get_settings_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -40,6 +41,7 @@ func load_game() -> bool:
 	JournalManager.apply_save_data(parsed.get("journal_entries", {}))
 	DailyDiscoveryManager.apply_save_data(parsed.get("daily_discovery", {}))
 	FarmManager.apply_save_data(parsed.get("farm", {}))
+	InputManager.apply_settings_data(parsed.get("settings", {}))
 	return true
 
 func has_save_file() -> bool:

@@ -14,6 +14,7 @@ func _ready() -> void:
 	FarmManager.crop_harvested.connect(_save.unbind(4))
 	FarmManager.seed_found.connect(_save.unbind(2))
 	FarmManager.milestone_reached.connect(_save.unbind(3))
+	InputManager.movement_mode_changed.connect(_save.unbind(1))
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:

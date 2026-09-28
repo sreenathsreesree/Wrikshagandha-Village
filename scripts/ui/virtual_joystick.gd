@@ -25,6 +25,14 @@ var _smoothed_vector: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	_base_center = base.size / 2.0
 	_reset_thumb()
+	visibility_changed.connect(_on_visibility_changed)
+
+## Hidden (Tap to Move selected): let go of any touch in progress so no
+## stale deflection keeps steering the player.
+func _on_visibility_changed() -> void:
+	if not is_visible_in_tree():
+		_release()
+		_smoothed_vector = Vector2.ZERO
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:

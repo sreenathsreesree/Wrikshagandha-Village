@@ -18,6 +18,8 @@ const NEW_CROP_CARD_DELAY := 1.1
 @onready var journal_button: Button = $ScreenButtons/JournalButton
 @onready var daily_button: Button = $ScreenButtons/DailyButton
 @onready var basket_button: Button = $ScreenButtons/BasketButton
+@onready var movement_button: Button = $ScreenButtons/MovementButton
+@onready var mobile_controls: Control = $MobileControls
 
 @onready var collection_screen: CollectionScreen = $CollectionScreen
 @onready var journal_screen: JournalScreen = $JournalScreen
@@ -48,6 +50,9 @@ func _ready() -> void:
 	daily_button.pressed.connect(daily_screen.open)
 	basket_button.pressed.connect(basket_screen.open)
 	_update_basket_button()
+	movement_button.pressed.connect(_on_movement_button_pressed)
+	InputManager.movement_mode_changed.connect(_on_movement_mode_changed)
+	_on_movement_mode_changed(InputManager.movement_mode)
 
 	_on_points_changed(PointsManager.get_points())
 	_update_discoveries_label()
@@ -144,6 +149,18 @@ func _show_new_crop_card(crop_definition: CropDefinition) -> void:
 	var note := crop_definition.found_seed_note if crop_definition.found_seed_note != "" else "A seed you've never seen before."
 	var garden := ExplorationManager.get_place_display_name(FarmManager.GARDEN_PLACE_ID)
 	notification.show_message("%s A New Crop %s" % [crop_definition.icon_glyph, crop_definition.icon_glyph], "%s\n%s" % [crop_definition.display_name, note], "Plant it in the %s" % garden)
+
+## The one movement setting: Joystick ↔ Tap to Move. The joystick is only
+## shown in Joystick mode; the button shows the current mode.
+func _on_movement_button_pressed() -> void:
+	AmbientAudioManager.play_ui_feedback()
+	InputManager.set_tap_to_move(not InputManager.is_tap_to_move())
+
+func _on_movement_mode_changed(_mode: int) -> void:
+	var tap := InputManager.is_tap_to_move()
+	mobile_controls.visible = not tap
+	movement_button.text = "👆" if tap else "🕹"
+	movement_button.tooltip_text = "Movement: Tap to Move" if tap else "Movement: Joystick"
 
 ## The basket button only appears once there's something in the basket.
 func _update_basket_button() -> void:

@@ -7,6 +7,12 @@ extends CharacterBody3D
 ## it's within TAP_REACH. InteractionZone still toggles each Interactable's
 ## indicator as it enters/leaves range and feeds it a live proximity value,
 ## so approaching something builds anticipation before the harvest itself.
+##
+## Two control schemes feed the same movement code (InputManager.
+## movement_mode): the joystick's move_vector, or Tap to Move, where the
+## NavigationAgent3D's path supplies the direction instead. Either way the
+## body moves with the same acceleration and move_and_slide(), so obstacles
+## block it exactly the same. Joystick input always wins over a path.
 
 const MAX_SPEED := 4.3
 const ACCELERATION := 15.0
@@ -21,6 +27,13 @@ const INTERACTION_RADIUS := 2.2
 ## How far away a tapped object can be and still respond: the thing you
 ## touch, not the nearest thing, but not from across the meadow either.
 const TAP_REACH := 8.0
+## Tap to Move eases off over the last stretch so arriving isn't a hard stop.
+const ARRIVAL_SLOWDOWN_DISTANCE := 1.2
+const ARRIVAL_MIN_SPEED := 0.35
+## A path that stops making progress (pressed against something the mesh
+## didn't know about) is dropped after this long.
+const NAVIGATION_STUCK_SECONDS := 1.0
+const NAVIGATION_STUCK_SPEED := 0.25
 const DEAD_ZONE := 0.12
 
 ## Shapes the raw joystick deflection before it becomes a target speed.
@@ -31,6 +44,7 @@ const INPUT_RESPONSE_CURVE := 1.2
 
 @onready var interaction_zone: Area3D = $InteractionZone
 @onready var visual: Node3D = $Visual
+@onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
 
 var _nearby_interactables: Array[Interactable] = []
 var _facing_angle: float = 0.0
@@ -40,16 +54,27 @@ var _footstep_timer: float = 0.0
 ## away — a second tap on the same one mid-animation must not harvest it
 ## twice. Dropped automatically once the object is freed.
 var _spent_interactables: Array[Interactable] = []
+var _navigating: bool = false
+var _navigation_stuck_time: float = 0.0
+## Tap to Move: an Interactable tapped out of reach, walked to and
+## interacted with on arrival.
+var _approach_target: Interactable
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
 	interaction_zone.area_exited.connect(_on_interaction_zone_area_exited)
 	InputManager.interact_requested.connect(_on_interact_requested)
 	InputManager.interact_target_requested.connect(_on_interact_target_requested)
+	InputManager.move_target_requested.connect(_on_move_target_requested)
+	InputManager.movement_mode_changed.connect(_on_movement_mode_changed)
 	_facing_angle = visual.rotation.y
 
 func _physics_process(delta: float) -> void:
 	var direction := _shape_input(InputManager.move_vector)
+	if direction != Vector3.ZERO:
+		_stop_navigation()
+	elif _navigating:
+		direction = _navigation_direction()
 
 	if is_on_floor():
 		velocity.y = 0.0
@@ -66,6 +91,8 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	var speed := horizontal_velocity.length()
+	if _navigating:
+		_update_navigation_progress(delta, speed)
 	_update_facing(direction, delta)
 	_update_walk_bob(delta, speed)
 	_update_footsteps(delta, speed)
@@ -167,13 +194,89 @@ func _on_interact_requested() -> void:
 		return
 	_interact_with(target)
 
-## A tap landed on this exact Interactable (see InputManager).
+## A tap landed on this exact Interactable (see InputManager). Within
+## reach it's interacted with at once, as before. Out of reach, Tap to Move
+## walks there first; with the joystick it's ignored, as before.
 func _on_interact_target_requested(target: Interactable) -> void:
 	if not is_instance_valid(target):
 		return
-	if global_position.distance_to(target.global_position) > TAP_REACH:
+	if global_position.distance_to(target.global_position) <= TAP_REACH:
+		_stop_navigation()
+		_interact_with(target)
 		return
-	_interact_with(target)
+	if InputManager.is_tap_to_move():
+		_start_navigation(target.global_position)
+		_approach_target = target if _navigating else null
+
+func _on_move_target_requested(destination: Vector3) -> void:
+	_start_navigation(destination)
+	if _navigating:
+		_spawn_destination_marker(destination)
+
+func _on_movement_mode_changed(_mode: int) -> void:
+	_stop_navigation()
+
+# --- Tap to Move -----------------------------------------------------------------
+
+## A new tap simply replaces the destination — the path is recomputed from
+## wherever the player is now, mid-walk or not.
+func _start_navigation(destination: Vector3) -> void:
+	_approach_target = null
+	nav_agent.target_position = destination
+	_navigating = true
+	_navigation_stuck_time = 0.0
+
+func _stop_navigation() -> void:
+	_navigating = false
+	_approach_target = null
+	_navigation_stuck_time = 0.0
+
+## Direction toward the next corner of the agent's path, scaled down over
+## the last stretch. Called from _physics_process only while navigating.
+func _navigation_direction() -> Vector3:
+	if nav_agent.is_navigation_finished():
+		_stop_navigation()
+		return Vector3.ZERO
+	var to_next := nav_agent.get_next_path_position() - global_position
+	to_next.y = 0.0
+	if to_next.length() < 0.01:
+		return Vector3.ZERO
+	var to_goal := nav_agent.get_final_position() - global_position
+	to_goal.y = 0.0
+	var pace := clampf(to_goal.length() / ARRIVAL_SLOWDOWN_DISTANCE, ARRIVAL_MIN_SPEED, 1.0)
+	return to_next.normalized() * pace
+
+## Arrival at a tapped Interactable, and giving up on a path that has
+## stalled against something.
+func _update_navigation_progress(delta: float, speed: float) -> void:
+	if _approach_target != null:
+		if not is_instance_valid(_approach_target):
+			_stop_navigation()
+			return
+		if global_position.distance_to(_approach_target.global_position) <= TAP_REACH:
+			var target := _approach_target
+			_stop_navigation()
+			_interact_with(target)
+			return
+	if speed < NAVIGATION_STUCK_SPEED:
+		_navigation_stuck_time += delta
+		if _navigation_stuck_time >= NAVIGATION_STUCK_SECONDS:
+			_stop_navigation()
+	else:
+		_navigation_stuck_time = 0.0
+
+## A quiet acknowledgement of where a tap will take the player: the same
+## small, self-clearing burst the farm uses for dust, in a pale tint.
+func _spawn_destination_marker(destination: Vector3) -> void:
+	var burst := Interactable.HarvestBurstScene.instantiate() as HarvestBurst
+	if burst == null:
+		return
+	burst.tint = Color(0.95, 0.95, 0.88, 1.0)
+	burst.burst_radius = 0.22
+	burst.vertical = 0.25
+	burst.start_height = 0.03
+	get_parent().add_child(burst)
+	burst.global_position = destination
 
 ## The one place interact() is called, whichever way it was asked for.
 func _interact_with(target: Interactable) -> void:
