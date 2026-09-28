@@ -765,8 +765,8 @@ face_calls = [c for c in face_calls if c[1]]
 if face_calls != [(PL, 1)] or "_face_target(" not in iw:
     err(f"_face_target() must be called only from Player._interact_with (found {face_calls})")
 writers = sorted({m for m in re.findall(r"^func (\w+)\(", pl_src, re.M) if "_facing_angle =" in (func_body(pl_src, m) or "")})
-if writers != ["_face_target", "_ready", "_update_facing"]:
-    err(f"{PL}: _facing_angle may only be set in _ready/_update_facing/_face_target (found {writers})")
+if writers != ["_face_target", "_ready", "_update_facing", "place_at"]:
+    err(f"{PL}: _facing_angle may only be set in _ready/_update_facing/_face_target/place_at (found {writers})")
 if re.search(r"_face_target|target\.global_position", func_body(pl_src, "_physics_process") or "") or \
    re.search(r"_approach_target|_interaction_target", func_body(pl_src, "_update_facing") or ""):
     err(f"{PL}: no continuous turning toward a target while walking")
@@ -929,14 +929,86 @@ if found_al != AUTOLOADS:
 # Deliberate-change pins: files a milestone promised not to touch. Changing
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
-PINNED = {"scripts/player/player.gd": "17c051f39f44d2e1", "scripts/autoload/input_manager.gd": "bd56f4c597de8b35",
+PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "bd56f4c597de8b35",
           "scripts/camera/follow_camera.gd": "defdcc07193979c4", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
-          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053"}
+          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
+          # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
+          "scripts/autoload/farm_manager.gd": "b379309985b0e32f", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          "scripts/autoload/save_manager.gd": "2da42b4bc60ce76a", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83"}
 for f, h in PINNED.items():
     got = hashlib.sha256(open(f, "rb").read()).hexdigest()[:16] if os.path.exists(f) else None
     if got != h:
         err(f"{f}: changed (sha256 {got}, pinned {h}) — if deliberate, update the pin in tools/check_project.py and record why")
 notes.append(f"persistent shell: Main owns {sorted(SHELL)}; startup {MAIN_SCENE}; {len(PINNED)} pinned files; {len(AUTOLOADS)} autoloads")
+
+# ------------------------------------------------------------ area loader (M03.2)
+# Infrastructure only: Main.load_area(scene, entry_id) swaps the area,
+# deferred, freeing the old one before the new one registers, and places the
+# player on a named AreaEntry. Nothing in the game calls it yet.
+ENTRY_GD = "scripts/world/area_entry.gd"
+es = scripts.get(ENTRY_GD, "")
+if not re.search(r"^extends Marker3D\s*\nclass_name AreaEntry", es, re.M) or \
+   not re.search(r"func _enter_tree\(\) -> void:\s*add_to_group\(GROUP\)", es) or 'const GROUP := &"area_entry"' not in es:
+    err(f"{ENTRY_GD}: AreaEntry is a Marker3D that joins the area_entry group")
+entry_scenes = {}
+for path in glob.glob("**/*.tscn", recursive=True):
+    if path.startswith((".godot", "tools/")): continue
+    s2, secs, ext, _ = load_scene_info(path)
+    for k, a, b in secs:
+        m = re.search(r'^script = ExtResource\("([^"]+)"\)', b, re.M)
+        if k == "node" and m and script_for_ext(ext, m.group(1)) == ENTRY_GD:
+            eid = re.search(r'^entry_id = "([^"]*)"', b, re.M)
+            pos = re.search(r"^position = Vector3\(([^)]*)\)", b, re.M)
+            entry_scenes.setdefault(path, []).append((eid.group(1) if eid else "", pos.group(1).replace(" ", "") if pos else "0,0,0"))
+for path, entries in entry_scenes.items():
+    ids = [e for e, _ in entries]
+    for e in ids:
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", e):
+            err(f"{path}: AreaEntry id '{e}' must be a non-empty lower_snake_case id")
+    if len(set(ids)) != len(ids):
+        err(f"{path}: duplicate AreaEntry ids {ids}")
+if not entry_scenes.get(MEADOW_SCENE):
+    err(f"{MEADOW_SCENE}: an area needs at least one AreaEntry")
+boot_player = re.search(r'\[node name="Player" parent="\." [^\n]*\]\nposition = Vector3\(([^)]*)\)', open(MAIN_SCENE, encoding="utf-8").read())
+if ("meadow_start", boot_player.group(1).replace(" ", "") if boot_player else None) not in entry_scenes.get(MEADOW_SCENE, []):
+    err(f"{MEADOW_SCENE}: the 'meadow_start' entry must sit exactly where Main boots the player (boot unchanged)")
+main_src = scripts.get(MAIN_GD, "")
+la = func_body(main_src, "load_area") or ""
+if not re.search(r"_swap_area\.call_deferred\(scene, entry_id\)", la) or re.search(r"remove_child|free\(|add_child|place_at", la):
+    err(f"{MAIN_GD}: load_area() only defers the swap (never runs inside the unloading area's callback)")
+sw = code_only(func_body(main_src, "_swap_area") or "")
+order = ["FarmManager.cancel_seed_choice()", "remove_child(old)", "old.free()", "add_child(area)", "move_child(area, 0)",
+         "area.attach_player(player)", "_find_entry(area, entry_id)", "player.place_at(entry.global_transform)", "follow_camera.global_position = player.global_position"]
+idx = [sw.find(k) for k in order]
+if -1 in idx or idx != sorted(idx) or re.search(r"queue_free|await|call_deferred", sw):
+    err(f"{MAIN_GD}: _swap_area() must cancel the picker, remove and free() the old area, then add (first), attach, place and snap — no queue_free/await")
+fe = code_only(func_body(main_src, "_find_entry") or "")
+if not all(k in fe for k in ("get_nodes_in_group(AreaEntry.GROUP)", "in_area.is_ancestor_of(entry)", "entry.entry_id == entry_id", "entry.entry_id < first.entry_id")):
+    err(f"{MAIN_GD}: _find_entry() picks the named entry of this area, else the lowest id (deterministic)")
+callers = [f for f, s2 in scripts.items() if f != MAIN_GD and re.search(r"\bload_area\(|_swap_area", code_only(s2))]
+if callers or len(re.findall(r"\b_swap_area\b", code_only(main_src))) != 2:
+    err(f"the area loader is infrastructure only — nothing in the game calls it yet (found {callers})")
+for path in glob.glob("**/*.tscn", recursive=True):
+    if "load_area" in open(path, encoding="utf-8").read():
+        err(f"{path}: connects to load_area — no player-facing transition before M08.1")
+actions = sorted(re.findall(r"^(\w+)=\{", re.search(r"\[input\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)) if "[input]" in cfg else []
+if actions != ["move_down", "move_left", "move_right", "move_up"]:
+    err(f"project.godot: input actions changed {actions} — no new (debug) actions")
+pa = code_only(func_body(pl_src, "place_at") or "")
+if not re.search(r"func place_at\(spot: Transform3D\) -> void:\s*_stop_navigation\(\)\s*velocity = Vector3\.ZERO\s*global_position = spot\.origin", pa) \
+   or not re.search(r"if forward\.length\(\) < FACE_TARGET_MIN_DISTANCE:\s*return.*_facing_angle = atan2\(forward\.x, -forward\.z\)", pa, re.S) \
+   or re.search(r"\bAreaEntry\b|MeadowArea|\bMain\b|InputManager|_interact_with|interact\(|await|\bis\s+[A-Z]", pa):
+    err(f"{PL}: place_at() stays minimal and generic: stop the walk, zero velocity, set position, face the spot's forward")
+pa_callers = [f for f, s2 in scripts.items() if f not in (PL,) and re.search(r"\.place_at\(", code_only(s2))]
+if pa_callers != [MAIN_GD]:
+    err(f"Player.place_at() is called only by Main's area loader (found {pa_callers})")
+used = set(re.findall(r"\bplayer\.(\w+)", code_only(main_src)))
+if used - {"global_position", "global_transform", "place_at"}:
+    err(f"{MAIN_GD}: Main uses only Player.place_at() and its transform — never Player internals (found {sorted(used)})")
+for f, s2 in scripts.items():
+    if f != PL and re.search(r"\bplayer\._\w+", code_only(s2)):
+        err(f"{f}: reaches into Player's private members")
+notes.append(f"area loader: entries {entry_scenes}")
 
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from

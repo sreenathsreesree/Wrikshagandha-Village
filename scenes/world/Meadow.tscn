@@ -1,6 +1,7 @@
-[gd_scene load_steps=46 format=3]
+[gd_scene load_steps=47 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/MeadowFlower.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/WildMint.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/interactables/SmallMushroom.tscn" id="5"]
@@ -870,4 +871,6 @@ radius = 5.0
 [node name="WorldSimulation" parent="." instance=ExtResource("28")]
 
 [node name="PlayerSpawn" type="Marker3D" parent="."]
-position = Vector3(0, 0, 5)
+position = Vector3(0, 0.2, 5)
+script = ExtResource("entry")
+entry_id = "meadow_start"

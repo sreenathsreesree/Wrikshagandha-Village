@@ -356,6 +356,23 @@ func _set_selected_target(target: Interactable) -> void:
 	if target != null:
 		target.set_tap_selected(true)
 
+## Puts the player on a spot — e.g. an area entry marker when Main changes
+## area (M03.2). Ends any tap-started walk and pending interaction (the same
+## stop as tapping the player), drops leftover momentum and faces the spot's
+## forward (-Z), snapped rather than turned since it's a new place. Generic:
+## knows nothing about areas.
+func place_at(spot: Transform3D) -> void:
+	_stop_navigation()
+	velocity = Vector3.ZERO
+	global_position = spot.origin
+	var forward: Vector3 = -spot.basis.z
+	forward.y = 0.0
+	if forward.length() < FACE_TARGET_MIN_DISTANCE:
+		return
+	# Node3D's local forward is -Z, so solve sin(a)=dx, cos(a)=-dz.
+	_facing_angle = atan2(forward.x, -forward.z)
+	visual.rotation.y = _facing_angle
+
 ## Turn toward the object about to be interacted with — once, at the
 ## interaction boundary, never while walking. It only sets the facing that
 ## _update_facing() already eases the visual toward, so the turn is the

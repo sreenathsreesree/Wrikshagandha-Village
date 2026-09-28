@@ -406,7 +406,15 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - the HUD shows as before (buttons, joystick, notifications, screens);
     - tap-to-move paths still work (the navigation mesh bakes); tap-to-interact, cancellation, facing and feedback unchanged;
     - wildlife, vegetation, time of day, environmental events and landmarks still react to the player;
-    - discoveries, farm, saving and reloading work as before.
+    - discoveries, farm, saving and reloading work as before;
+  - **M03.2 area loader — reload round-trip (use a THROWAWAY save: the farm resets on reload until M03.3):**
+    - from the Godot remote debugger, call `load_area(load("res://scenes/world/Meadow.tscn"), "meadow_start")` on `/root/Main`;
+    - expect: no errors; one Meadow; the player at the start, facing the marker's forward, no walk continuing; the camera snapped (no glide across the map); the HUD intact;
+    - tap-to-move works again once the navigation mesh rebuilds; tap-to-interact, feedback and facing work on the new area's objects; wildlife/world simulation reacts to the player;
+    - with a walk or an interaction in progress when reloading: it ends cleanly (INTERACT back to IDLE/WALK);
+    - with the seed picker open when reloading: it closes;
+    - an unknown entry id (e.g. `"nowhere"`): a warning, and the player lands on `meadow_start`;
+    - expected until later milestones: farm plots restart (M03.3); discoveries respawn and one-time events/time of day reset.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -571,7 +579,7 @@ Goal: persistent Player/Camera/HUD with swappable areas.
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
 | M03.1 | Persistent shell: move Player, Camera and HUD out of `Meadow.tscn` into `Main` (A1) | Meadow loads as a child area; everything works as before | Full Meadow walk-through | `[~]` |
-| M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[ ]` |
+| M03.2 | Area loader with named entry markers | An area can be unloaded/reloaded | Reload round-trip | `[~]` |
 | M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[ ]` |
 | M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[ ]` |
 | M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[ ]` |
@@ -599,6 +607,24 @@ Goal: persistent Player/Camera/HUD with swappable areas.
   - `sim_tap_movement.py` reads the spawn from `Main.tscn` (and checks the Meadow sits at the origin); geometry: spawn and 16 interactables clear of obstacles.
   - Mutation-tested: 29 GDScript/scene mutations and 3 model mutations caught.
 - **Runtime:** no Godot executable in this environment, so no headless load — **the scene change is verified statically only**. PLAYTEST REQUIRED (M01.6 checklist, "M03.1 persistent shell").
+- **Commit:** §15.
+
+**M03.2 — Area loader with named entry markers** `[~]` Implemented — infrastructure only, runtime testing pending (M01.6 checklist)
+- **Objective:** an area can be unloaded and reloaded into the persistent shell, entering at a named marker. Not player-accessible.
+- **Audit (reported before changes):** no loading code existed (Main instanced the Meadow statically); one marker (`PlayerSpawn`, unscripted, unused); risks on unload: farm plot state lost (FarmManager captures only live plots; saved states are erased on registration) and the next autosave persists it — **M03.3**; `register_plot()` rejects a plot id held by a still-valid node, so the old area must be `free()`d, not `queue_free()`d, and the swap must be deferred; discovery respawns/one-time events/time of day live in the area and reset; landmarks/secrets are safe (ExplorationManager); Player references are guarded; the camera needs a snap.
+- **Decisions (developer):** keep M03.2 narrow (no farm snapshot; M03.3 follows immediately, before any real transition); add a minimal public `Player.place_at(transform)`; trigger the runtime round-trip from the Godot remote debugger (no debug action or gameplay trigger).
+- **Files:** `scripts/main.gd`, new `scripts/world/area_entry.gd`, `scenes/world/Meadow.tscn` (PlayerSpawn → AreaEntry `meadow_start`, moved to the boot position (0, 0.2, 5)), `scripts/player/player.gd` (`place_at()` only; pin updated deliberately), `tools/check_project.py`, new `tools/sims/sim_area_loader.py`, docs.
+- **Implementation:**
+  - `Main.load_area(scene, entry_id)` → deferred `_swap_area()`: cancel seed picker → `remove_child(old)` → `old.free()` → `add_child(new)` → `move_child(new, 0)` → `attach_player()` → `_find_entry()` (named, else lowest id, else stay) → `player.place_at()` → camera snap. Rejects a non-area scene.
+  - `AreaEntry` (Marker3D, group `area_entry`, `entry_id`).
+  - `Player.place_at(spot)`: `_stop_navigation()`, `velocity = 0`, position, facing from the spot's −Z (snapped).
+  - Boot unchanged; no player-facing transition; no input action; FarmManager/FarmPlot/SaveManager/GameState untouched (now pinned).
+- **Verification (in code):**
+  - `tools/run_all.sh` passes (all 5 simulations).
+  - New checks: AreaEntry script and group; entry ids lower_snake_case, non-empty, unique per area; the Meadow has an entry; `meadow_start` equals the boot position; `load_area()` only defers; `_swap_area()` order (no `queue_free`/`await`); `_find_entry()` scoped and deterministic; nothing calls the loader (scripts or scenes); input actions closed to `move_*`; `place_at()` minimal/generic (walk stopped, velocity zeroed, position, guarded facing; no area/Main/InputManager/interaction knowledge) and called only by Main; Main uses only `place_at()` and the player's transform; no script touches Player's private members; content pins for FarmManager, FarmPlot, SaveManager, GameState; Player pin updated deliberately.
+  - `sim_area_loader.py`: swap order and rules read from source; one area after a swap; all 7 plots re-register (a `queue_free` or add-first order rejects them all — shown); deferred swap keeps the calling area alive through its callback; entries named/fallback/none, stray entries outside the area ignored; placement and camera snap; 2,000 random sequences.
+  - Mutation-tested: 28 GDScript/scene/config mutations, all caught by `check_project.py` (15 also by the loader model); 4 of them re-run with the Player pin disabled to prove the `place_at()` content rules alone; 6 mutations of the model itself caught.
+- **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.2 area loader", on a throwaway save).
 - **Commit:** §15.
 
 ### PHASE 04 — INVENTORY
@@ -757,8 +783,9 @@ No large world expansion before this gate passes.
 | M02.5 | `f0003dd` |
 | M02.6 | `c067fe3` |
 | M03.1 | `d000146` |
+| M03.2 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 03 — Camera / world shell. M03.1 implemented (`[~]`, runtime test pending). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's and M03.1's runtime tests). The next development milestone is **M03.2 — area loader with named entry markers**. Either starts only on the developer's instruction.
+- **Current phase:** 03 — Camera / world shell. M03.1–M03.2 implemented (`[~]`, runtime test pending; M03.2 is infrastructure only). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's and M03.2's runtime tests). The next development milestone is **M03.3 — area-safe world state (farm plots first)**, which must land before any real area transition is exposed. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

@@ -32,7 +32,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 │   ├── Ambient / EnvironmentalEvents / ExplorationLandmarks
 │   ├── WorldSimulation              TimeOfDay, Environment, Vegetation, Wildlife,
 │   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers
-│   └── PlayerSpawn                  Marker3D (world content; unused by code yet — M03.2 entry markers)
+│   └── PlayerSpawn                  AreaEntry "meadow_start" (scripts/world/area_entry.gd) at the boot position
 ├── Player                           scenes/player/Player.tscn      (shell)
 ├── FollowCamera                     scenes/camera/FollowCamera.tscn (shell; the only Camera3D)
 └── HUD (CanvasLayer)                scenes/ui/HUD.tscn             (shell)
@@ -45,9 +45,11 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - `main.gd` wires the shell once, after every child is ready: the camera follows the player, and `MeadowArea.attach_player()` hands the player to the area's WorldSimulation. `meadow.gd` only bakes navigation and configures its own world simulation.
   - Navigation stays with the area: the Meadow's NavigationRegion3D (settings unchanged, baked from its static colliders) and the Player's NavigationAgent3D share the one World3D navigation map.
   - Tree order keeps the old processing order: the area first, then Player, then FollowCamera, then HUD.
-- **Known issue (Phase 03):** FarmManager still assumes plots never unload (M03.3); areas can't be swapped yet (M03.2).
+- **Area loader (M03.2) — infrastructure only:** `Main.load_area(scene, entry_id)` defers `_swap_area()`, which: closes the seed picker; removes the old area and `free()`s it at once (a `queue_free()` would leave its plots alive and FarmManager would reject the new plots as duplicates); adds the new area as Main's first child (processing order unchanged); `attach_player()`; places the player on the named `AreaEntry` (else the lowest id, deterministic; else the player stays put) via `Player.place_at()`; snaps the camera. Synchronous, no autoload, no transition. **Nothing in the game calls it** — no door or trigger until M08.1; for the playtest it is called from the Godot remote debugger. Boot is unchanged (the Meadow is still instanced in `Main.tscn`; `meadow_start` sits exactly where the player boots).
+  - `AreaEntry` (Marker3D, group `area_entry`): `entry_id` is lower_snake_case and unique within its area; the player faces the marker's −Z.
+- **Known issue (Phase 03):** farm state does not survive an area reload yet — FarmManager only captures live plots, so a reload restarts the plots and the next autosave keeps that (**M03.3, next**). Also reset by a reload (by design until later phases): discovery respawn timers (a reload respawns every discovery, including the non-respawning Ancient Seed — A4/Phase 05), one-time environmental events, time of day.
 - **Direction (Phase 03):**
-  - Swappable area scenes loaded into the persistent shell by an area loader at named entry markers (M03.2).
+  - Area-safe world state by stable id (M03.3), then player-facing transitions (M08.1 door).
   - Each area owns its NavigationRegion3D.
   - World state is restored by stable id when an area registers, as FarmPlot already does.
 
@@ -86,7 +88,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
     - IDLE ↔ WALK comes from the actual post-collision speed, with hysteresis (0.35 / 0.15 m/s), in the existing physics step.
     - INTERACT spans the real `interact()` call (awaited) or ends when the object leaves the tree.
   - Future animation assets subscribe to this one signal. The procedural bob/squash/facing is separate and unchanged.
-- **Facing:** `_update_facing()` faces the intended movement direction (input or path); `_face_target()` faces the object being interacted with. Nothing else sets the facing.
+- **Facing:** `_update_facing()` faces the intended movement direction (input or path); `_face_target()` faces the object being interacted with; `place_at()` faces a placement spot's forward. Nothing else sets the facing.
+- **Placement (M03.2):** `place_at(spot: Transform3D)` — the only public way to move the player: ends any tap-started walk and pending interaction (`_stop_navigation()`), zeroes velocity, sets the position, faces the spot's −Z (kept when it has no horizontal direction). Generic; called only by Main's area loader.
 - **Direction:** interaction feedback (M02.4). The occasional stuck/spinning navigation is left for a later movement-polish pass.
 
 ## 5. Camera
