@@ -77,9 +77,13 @@ Main (Node3D)                       scenes/Main.tscn
     - Otherwise the player walks toward it (NavigationAgent3D path to the nearest walkable point) and interacts on the zone's `area_entered` for that exact object. Event-driven, no distance polling.
     - With no navigation path yet (mesh still building at load), it heads straight for the target; collisions still block, and the stall timeout ends the walk.
     - `_interact_with()` is the single call site of `interact()`, with a double-harvest guard for one-shot discoveries.
-- **Direction:**
-  - Animation-state signals for future rigs (Phase 01).
-  - An approach point beside objects (Phase 02).
+- **Animation state hook** (`class_name Player`):
+  - `AnimState { IDLE, WALK, INTERACT }`, read with `get_animation_state()`, announced by `animation_state_changed(state, previous)` only on change.
+  - It describes gameplay; it never drives movement or interaction.
+    - IDLE ↔ WALK comes from the actual post-collision speed, with hysteresis (0.35 / 0.15 m/s), in the existing physics step.
+    - INTERACT spans the real `interact()` call (awaited) or ends when the object leaves the tree.
+  - Future animation assets subscribe to this one signal. The procedural bob/squash/facing is separate and unchanged.
+- **Direction:** facing the object on arrival and interaction feedback (Phase 02).
 
 ## 5. Camera
 - **Current** (`scripts/camera/follow_camera.gd`): Node3D → SpringArm3D (−42°, 11 m) → Camera3D (FOV 50); smooth follow, velocity look-ahead, FOV widening at speed.

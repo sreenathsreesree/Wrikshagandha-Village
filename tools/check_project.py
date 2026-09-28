@@ -549,6 +549,46 @@ for f, fn, ok, why in contracts:
         err(f"{f}: {fn}() breaks tap contract: {why}")
 notes.append(f"tap contracts checked: {len(contracts)}")
 
+# ------------------------------------------------------------ animation hook
+# One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
+# real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).
+anim_enums = [(f, m.group(1), m.group(2)) for f, s2 in scripts.items()
+              for m in re.finditer(r"^enum\s+(\w*Anim\w*)\s*\{([^}]*)\}", s2, re.M)]
+if len(anim_enums) != 1 or anim_enums[0][0] != PL or anim_enums[0][1] != "AnimState":
+    err(f"animation state: expected exactly one 'enum AnimState' in {PL}, found {[(f, n) for f, n, _ in anim_enums]}")
+else:
+    states = {x.strip() for x in anim_enums[0][2].split(",") if x.strip()}
+    if states != {"IDLE", "WALK", "INTERACT"}:
+        err(f"{PL}: AnimState must be exactly IDLE, WALK, INTERACT (found {sorted(states)})")
+emitters = [f for f, s2 in scripts.items() if "animation_state_changed.emit" in s2]
+if emitters != [PL] or scripts[PL].count("animation_state_changed.emit") != 1:
+    err(f"animation_state_changed must be emitted in exactly one place in {PL} (found in {emitters})")
+MOVEMENT_LOGIC = re.compile(r"\bvelocity\s*=|move_and_slide|nav_agent|_stop_navigation|_start_navigation|"
+                            r"_interact_with|InputManager|\.interact\(|global_position\s*=")
+anim_contracts = [
+    ("_set_animation_state", lambda b: "if state == _animation_state:" in b and "animation_state_changed.emit" in b
+         and not MOVEMENT_LOGIC.search(b), "single emitter, only on change, no movement/interaction logic"),
+    ("_update_movement_animation_state", lambda b: "WALK_START_SPEED" in b and "WALK_STOP_SPEED" in b
+         and "AnimState.INTERACT" in b and not MOVEMENT_LOGIC.search(b),
+     "IDLE/WALK from speed with hysteresis, INTERACT untouched, no movement logic"),
+    ("_physics_process", lambda b: "_update_movement_animation_state(" in b, "state evaluated in the existing physics step"),
+    ("_interact_with", lambda b: re.search(r"_begin_interaction\(target\).*await target\.interact\(\).*_end_interaction\(serial\)", b, re.S) is not None,
+     "INTERACT begins before and ends after the real interact() call"),
+    ("_begin_interaction", lambda b: "tree_exiting.connect" in b and "AnimState.INTERACT" in b,
+     "INTERACT ends if the object disappears"),
+    ("_end_interaction", lambda b: "serial != _interaction_serial" in b and "AnimState.IDLE" in b and not MOVEMENT_LOGIC.search(b),
+     "only the current interaction ends INTERACT; returns to IDLE/WALK; no movement logic"),
+]
+for fn, ok, why in anim_contracts:
+    body = func_body(scripts.get(PL, ""), fn)
+    if body is None:
+        err(f"{PL}: {fn}() missing (animation contract: {why})")
+    elif not ok(body):
+        err(f"{PL}: {fn}() breaks animation contract: {why}")
+if re.search(r"\bTimer\b|create_timer", scripts.get(PL, "")):
+    err(f"{PL}: no timers in Player (animation state is event/state-change driven)")
+notes.append(f"animation contracts checked: {len(anim_contracts) + 3}")
+
 print("NOTES:"); [print("  " + n) for n in notes]
 print(f"{len(scripts)} scripts, {len(all_res)} resources checked")
 if errors:

@@ -210,4 +210,55 @@ for _ in range(20000):
     else: inp.mode_change()
     assert math.hypot(*inp.move) <= 1.0 + 1e-9
 print("keyboard/joystick combine: scripted cases + 20000 random events OK")
+# ------------------------------------------------ 5. animation state hook
+# Port of Player's IDLE/WALK/INTERACT state (constants read from player.gd).
+_PL = open(os.path.join(REPO, "scripts", "player", "player.gd")).read()
+WALK_START, WALK_STOP = _const("WALK_START_SPEED", _PL), _const("WALK_STOP_SPEED", _PL)
+assert WALK_START > WALK_STOP, "hysteresis needs start > stop"
+class Anim:
+    def __init__(a): a.state = "IDLE"; a.changes = []; a.serial = 0; a.target = None; a.speed = 0.0
+    def set(a, st):
+        if st == a.state: return
+        a.changes.append((a.state, st)); a.state = st
+    def physics(a, speed):
+        a.speed = speed
+        if a.state == "INTERACT": return
+        if a.state == "WALK":
+            if speed < WALK_STOP: a.set("IDLE")
+        elif speed > WALK_START: a.set("WALK")
+    def begin(a, target):
+        a.serial += 1; a.target = target; a.set("INTERACT"); return a.serial
+    def end(a, serial):
+        if serial != a.serial or a.target is None: return
+        a.target = None; a.set("WALK" if a.speed >= WALK_STOP else "IDLE")
+    def exiting(a): a.end(a.serial)
+
+a = Anim(); a.physics(0.0); assert a.state == "IDLE" and a.changes == []
+a.physics(2.0); assert a.state == "WALK", "IDLE -> WALK on real movement"
+a.physics(0.5); assert a.state == "WALK"
+a.physics(0.05); assert a.state == "IDLE", "WALK -> IDLE when stopped / arrived / cancelled"
+s1 = a.begin("flower"); assert a.state == "INTERACT", "IDLE -> INTERACT"
+a.physics(3.0); assert a.state == "INTERACT", "stays INTERACT while the interaction runs, even if moving"
+a.end(s1); assert a.state == "WALK", "INTERACT -> WALK if moving when it ends"
+a.physics(0.0); assert a.state == "IDLE"
+a.physics(2.0); s2 = a.begin("plot"); assert (("WALK", "INTERACT") in a.changes), "WALK -> INTERACT"
+a.physics(0.0); a.end(s2); assert a.state == "IDLE", "INTERACT -> IDLE"
+s3 = a.begin("gone"); a.physics(0.0); a.exiting(); assert a.state == "IDLE", "object vanished -> IDLE"
+s4 = a.begin("fails"); a.end(s4); assert a.state == "IDLE", "failed/instant interaction -> IDLE"
+s5 = a.begin("first"); s6 = a.begin("second"); a.end(s5); assert a.state == "INTERACT", "stale end ignored"
+a.end(s6); assert a.state == "IDLE"
+a = Anim(); a.physics(2.0)
+for v in [0.3, 0.2, 0.3, 0.2, 0.3]: a.physics(v)                # hovering between the thresholds
+assert a.changes == [("IDLE", "WALK")], "no IDLE/WALK flicker between thresholds"
+rnd = random.Random(11); a = Anim(); open_serials = []
+for _ in range(50000):
+    ev = rnd.random()
+    if ev < 0.6: a.physics(rnd.choice([0.0, 0.1, 0.2, 0.4, 1.0, 4.3]))
+    elif ev < 0.75: open_serials.append(a.begin(rnd.random()))
+    elif ev < 0.9 and open_serials: a.end(open_serials.pop(rnd.randrange(len(open_serials))))
+    else: a.exiting()
+    assert a.state in ("IDLE", "WALK", "INTERACT")
+    assert (a.state == "INTERACT") == (a.target is not None), "INTERACT exactly while an interaction is open"
+    for prev, new in a.changes[-1:]: assert prev != new
+print(f"animation state: scripted transitions + 50000 random events OK (walk {WALK_START}/{WALK_STOP} m/s)")
 print("ALL TAP SIMULATIONS PASSED")

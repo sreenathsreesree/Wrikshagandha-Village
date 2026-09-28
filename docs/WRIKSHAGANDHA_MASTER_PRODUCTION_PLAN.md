@@ -247,7 +247,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - `tools/run_all.sh` passes.
   - New checks: every `*_LAYER` constant must match its name in `project.godot`; any numeric layer/mask in other scripts fails.
   - Mutation-tested: a magic number in a ray query, a constant drifting from the project setting, a renamed layer, and a new numeric mask constant are all caught.
-- **Runtime test:** none of its own (identical values); taps on objects and ground are exercised in the M01.5 playtest.
+- **Runtime test:** none of its own (identical values); taps on objects and ground are exercised in the M01.6 playtest.
 - **Done when:** no magic mask numbers remain in scripts, enforced by the toolkit. ✔
 - **Commit:** §15.
 
@@ -333,11 +333,37 @@ Goal: comfortable, reliable movement in both modes on a real phone.
 - **Done when:** the player can stop a walk (and cancel a pending interaction) without joystick or keyboard. ✔ in code.
 - **Commit:** §15.
 
-**M01.5 — Animation state hooks** `[ ]`
-- **Objective:** Player emits idle/walk/interact state changes for future character rigs; the current procedural bob/squash is unchanged.
-- **Files:** `player.gd`.
-- **Verification:** toolkit.
-- **Done when:** signals fire on state changes (verified in code).
+**M01.5 — Animation state hooks** `[~]` Implemented — runtime testing pending (M01.6)
+- **Objective:** one gameplay state for future character animation (IDLE / WALK / INTERACT) that describes movement and interaction and never drives them. The current procedural bob/squash is unchanged.
+- **Audit:**
+  - No animation system existed (no AnimationPlayer, AnimationTree or AnimatedSprite; no state variable). Only procedural facing, bob and footsteps, driven by speed in the existing physics step.
+  - Movement state was implicit (`_navigating`, speed). `_interact_with()` is the single interaction call site.
+  - Discovery `interact()` is a coroutine (a harvest beat, then it's freed); `FarmPlot.interact()` returns immediately. Interacting doesn't block movement.
+  - There was nothing to reuse and nothing to duplicate.
+- **Files:** `scripts/player/player.gd`, `tools/check_project.py`, `tools/sims/sim_tap_movement.py`, docs.
+- **Implementation:**
+  - `class_name Player`; `enum AnimState { IDLE, WALK, INTERACT }`.
+  - `signal animation_state_changed(state, previous)`, emitted only on change from `_set_animation_state()`, its single emitter. `get_animation_state()` gives the current state.
+  - **IDLE ↔ WALK** comes from the body's actual post-collision speed (`get_real_velocity()`), evaluated in the existing physics step, with hysteresis (start above 0.35 m/s, stop below 0.15 m/s).
+  - **INTERACT** runs from just before the real `interact()` call until it returns (awaited), or until the object leaves the tree.
+    - A serial makes a stale end ignored.
+    - It ends in WALK if the player is moving, else IDLE.
+  - No timers, loops, autoloads or scene changes. Movement and interaction behaviour are unchanged; the one-shot double-harvest guard now registers just before `interact()` instead of just after its synchronous part (same protection).
+- **Verification:**
+  - `tools/run_all.sh` passes.
+  - 9 animation contracts on the real script; a state model in the movement simulation (full transition table, flicker, stale-end, vanished target, 50,000 random events).
+  - Mutation-tested: 10 GDScript and 4 model mutations caught.
+- **Runtime test (M01.6):**
+  - Connect a temporary print to `animation_state_changed`, or watch `get_animation_state()` in the remote inspector:
+    - standing → IDLE;
+    - tap, joystick or keyboard movement → WALK;
+    - arriving, cancelling, or tapping the player → IDLE;
+    - collecting a flower → INTERACT, then IDLE or WALK;
+    - a farm-plot tap → INTERACT, then back at once;
+    - no IDLE/WALK flicker when stopping or nudging the joystick;
+    - pushing against a rock reads IDLE.
+- **Known note:** INTERACT is instantaneous for interactions whose `interact()` returns at once (farm-plot actions). Longer interaction beats belong to Phase 02 if needed.
+- **Commit:** §15.
 
 **M01.6 — Android movement playtest** `[ ]` → **PLAYTEST REQUIRED**
 - **Objective:** confirm movement on a phone and decide the default mode (O-06).
@@ -349,6 +375,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - mound steps are climbable;
   - a tap while walking retargets;
   - tapping the player stops a walk and cancels a pending interaction;
+  - the animation state reads IDLE / WALK / INTERACT correctly (see M01.5's runtime test);
   - taps on buttons, screens and the seed picker never move the player;
   - a drag does not move the player;
   - note the load time (navmesh bake);
@@ -529,8 +556,9 @@ No large world expansion before this gate passes.
 | M01.2 | `d316ecc` |
 | M01.3 (was M01.2a) | `b663d76` |
 | M01.4 | `443503f` |
+| M01.5 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 01 — Player. M01.1–M01.4 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.5 — Animation state hooks**. It starts only on the developer's instruction.
+- **Current phase:** 01 — Player. M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED). It starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

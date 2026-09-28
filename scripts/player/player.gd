@@ -1,4 +1,5 @@
 extends CharacterBody3D
+class_name Player
 
 ## Moves the player from InputManager.move_vector (written by the on-screen
 ## joystick), with acceleration/deceleration and a smoothly-turning visual
@@ -16,6 +17,13 @@ extends CharacterBody3D
 ## body moves with the same acceleration and move_and_slide(), so obstacles
 ## block it exactly the same. Joystick/keyboard input always wins over a
 ## walk; a new tap replaces it.
+##
+## Animation hook (for future character rigs): one gameplay state —
+## IDLE / WALK / INTERACT — readable with get_animation_state() and
+## announced by animation_state_changed only when it changes. It is derived
+## from what the player is actually doing (real speed, the real interact()
+## call) and never feeds back into movement or interaction. The current
+## procedural bob/squash/facing is independent of it and unchanged.
 
 const MAX_SPEED := 4.3
 const ACCELERATION := 15.0
@@ -42,6 +50,17 @@ const DEAD_ZONE := 0.12
 ## without the joystick itself needing to know anything about this.
 const INPUT_RESPONSE_CURVE := 1.2
 
+## Gameplay state for animation. INTERACT lasts exactly as long as the
+## touched object's own interact() runs (a discovery's harvest beat; an
+## instant farm-plot action), or until that object leaves the tree.
+enum AnimState { IDLE, WALK, INTERACT }
+signal animation_state_changed(state: AnimState, previous: AnimState)
+## WALK starts above the first speed and ends below the second (actual
+## horizontal speed, m/s) — the gap stops IDLE/WALK flicker while easing
+## to a stop or nudging the joystick.
+const WALK_START_SPEED := 0.35
+const WALK_STOP_SPEED := 0.15
+
 @onready var interaction_zone: Area3D = $InteractionZone
 @onready var visual: Node3D = $Visual
 @onready var nav_agent: NavigationAgent3D = $NavigationAgent3D
@@ -59,6 +78,11 @@ var _navigation_stuck_time: float = 0.0
 ## The Interactable a tap asked for, while walking to it: interacted with
 ## the moment it enters InteractionZone (see _on_interaction_zone_area_entered).
 var _approach_target: Interactable
+var _animation_state: AnimState = AnimState.IDLE
+## The object whose interact() is running (INTERACT), and a serial so a
+## finished or superseded interaction can't end a newer one.
+var _interaction_target: Interactable
+var _interaction_serial: int = 0
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
@@ -95,6 +119,7 @@ func _physics_process(delta: float) -> void:
 	var speed := horizontal_velocity.length()
 	if _navigating:
 		_update_navigation_progress(delta, speed)
+	_update_movement_animation_state(_actual_horizontal_speed())
 	_update_facing(direction, delta)
 	_update_walk_bob(delta, speed)
 	_update_footsteps(delta, speed)
@@ -297,19 +322,81 @@ func _spawn_destination_marker(destination: Vector3) -> void:
 	burst.global_position = destination
 
 ## The one place interact() is called, whichever way it was asked for.
+## Awaited only to know when the interaction ends (for the INTERACT
+## state); callers never wait on it.
 func _interact_with(target: Interactable) -> void:
 	_spent_interactables = _spent_interactables.filter(
 		func(spent: Interactable) -> bool: return is_instance_valid(spent)
 	)
 	if _spent_interactables.has(target):
 		return
-	target.interact()
 	# Only stop tracking it if it's actually gone (or about to be) after
-	# this interaction — a one-shot discovery with remove_on_harvest still
-	# gets dropped immediately so a second press/tap can't double-harvest
+	# this interaction — a one-shot discovery with remove_on_harvest is
+	# dropped before it starts so a second press/tap can't double-harvest
 	# it mid-animation, but a persistent multi-state interactable (e.g. a
 	# FarmPlot cycling through prepare/plant/water/harvest) must stay
 	# tracked so the next tap keeps landing on it.
 	if target.remove_on_harvest:
 		_nearby_interactables.erase(target)
 		_spent_interactables.append(target)
+	var serial := _begin_interaction(target)
+	await target.interact()
+	_end_interaction(serial)
+
+# --- Animation state hook ------------------------------------------------------------
+
+func get_animation_state() -> AnimState:
+	return _animation_state
+
+## The only place the state changes and the only emitter of
+## animation_state_changed. Describes gameplay; never changes it.
+func _set_animation_state(state: AnimState) -> void:
+	if state == _animation_state:
+		return
+	var previous := _animation_state
+	_animation_state = state
+	animation_state_changed.emit(state, previous)
+
+## How fast the body actually moved in the last physics step (after
+## collisions) — pushing against a rock isn't walking.
+func _actual_horizontal_speed() -> float:
+	var real := get_real_velocity()
+	return Vector2(real.x, real.z).length()
+
+## IDLE <-> WALK from actual horizontal speed (with hysteresis), evaluated in
+## the existing physics step. INTERACT is left alone until it ends.
+func _update_movement_animation_state(speed: float) -> void:
+	if _animation_state == AnimState.INTERACT:
+		return
+	if _animation_state == AnimState.WALK:
+		if speed < WALK_STOP_SPEED:
+			_set_animation_state(AnimState.IDLE)
+	elif speed > WALK_START_SPEED:
+		_set_animation_state(AnimState.WALK)
+
+func _begin_interaction(target: Interactable) -> int:
+	_release_interaction_target()
+	_interaction_serial += 1
+	_interaction_target = target
+	target.tree_exiting.connect(_on_interaction_target_exiting)
+	_set_animation_state(AnimState.INTERACT)
+	return _interaction_serial
+
+## Ends the INTERACT state for this interaction only (an older one ending
+## late is ignored), back to WALK if the player is moving, else IDLE.
+func _end_interaction(serial: int) -> void:
+	if serial != _interaction_serial or _interaction_target == null:
+		return
+	_release_interaction_target()
+	var moving := _actual_horizontal_speed() >= WALK_STOP_SPEED
+	_set_animation_state(AnimState.WALK if moving else AnimState.IDLE)
+
+## The object vanished mid-interaction (e.g. its area unloaded): end it.
+func _on_interaction_target_exiting() -> void:
+	_end_interaction(_interaction_serial)
+
+func _release_interaction_target() -> void:
+	if _interaction_target != null and is_instance_valid(_interaction_target):
+		if _interaction_target.tree_exiting.is_connected(_on_interaction_target_exiting):
+			_interaction_target.tree_exiting.disconnect(_on_interaction_target_exiting)
+	_interaction_target = null
