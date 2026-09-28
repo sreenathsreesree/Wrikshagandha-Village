@@ -108,6 +108,19 @@ func _update_footsteps(delta: float, speed: float) -> void:
 func _update_nearby_proximity() -> void:
 	if _nearby_interactables.is_empty():
 		return
+	var nearest := _find_nearest_interactable()
+	if nearest == null:
+		return
+	var distance := global_position.distance_to(nearest.global_position)
+	var t := 1.0 - clamp(distance / INTERACTION_RADIUS, 0.0, 1.0)
+	nearest.update_proximity(t)
+
+## Shared by proximity feedback and the Interact press, so the object whose
+## indicator is visibly responding is always the one that gets interacted
+## with. (Previously the press went to whichever object entered range
+## first, which could differ from the glowing one when several interactables
+## — e.g. neighbouring farm plots — are in range at once.)
+func _find_nearest_interactable() -> Interactable:
 	var nearest: Interactable = null
 	var nearest_distance := INF
 	for interactable in _nearby_interactables:
@@ -117,10 +130,7 @@ func _update_nearby_proximity() -> void:
 		if distance < nearest_distance:
 			nearest_distance = distance
 			nearest = interactable
-	if nearest == null:
-		return
-	var t := 1.0 - clamp(nearest_distance / INTERACTION_RADIUS, 0.0, 1.0)
-	nearest.update_proximity(t)
+	return nearest
 
 func _on_interaction_zone_area_entered(area: Area3D) -> void:
 	if not (area is Interactable):
@@ -143,7 +153,9 @@ func _on_interact_requested() -> void:
 	)
 	if _nearby_interactables.is_empty():
 		return
-	var target: Interactable = _nearby_interactables[0]
+	var target := _find_nearest_interactable()
+	if target == null:
+		return
 	target.interact()
 	# Only stop tracking it if it's actually gone (or about to be) after
 	# this interaction — a one-shot discovery with remove_on_harvest still

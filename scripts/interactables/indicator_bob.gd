@@ -18,6 +18,12 @@ class_name DiscoveryIndicator
 @export var bob_speed: float = 2.2
 @export var spin_speed: float = 1.4
 
+## Per-use tuning without a second indicator type: farm plots use a smaller
+## base_scale and a leaf-green tint so "something can be done here" reads
+## quieter than a discovery's golden gem. Alpha 0 keeps the scene's color.
+@export var base_scale: float = 1.0
+@export var tint: Color = Color(0, 0, 0, 0)
+
 var rarity: String = "common"
 
 @onready var _gem: MeshInstance3D = get_node_or_null("Gem") as MeshInstance3D
@@ -26,6 +32,7 @@ var _base_y: float = 0.0
 var _time: float = 0.0
 var _idle_glint_timer: float = 0.0
 var _proximity: float = 0.0
+var _pulse_amount: float = 0.0
 var _base_emission_energy: float = 1.0
 var _chime_played: bool = false
 
@@ -33,9 +40,34 @@ const CHIME_THRESHOLD := 0.85
 
 func _ready() -> void:
 	_base_y = position.y
+	_make_gem_material_unique()
 	var material := _get_gem_material()
 	if material:
 		_base_emission_energy = material.emission_energy_multiplier
+
+## The gem's material is a scene sub-resource, which Godot shares across
+## every instance of this scene. set_proximity() edits its emission, so
+## without a per-instance copy, brightening the nearest indicator brightened
+## every indicator in the world at once.
+func _make_gem_material_unique() -> void:
+	if _gem == null:
+		return
+	var source := _gem.get_surface_override_material(0) as StandardMaterial3D
+	if source == null:
+		return
+	var copy := source.duplicate() as StandardMaterial3D
+	if tint.a > 0.0:
+		copy.albedo_color = tint
+		copy.emission = tint
+	_gem.set_surface_override_material(0, copy)
+
+## A brief acknowledgement swell, folded into the same scale formula
+## _process already applies every frame — so it can never be fought or
+## overwritten by that per-frame scale write.
+func pulse(amount: float = 0.3) -> void:
+	var tween := create_tween()
+	tween.tween_property(self, "_pulse_amount", amount, 0.1).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "_pulse_amount", 0.0, 0.25).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 
 func set_rarity(value: String) -> void:
 	rarity = value
@@ -68,7 +100,7 @@ func _process(delta: float) -> void:
 		var speed_boost := 1.0 + _proximity * 0.5
 		position.y = _base_y + sin(_time * bob_speed * speed_boost) * bob_height
 		rotate_y(spin_speed * speed_boost * delta)
-		scale = Vector3.ONE * (1.0 + _proximity * 0.18)
+		scale = Vector3.ONE * base_scale * (1.0 + _proximity * 0.18 + _pulse_amount)
 		return
 
 	if rarity != "very_rare" and rarity != "legendary":

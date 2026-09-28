@@ -29,10 +29,12 @@ func _refresh() -> void:
 		child.queue_free()
 
 	list_container.add_child(_build_places_section())
+	list_container.add_child(_build_spacer())
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 12)
-	list_container.add_child(spacer)
+	var garden := ExplorationManager.get_garden_journal()
+	if garden.found or garden.first_planted != "":
+		list_container.add_child(_build_garden_section(garden))
+		list_container.add_child(_build_spacer())
 
 	var discoveries_header := Label.new()
 	discoveries_header.text = "Discoveries"
@@ -70,6 +72,39 @@ func _build_places_section() -> Control:
 		box.add_child(row)
 
 	return box
+
+## The garden's small session-only record — hidden entirely until the
+## garden has been found (or something planted), and each line only once
+## it has actually happened, so it never reads like a checklist.
+func _build_garden_section(garden: Dictionary) -> Control:
+	var box := VBoxContainer.new()
+
+	var header := Label.new()
+	header.text = String(garden.place_name)
+	header.add_theme_font_size_override("font_size", 18)
+	header.modulate.a = 0.8
+	box.add_child(header)
+
+	if garden.found:
+		box.add_child(_build_note("Found the Meadow's little growing place."))
+	if garden.first_planted != "":
+		box.add_child(_build_note("First crop planted: %s" % garden.first_planted))
+	if garden.first_harvested != "":
+		box.add_child(_build_note("First crop harvested: %s" % garden.first_harvested))
+
+	return box
+
+func _build_note(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	label.modulate.a = 0.85
+	return label
+
+func _build_spacer() -> Control:
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 12)
+	return spacer
 
 func _build_entry_row(entry: Dictionary) -> Control:
 	var box := VBoxContainer.new()

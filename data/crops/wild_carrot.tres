@@ -9,6 +9,7 @@ crop_id = "wild_carrot"
 display_name = "Wild Carrot"
 category = "plant"
 rarity = "common"
+harvest_style = "pull"
 points_value = 12
 seed_duration = 0.0
 sprout_duration = 10.0

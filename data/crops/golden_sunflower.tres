@@ -9,6 +9,7 @@ crop_id = "golden_sunflower"
 display_name = "Golden Sunflower"
 category = "flower"
 rarity = "uncommon"
+harvest_style = "bloom"
 points_value = 20
 seed_duration = 0.0
 sprout_duration = 18.0

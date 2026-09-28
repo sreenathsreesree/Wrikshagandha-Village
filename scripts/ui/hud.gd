@@ -31,6 +31,9 @@ func _ready() -> void:
 	ExplorationManager.all_secret_locations_found.connect(_on_all_secret_locations_found)
 	ExplorationManager.curiosity_bonus_awarded.connect(_on_curiosity_bonus_awarded)
 	ExplorationManager.session_summary_ready.connect(_on_session_summary_ready)
+	ExplorationManager.first_crop_planted.connect(_on_first_crop_planted)
+	ExplorationManager.first_crop_harvested.connect(_on_first_crop_harvested)
+	ExplorationManager.all_starter_crops_harvested.connect(_on_all_starter_crops_harvested)
 	DailyDiscoveryManager.daily_completed.connect(_on_daily_completed)
 	FarmManager.crop_harvested.connect(_on_crop_harvested)
 
@@ -99,15 +102,29 @@ func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int) ->
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
-	notification.show_message("◆ Landmark Reached ◆", _format_location_name(landmark_id), "+%d Wriksha Points" % bonus_points)
+	notification.show_message("◆ Landmark Reached ◆", ExplorationManager.get_place_arrival_text(landmark_id), "+%d Wriksha Points" % bonus_points)
 
 func _on_secret_location_found(location_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
-	notification.show_message("✦ Secret Spot Found ✦", _format_location_name(location_id), "+%d Wriksha Points" % bonus_points)
+	notification.show_message("✦ Secret Spot Found ✦", ExplorationManager.get_place_display_name(location_id), "+%d Wriksha Points" % bonus_points)
 
-func _format_location_name(id: String) -> String:
-	return id.replace("_", " ").capitalize()
+## First seed of the session — an acknowledgement with a gentle hint at the
+## next step, no points (planting isn't the achievement; growing it is).
+func _on_first_crop_planted(_crop_definition: CropDefinition) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("🌱", "Your first seed is in the ground.", "It will need water.")
+
+func _on_first_crop_harvested(crop_definition: CropDefinition, bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("✦ First Harvest ✦", crop_definition.display_name, "+%d Wriksha Points" % bonus_points)
+
+func _on_all_starter_crops_harvested(bonus_points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	notification.show_message("★ A Full Garden ★", "You've grown every starter crop.", "+%d Wriksha Points" % bonus_points)
 
 ## The very first discovery of the session — a mood beat, not a reward, so
 ## it carries no points and no fanfare title.

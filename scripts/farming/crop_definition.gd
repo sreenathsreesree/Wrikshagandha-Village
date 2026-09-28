@@ -5,15 +5,20 @@ class_name CropDefinition
 ## .tres resource in res://data/crops/ plus a new visual .tscn (using the
 ## shared CropVisual script) — never new logic in FarmPlot.
 ##
-## category/rarity reuse the same vocabulary as DiscoveryDefinition so a
-## crop's harvest windup can reuse Interactable.CATEGORY_WINDUP/
-## RARITY_INTENSITY directly instead of a parallel table.
+## category/rarity reuse the same vocabulary as DiscoveryDefinition; rarity
+## also scales the harvest animation through Interactable.RARITY_INTENSITY,
+## the same table discoveries use.
 
 @export var crop_id: String = ""
 @export var display_name: String = ""
 @export_enum("plant", "flower", "fungus", "mineral", "insect", "animal", "mystery") var category: String = "plant"
 @export_enum("common", "uncommon", "rare", "very_rare", "legendary") var rarity: String = "common"
 @export var points_value: int = 10
+
+## The crop's small harvest personality, played by the shared CropVisual:
+## "pull" = braces then pops upward (a root being pulled), "sway" = a soft
+## leafy sway then a gentle lift, "bloom" = a scale pulse like opening up.
+@export_enum("pull", "sway", "bloom") var harvest_style: String = "pull"
 
 ## Seconds spent in each growth stage before it can advance to the next —
 ## each advance requires the plot to be watered first (see FarmPlot).
