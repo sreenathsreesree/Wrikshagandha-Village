@@ -25,6 +25,8 @@ idle_time_max = 3.0
 flee_distance = 1.6
 flee_speed = 2.8
 turn_speed = 5.0
+attraction_sensitivity = 0.8
+night_activity = 0.3
 
 [node name="Body" type="MeshInstance3D" parent="."]
 mesh = SubResource("SphereMesh_body")

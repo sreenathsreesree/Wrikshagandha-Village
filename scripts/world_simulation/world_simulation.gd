@@ -4,7 +4,8 @@ class_name WorldSimulation
 ## Coordinates independent environmental systems without letting them know
 ## about each other: TimeOfDay only knows "what fraction of the day is it",
 ## EnvironmentController only knows "how do I paint that", VegetationController
-## only publishes player position, WildlifeController only wires actors, and
+## only publishes player position, WildlifeController only wires actors
+## and relays phase/attraction changes to them, and
 ## Ambient is a seam for future effects. Any one of these can be swapped or
 ## removed without touching the others. configure() is called once by the
 ## owning world scene (e.g. meadow.gd) after everything else is ready.
@@ -29,5 +30,16 @@ func configure(player: Node3D, directional_light: DirectionalLight3D, world_envi
 	time_of_day.time_updated.connect(_on_time_updated)
 	_on_time_updated(time_of_day.day_fraction)
 
+	# Wildlife hears about the day's phase and the garden's pull only when
+	# either changes — two relays, no polling. FarmManager owns what the
+	# garden is worth; wildlife only ever sees a key and a strength.
+	time_of_day.phase_changed.connect(wildlife_controller.set_time_phase)
+	wildlife_controller.set_time_phase(time_of_day.get_phase())
+	FarmManager.garden_interest_changed.connect(_on_garden_interest_changed)
+	_on_garden_interest_changed(FarmManager.get_garden_interest())
+
 func _on_time_updated(day_fraction: float) -> void:
 	environment_controller.apply_time(day_fraction)
+
+func _on_garden_interest_changed(level: float) -> void:
+	wildlife_controller.set_attraction(FarmManager.WILDLIFE_ATTRACTION_KEY, level)

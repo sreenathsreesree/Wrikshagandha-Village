@@ -43,6 +43,30 @@ class_name WildlifeActor
 @export var interest_look_targets: Array[Vector3] = []
 @export var interest_linger: float = 1.8
 
+## Optional outside pull toward one of this actor's own interest points
+## (e.g. "garden"). WildlifeController relays a strength (0..1) under a
+## key; if it matches attraction_key, each wander has an extra
+## strength × attraction_sensitivity chance of heading to
+## interest_points[attraction_interest_index] — the same visit, look
+## target and linger as an ordinary interest visit. The actor never learns
+## why the place is interesting; empty key = unaffected.
+@export var attraction_key: String = ""
+@export var attraction_interest_index: int = 0
+@export_range(0.0, 1.0) var attraction_sensitivity: float = 1.0
+
+## How lively this creature stays in full darkness (1 = unchanged). Below
+## 1 it rests longer between wanders and is less drawn to attractions —
+## a butterfly settling for the night, a bird quieting down.
+@export_range(0.05, 1.0) var night_activity: float = 1.0
+
+## Optional flat circle of ground (same position space as this actor) the
+## creature never crosses — while wandering, fleeing or heading back it
+## slides around the edge instead, e.g. a rabbit that visits the garden's
+## edge but never runs over the crop plots. keep_out_radius 0 = none, and
+## movement is then exactly as before.
+@export var keep_out_center: Vector3 = Vector3.ZERO
+@export var keep_out_radius: float = 0.0
+
 ## Set by WildlifeController once, after every actor in the scene exists —
 ## never touched by the actor itself.
 var player: Node3D
@@ -55,6 +79,8 @@ var _state_timer: float = 0.0
 var _idle_wiggle_time: float = 0.0
 var _idle_base_rotation: float = 0.0
 var _current_interest_index: int = -1
+var _attraction: float = 0.0
+var _activity: float = 1.0
 
 func _ready() -> void:
 	_home_position = position
@@ -108,11 +134,49 @@ func _face_player(delta: float) -> void:
 func _move_toward(target: Vector3, speed: float, delta: float) -> void:
 	var direction := target - position
 	direction.y = 0.0
+	var detour := _keep_out_detour(direction)
+	if detour != Vector3.ZERO:
+		direction = detour
+		target = position + detour * speed * delta
 	if direction.length() > 0.01:
 		# Node3D's local forward is -Z, so solve sin(a)=dx, cos(a)=-dz.
 		var facing := atan2(direction.x, -direction.z)
 		rotation.y = lerp_angle(rotation.y, facing, turn_speed * delta)
 	position = position.move_toward(target, speed * delta)
+
+## Zero when the straight path is clear (or no keep-out is set); otherwise
+## the unit direction that slides along the keep-out circle's edge toward
+## the side the path was heading — never into it. Pure geometry, no
+## physics: a creature already inside steps straight out.
+func _keep_out_detour(direction: Vector3) -> Vector3:
+	if keep_out_radius <= 0.0:
+		return Vector3.ZERO
+	var to_zone := keep_out_center - position
+	to_zone.y = 0.0
+	var gap := to_zone.length()
+	if gap < 0.01:
+		return Vector3.ZERO
+	var toward := to_zone / gap
+	if gap < keep_out_radius:
+		return -toward
+	var reach := direction.length()
+	if reach < 0.01:
+		return Vector3.ZERO
+	var heading := direction / reach
+	var closest := heading * clampf(to_zone.dot(heading), 0.0, reach)
+	if (to_zone - closest).length() >= keep_out_radius:
+		return Vector3.ZERO
+	var slide := heading - toward * heading.dot(toward)
+	if slide.length() < 0.01:
+		slide = Vector3(-toward.z, 0.0, toward.x)
+	return slide.normalized()
+
+func _is_kept_out(point: Vector3) -> bool:
+	if keep_out_radius <= 0.0:
+		return false
+	var offset := point - keep_out_center
+	offset.y = 0.0
+	return offset.length() < keep_out_radius
 
 func _flee_target() -> Vector3:
 	if player == null:
@@ -132,9 +196,20 @@ func startle() -> void:
 	if state != "flee":
 		_enter_flee()
 
+## Event-driven from WildlifeController (never per frame). Only takes
+## effect from the next wander decision onward — no state is interrupted.
+func set_attraction(key: String, strength: float) -> void:
+	if attraction_key == "" or key != attraction_key:
+		return
+	_attraction = clampf(strength * attraction_sensitivity, 0.0, 1.0)
+
+## darkness: 0 = daylight, 1 = full night.
+func set_darkness(darkness: float) -> void:
+	_activity = lerpf(1.0, night_activity, clampf(darkness, 0.0, 1.0))
+
 func _enter_idle() -> void:
 	state = "idle"
-	_state_timer = randf_range(idle_time_min, idle_time_max)
+	_state_timer = randf_range(idle_time_min, idle_time_max) / _activity
 	_idle_base_rotation = rotation.y
 	_idle_wiggle_time = 0.0
 
@@ -144,7 +219,7 @@ func _enter_pause() -> void:
 	var arrived_at := _current_interest_index if state == "wander" else -1
 	_current_interest_index = -1
 	state = "pause"
-	_state_timer = randf_range(idle_time_min, idle_time_max)
+	_state_timer = randf_range(idle_time_min, idle_time_max) / _activity
 	_idle_base_rotation = rotation.y
 	_idle_wiggle_time = 0.0
 	if arrived_at < 0:
@@ -159,13 +234,22 @@ func _enter_pause() -> void:
 func _enter_wander() -> void:
 	state = "wander"
 	_current_interest_index = -1
-	if not interest_points.is_empty() and randf() < interest_chance:
+	var has_attraction_point := attraction_interest_index >= 0 and attraction_interest_index < interest_points.size()
+	if has_attraction_point and randf() < _attraction * _activity:
+		_current_interest_index = attraction_interest_index
+		_target_position = interest_points[_current_interest_index]
+	elif not interest_points.is_empty() and randf() < interest_chance:
 		_current_interest_index = randi() % interest_points.size()
 		_target_position = interest_points[_current_interest_index]
 	else:
 		var angle := randf_range(0.0, TAU)
 		var radius := randf_range(0.3, wander_radius)
 		_target_position = _home_position + Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
+	if _is_kept_out(_target_position):
+		# Never choose a destination inside the keep-out (sliding around
+		# its edge would never arrive) — settle for home instead.
+		_current_interest_index = -1
+		_target_position = _home_position
 
 func _enter_flee() -> void:
 	state = "flee"

@@ -19,6 +19,7 @@ icon_glyph = "🥕"
 starting_seeds = 2
 mature_scale = 0.9
 sway_amount = 0.6
+wildlife_interest = 0.1
 ready_pulse = 0.0
 found_seed_source = "place"
 found_seed_source_id = "mystery_grove_tree"

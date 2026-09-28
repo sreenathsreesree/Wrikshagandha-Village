@@ -45,6 +45,14 @@ class_name CropDefinition
 @export var sway_amount: float = 1.0
 @export var ready_pulse: float = 0.0
 
+## How much a ripe crop of this kind draws the Meadow's attention (0..1).
+## FarmManager sums it over the crops currently ready into one garden
+## interest level; wildlife configured to notice the garden then visit it
+## a little more often. Purely atmospheric — wildlife never touches crops.
+## Quiet crops (a carrot's low tops) sit near 0; showy ones (a flower
+## head) sit higher.
+@export_range(0.0, 1.0) var wildlife_interest: float = 0.2
+
 ## Optional exploration reward, granted by FarmManager at most once per
 ## session: reaching a place (an ExplorationManager place id) or finding a
 ## discovery (a DiscoveryDefinition id) reveals one extra seed of this crop.

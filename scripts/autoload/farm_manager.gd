@@ -14,6 +14,10 @@ extends Node
 ## - Exploration seed rewards (CropDefinition.found_seed_source/_id):
 ##   granted once per session when ExplorationManager reports a place
 ##   reached, or DiscoveryManager reports that discovery found.
+## - The garden's pull on the Meadow: an aggregate interest level (0..1)
+##   summed from the ready crops' CropDefinition.wildlife_interest, pushed
+##   out via garden_interest_changed only when it changes. Nothing polls
+##   plots; WorldSimulation relays the level to wildlife.
 ## - Farm progression: which crops have grown/been harvested, and a small
 ##   fixed set of quiet milestones, announced via milestone_reached.
 ## - Plots: every FarmPlot registers under its stable plot_id; plots that
@@ -32,8 +36,14 @@ signal seed_choice_requested
 signal seed_choice_closed
 signal seed_found(crop_definition: CropDefinition)
 signal milestone_reached(milestone_id: String, message: String, bonus_points: int)
+signal garden_interest_changed(level: float)
 
 const CROPS_PATH := "res://data/crops/"
+## The attraction key garden-noticing wildlife is configured with.
+const WILDLIFE_ATTRACTION_KEY := "garden"
+## Cap on the summed interest, so a garden full of ripe sunflowers is a
+## strong pull, never a certainty — wildlife keeps its own wandering.
+const MAX_GARDEN_INTEREST := 0.7
 ## The ExplorationManager place id that is this garden.
 const GARDEN_PLACE_ID := "quiet_farm"
 
@@ -57,7 +67,16 @@ var _harvested_crop_ids: Array[String] = []
 var _milestones_reached: Array[String] = []
 var _planted_count: int = 0
 var _harvested_count: int = 0
-var _ready_crop_count: int = 0
+## crop_id -> how many of that crop are READY right now (exact, no float
+## drift): the source of has_ready_crops() and the garden interest level.
+var _ready_by_crop: Dictionary = {}
+var _garden_interest: float = 0.0
+## Time.get_ticks_msec() of the most recent ripening, -1 if none yet —
+## lets the garden tell "ripened while you were away" from "was already
+## ripe when you left".
+var _last_ripened_msec: int = -1
+## crop_id -> {"source": "place"/"discovery", "source_id": String}
+var _found_seed_origins: Dictionary = {}
 var _garden_found: bool = false
 
 var _plots: Dictionary = {}
@@ -84,15 +103,28 @@ func get_crops() -> Array[CropDefinition]:
 func get_seed_count(crop_id: String) -> int:
 	return int(_seeds.get(crop_id, 0))
 
-func get_found_seed_names() -> PackedStringArray:
-	var names: PackedStringArray = []
+## Where each exploration seed was found, in crop order:
+## [{crop, source, source_id}]. The Journal turns ids into place/discovery
+## names; nothing here knows how they're displayed.
+func get_found_seed_origins() -> Array:
+	var rows: Array = []
 	for crop in _crops:
-		if _found_seed_crop_ids.has(crop.crop_id):
-			names.append(crop.display_name)
-	return names
+		if _found_seed_origins.has(crop.crop_id):
+			var origin: Dictionary = _found_seed_origins[crop.crop_id]
+			rows.append({"crop": crop, "source": origin.source, "source_id": origin.source_id})
+	return rows
 
 func has_ready_crops() -> bool:
-	return _ready_crop_count > 0
+	for crop_id: String in _ready_by_crop:
+		if int(_ready_by_crop[crop_id]) > 0:
+			return true
+	return false
+
+func get_last_ripened_msec() -> int:
+	return _last_ripened_msec
+
+func get_garden_interest() -> float:
+	return _garden_interest
 
 func is_garden_found() -> bool:
 	return _garden_found
@@ -176,7 +208,9 @@ func choose_seed(crop: CropDefinition) -> bool:
 ## A crop ripened. Balanced by notify_crop_harvested(), the only way a
 ## ready crop leaves READY.
 func notify_crop_ready(crop_definition: CropDefinition) -> void:
-	_ready_crop_count += 1
+	_ready_by_crop[crop_definition.crop_id] = int(_ready_by_crop.get(crop_definition.crop_id, 0)) + 1
+	_last_ripened_msec = Time.get_ticks_msec()
+	_update_garden_interest()
 	if _grown_crop_ids.has(crop_definition.crop_id):
 		return
 	_grown_crop_ids.append(crop_definition.crop_id)
@@ -189,7 +223,8 @@ func notify_crop_ready(crop_definition: CropDefinition) -> void:
 ## loop renews itself without an economy.
 func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, points_awarded: int) -> void:
 	_seeds[crop_definition.crop_id] = get_seed_count(crop_definition.crop_id) + 1
-	_ready_crop_count = maxi(_ready_crop_count - 1, 0)
+	_ready_by_crop[crop_definition.crop_id] = maxi(int(_ready_by_crop.get(crop_definition.crop_id, 0)) - 1, 0)
+	_update_garden_interest()
 	_harvested_count += 1
 	if not _harvested_crop_ids.has(crop_definition.crop_id):
 		_harvested_crop_ids.append(crop_definition.crop_id)
@@ -223,6 +258,7 @@ func _grant_found_seeds(source: String, source_id: String) -> void:
 		if _found_seed_crop_ids.has(crop.crop_id):
 			continue
 		_found_seed_crop_ids.append(crop.crop_id)
+		_found_seed_origins[crop.crop_id] = {"source": source, "source_id": source_id}
 		_seeds[crop.crop_id] = get_seed_count(crop.crop_id) + 1
 		granted = true
 		seed_found.emit(crop)
@@ -265,6 +301,18 @@ func _reach(milestone_id: String, message: String, bonus_points: int) -> bool:
 		PointsManager.add_points(bonus_points)
 	milestone_reached.emit(milestone_id, message, bonus_points)
 	return true
+
+## Recomputed only on ripen/harvest events, from crop data — never by
+## looking at plots, never per frame. Emits only on an actual change.
+func _update_garden_interest() -> void:
+	var total := 0.0
+	for crop in _crops:
+		total += float(_ready_by_crop.get(crop.crop_id, 0)) * crop.wildlife_interest
+	var level := clampf(total, 0.0, MAX_GARDEN_INTEREST)
+	if is_equal_approx(level, _garden_interest):
+		return
+	_garden_interest = level
+	garden_interest_changed.emit(level)
 
 ## Validity is checked before the cast: a stored reference can outlive its
 ## node, and casting a freed object errors.

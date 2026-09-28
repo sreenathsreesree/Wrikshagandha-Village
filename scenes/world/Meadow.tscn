@@ -598,9 +598,12 @@ position = Vector3(14.8, 0.1, 2.6)
 
 [node name="Rabbit1" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(5, 0.15, 4)
-interest_points = [Vector3(10, 0.15, 1.6), Vector3(2.5, 0.15, -1)]
+interest_points = [Vector3(9.3, 0.15, 1.4), Vector3(2.5, 0.15, -1)]
 interest_chance = 0.45
 interest_look_targets = [Vector3(12.1, 0.15, 2.2)]
+attraction_key = "garden"
+keep_out_center = Vector3(12.1, 0, 2.2)
+keep_out_radius = 2.6
 
 [node name="Rabbit2" parent="Wildlife" instance=ExtResource("29")]
 position = Vector3(-16, 0.15, 8)
@@ -609,6 +612,7 @@ position = Vector3(-16, 0.15, 8)
 position = Vector3(7, 0.12, 8.5)
 interest_points = [Vector3(14, 0.12, 1.8), Vector3(9, 0.12, -7.5)]
 interest_look_targets = [Vector3(12.1, 0.12, 2.2)]
+attraction_key = "garden"
 
 [node name="SmallBird2" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(-14, 0.12, -3)
@@ -626,8 +630,8 @@ position = Vector3(-4, 0.4, 9)
 
 [node name="WildlifeButterfly4" parent="Wildlife" instance=ExtResource("31")]
 position = Vector3(5, 0.4, 5.5)
-interest_points = [Vector3(12.3, 0.4, 4.2), Vector3(5.2, 0.4, 6.8)]
-interest_look_targets = [Vector3(12.1, 0.4, 2.2)]
+interest_points = [Vector3(12.1, 0.4, 2.2), Vector3(5.2, 0.4, 6.8)]
+attraction_key = "garden"
 
 [node name="SmallBird3" parent="Wildlife" instance=ExtResource("30")]
 position = Vector3(8, 0.12, -11.5)
@@ -707,8 +711,9 @@ script = ExtResource("36")
 position = Vector3(12.1, 0, 2.2)
 event_type = 2
 trigger_radius = 4.5
-cooldown_seconds = 90.0
+cooldown_seconds = 60.0
 requires_ready_crops = true
+trigger_on_arrival = true
 reveal_node_path = NodePath("../../Farm/FarmMotes")
 
 [node name="ExplorationLandmarks" type="Node3D" parent="."]

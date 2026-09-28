@@ -33,6 +33,18 @@ enum EventType { WILDLIFE_DISTURBANCE, BUTTERFLY_LEAD, ENVIRONMENTAL_REVEAL }
 ## player with a small reaction only when there's something waiting.
 @export var requires_ready_crops: bool = false
 
+## Optional: fire only on arrival — the frame the player crosses into
+## trigger_radius from outside — never just because they're standing
+## there. Combined with requires_ready_crops it narrows further to "a crop
+## ripened since the player last left": a return greeting, not a reaction
+## to something ripening in front of them. Presence is fed by
+## EnvironmentalEventController's existing distance loop.
+@export var trigger_on_arrival: bool = false
+
+## Leaving needs this much extra distance past trigger_radius, so standing
+## on the edge can't flicker between "left" and "arrived".
+const ARRIVAL_EXIT_MARGIN := 0.75
+
 ## WILDLIFE_DISTURBANCE: every actor in this list is startled at once,
 ## even if the player isn't within that individual actor's own
 ## flee_distance yet — reads as a small group reacting together.
@@ -51,6 +63,9 @@ enum EventType { WILDLIFE_DISTURBANCE, BUTTERFLY_LEAD, ENVIRONMENTAL_REVEAL }
 
 var _on_cooldown: bool = false
 var _triggered_once: bool = false
+var _player_inside: bool = false
+## Time.get_ticks_msec() when the player last left; -1 = never been inside.
+var _last_departure_msec: int = -1
 
 func _ready() -> void:
 	add_to_group("environmental_event")
@@ -64,10 +79,26 @@ func can_trigger() -> bool:
 		return false
 	if requires_ready_crops and not FarmManager.has_ready_crops():
 		return false
+	if requires_ready_crops and trigger_on_arrival and FarmManager.get_last_ripened_msec() <= _last_departure_msec:
+		return false
 	return true
 
+## Called every frame by EnvironmentalEventController with the player's
+## distance. Returns true only on the frame the player arrives.
+func update_player_presence(distance: float) -> bool:
+	if _player_inside:
+		if distance > trigger_radius + ARRIVAL_EXIT_MARGIN:
+			_player_inside = false
+			_last_departure_msec = Time.get_ticks_msec()
+		return false
+	if distance <= trigger_radius:
+		_player_inside = true
+		return true
+	return false
+
 ## Called by EnvironmentalEventController once the player is within
-## trigger_radius and can_trigger() is true.
+## trigger_radius (or has just arrived, for trigger_on_arrival events) and
+## can_trigger() is true.
 func fire() -> void:
 	_triggered_once = true
 	_start_cooldown()

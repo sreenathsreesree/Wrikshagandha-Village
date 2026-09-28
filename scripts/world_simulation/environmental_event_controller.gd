@@ -16,7 +16,14 @@ func _process(_delta: float) -> void:
 		return
 	for node in get_tree().get_nodes_in_group("environmental_event"):
 		var event := node as EnvironmentalEvent
-		if event == null or not event.can_trigger():
+		if event == null:
 			continue
-		if event.global_position.distance_to(player.global_position) <= event.trigger_radius:
+		var distance := event.global_position.distance_to(player.global_position)
+		if event.trigger_on_arrival:
+			# Presence is tracked every frame so leaving is always noticed,
+			# even while the event couldn't fire.
+			if event.update_player_presence(distance) and event.can_trigger():
+				event.fire()
+			continue
+		if distance <= event.trigger_radius and event.can_trigger():
 			event.fire()

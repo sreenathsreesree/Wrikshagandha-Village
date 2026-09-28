@@ -24,6 +24,7 @@ wander_radius = 1.8
 move_speed = 0.6
 flee_distance = 2.2
 flee_speed = 3.2
+attraction_sensitivity = 0.5
 
 [node name="Body" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0.13, 0)

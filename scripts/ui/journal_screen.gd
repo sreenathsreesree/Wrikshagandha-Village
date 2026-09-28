@@ -95,9 +95,13 @@ func _build_garden_section() -> Control:
 	box.add_child(_build_note(garden_line))
 
 	box.add_child(_build_note("Seeds: %s" % _seed_summary()))
-	var found := FarmManager.get_found_seed_names()
-	if not found.is_empty():
-		box.add_child(_build_note("Found while exploring: %s" % ", ".join(found)))
+	var origins := FarmManager.get_found_seed_origins()
+	if not origins.is_empty():
+		var lines: PackedStringArray = ["Found through exploration:"]
+		for origin: Dictionary in origins:
+			var crop: CropDefinition = origin.crop
+			lines.append("  %s — %s" % [crop.display_name, _origin_name(String(origin.source), String(origin.source_id))])
+		box.add_child(_build_note("\n".join(lines)))
 
 	var grown := FarmManager.get_grown_crop_names()
 	var harvested := FarmManager.get_harvested_crop_names()
@@ -121,6 +125,16 @@ func _seed_summary() -> String:
 	for crop in FarmManager.get_crops():
 		parts.append("%s ×%d" % [crop.display_name, FarmManager.get_seed_count(crop.crop_id)])
 	return ", ".join(parts)
+
+## A found seed's origin as the player knows it: the place's name, or the
+## discovery's name. Ids come from FarmManager; names from their owners.
+func _origin_name(source: String, source_id: String) -> String:
+	if source == "discovery":
+		var definition := DiscoveryDatabase.get_definition(source_id)
+		if definition != null:
+			return definition.display_name
+		return source_id.replace("_", " ").capitalize()
+	return ExplorationManager.get_place_display_name(source_id)
 
 func _build_note(text: String) -> Label:
 	var label := Label.new()

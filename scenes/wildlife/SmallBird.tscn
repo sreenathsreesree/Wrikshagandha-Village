@@ -22,6 +22,8 @@ idle_time_max = 5.0
 flee_distance = 1.8
 flee_speed = 4.0
 turn_speed = 8.0
+attraction_sensitivity = 0.6
+night_activity = 0.5
 
 [node name="Body" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0.09, 0)
