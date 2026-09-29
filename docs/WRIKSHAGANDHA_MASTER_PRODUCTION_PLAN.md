@@ -880,7 +880,7 @@ No large world expansion before this gate passes.
 | M03.3 | `5cd8692` |
 | M03.4 | `32c98b8` |
 | M03.5 | `44e3bb5` |
-| M03.6 | *(recorded after commit)* |
+| M03.6 | `b76e49c` |
 
 ## 16. Current position
 - **Current phase:** 03 — Camera / world shell. M03.1–M03.6 implemented (`[~]`, runtime test pending; Phase 03 is complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
