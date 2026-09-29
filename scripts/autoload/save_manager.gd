@@ -17,9 +17,14 @@ extends Node
 ## step to _migrate() (a step that changes nothing is fine when old data
 ## needs no rewrite): the bump is what stops an older build from loading a
 ## newer save and dropping what it doesn't know on its next save.
+##
+## Versions: 1 = M04.0 (the six sections, now stamped). 2 = M04.2: the
+## player's seeds and basket moved from farm.seeds / farm.basket into
+## "items" (ItemStore save data, a count per quality level); the farm keeps
+## "starter_seeds", the crops whose starting seeds were given.
 
 const SAVE_PATH := "user://save.json"
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 const VERSION_KEY := "save_version"
 ## Every section and the JSON types it may have; anything else is ignored.
 const SECTION_TYPES := {
@@ -29,6 +34,7 @@ const SECTION_TYPES := {
 	"daily_discovery": [TYPE_DICTIONARY],
 	"farm": [TYPE_DICTIONARY],
 	"settings": [TYPE_DICTIONARY],
+	"items": [TYPE_DICTIONARY],
 }
 
 ## Set when the file on disk is newer than this build: saving is refused for
@@ -47,6 +53,7 @@ func save_game() -> void:
 		"daily_discovery": DailyDiscoveryManager.get_save_data(),
 		"farm": FarmManager.get_save_data(),
 		"settings": InputManager.get_settings_data(),
+		"items": FarmManager.get_item_save_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -84,7 +91,7 @@ func load_game() -> bool:
 	DiscoveryManager.set_discovered_ids(data.get("discovered_ids", []))
 	JournalManager.apply_save_data(data.get("journal_entries", {}))
 	DailyDiscoveryManager.apply_save_data(data.get("daily_discovery", {}))
-	FarmManager.apply_save_data(data.get("farm", {}))
+	FarmManager.apply_save_data(data.get("farm", {}), data.get("items", {}))
 	InputManager.apply_settings_data(data.get("settings", {}))
 	return true
 
@@ -114,6 +121,8 @@ func _migrate(save: Dictionary, from_version: int) -> Dictionary:
 		match version:
 			0:
 				pass  # before M04.0: the same sections, only save_version was missing
+			1:
+				_move_holdings_to_items(data)  # M04.2
 			_:
 				push_warning("SaveManager: no migration from save_version %d" % version)
 				return {}
@@ -134,3 +143,36 @@ func _valid_sections(data: Dictionary) -> Dictionary:
 		else:
 			push_warning("SaveManager: ignoring save section '%s' of the wrong type" % key)
 	return valid
+
+## Step 1 -> 2 (M04.2): the seeds in hand (farm.seeds, crop -> count) and
+## the basket (farm.basket, crop -> [plain, good, fine]) become the crops'
+## seed and produce items in "items"; the farm records which crops' starting
+## seeds were given (the crops farm.seeds listed). Counts are carried over
+## as they are (ItemStore validates them on load); an entry for a crop with
+## no item is dropped with a warning. No other section is touched.
+func _move_holdings_to_items(data: Dictionary) -> void:
+	var items := {}
+	var farm: Variant = data.get("farm")
+	if typeof(farm) == TYPE_DICTIONARY and not (farm as Dictionary).is_empty():
+		var definitions := ItemStore.load_definitions()
+		var seed_items := ItemStore.crop_item_ids(definitions, "seed")
+		var produce_items := ItemStore.crop_item_ids(definitions, "produce")
+		var seeds: Variant = farm.get("seeds", {})
+		var basket: Variant = farm.get("basket", {})
+		farm["starter_seeds"] = []
+		if typeof(seeds) == TYPE_DICTIONARY:
+			farm["starter_seeds"] = (seeds as Dictionary).keys()
+			for crop_id: String in seeds:
+				if seed_items.has(crop_id):
+					items[seed_items[crop_id]] = [seeds[crop_id]]
+				else:
+					push_warning("SaveManager: no seed item for saved crop '%s'; dropped" % crop_id)
+		if typeof(basket) == TYPE_DICTIONARY:
+			for crop_id: String in basket:
+				if produce_items.has(crop_id):
+					items[produce_items[crop_id]] = basket[crop_id]
+				else:
+					push_warning("SaveManager: no produce item for saved crop '%s'; dropped" % crop_id)
+		farm.erase("seeds")
+		farm.erase("basket")
+	data["items"] = items

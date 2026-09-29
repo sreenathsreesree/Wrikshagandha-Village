@@ -7,8 +7,10 @@ SaveManager.save_game/load_game, not the engine.
    system's apply is typed and fails on a wrong type, like the GDScript
    typed parameters it stands for.
 3. Cases: a current save round-trips exactly (including M03.3 farm plots and
-   unloaded plot states); a pre-M04.0 save (no version) loads and is stamped
-   on the next save; a newer save is neither loaded nor overwritten; a
+   unloaded plot states, and the M04.2 items section); a pre-M04.0 save (no
+   version) and an M04.0 (v1) save migrate — the 1 -> 2 step moves
+   farm.seeds / farm.basket into items and touches nothing else — and are
+   stamped on the next save; a newer save is neither loaded nor overwritten; a
    malformed version or file is ignored like a corrupted file; wrongly typed
    sections fall back to defaults without breaking the rest; migration
    dispatch walks every step in order and rejects a missing one; 3,000
@@ -31,6 +33,23 @@ TYPE = {"TYPE_INT": int, "TYPE_FLOAT": float, "TYPE_ARRAY": list, "TYPE_DICTIONA
 SECTIONS = {k: [TYPE[t.strip()] for t in v.split(",")] for k, v in re.findall(r'^\t"(\w+)": \[([^\]]*)\],', SM, re.M)}
 STEPS = [int(x) for x in re.findall(r"^\t\t\t(\d+):", _body("_migrate"), re.M)]
 assert SECTIONS and STEPS == list(range(SAVE_VERSION)), (SECTIONS, STEPS)
+import glob as _glob
+def _item_vals(f): return dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(f, encoding="utf-8").read(), re.M))
+ITEM_OF = {(v["crop_id"], v.get("category", "seed")): v["id"] for v in map(_item_vals, sorted(_glob.glob(os.path.join(REPO, "data", "items", "*.tres"))))}
+MV = _body("_move_holdings_to_items")
+assert re.search(r"^\t\t\t1:\s*_move_holdings_to_items\(data\)", _body("_migrate"), re.M) and 'farm.erase("seeds")' in MV and 'farm.erase("basket")' in MV
+def step_1(data):  # SaveManager._move_holdings_to_items (M04.2)
+    items, farm = {}, data.get("farm")
+    if isinstance(farm, dict) and farm:
+        seeds, basket = farm.get("seeds", {}), farm.get("basket", {})
+        farm["starter_seeds"] = list(seeds) if isinstance(seeds, dict) else []
+        for c, n in (seeds.items() if isinstance(seeds, dict) else []):
+            if (c, "seed") in ITEM_OF: items[ITEM_OF[(c, "seed")]] = [n]
+        for c, k in (basket.items() if isinstance(basket, dict) else []):
+            if (c, "produce") in ITEM_OF: items[ITEM_OF[(c, "produce")]] = k
+        farm.pop("seeds", None); farm.pop("basket", None)
+    data["items"] = items
+STEP_PORTS = {0: lambda data: None, 1: step_1}
 LG = _body("load_game")
 assert LG.find("read_version(parsed)") < LG.find("if version > SAVE_VERSION:") < LG.find("_migrate(parsed, version)") \
     < LG.find("_valid_sections(data)") < LG.find("PointsManager.set_points(")
@@ -52,7 +71,7 @@ def gd_type(v):
     if isinstance(v, bool): return bool
     return type(v)
 class Systems:  # the six sections' owners, with typed apply functions
-    def __init__(s): s.state = {"points": 0, "discovered_ids": [], "journal_entries": {}, "daily_discovery": {}, "farm": {}, "settings": {}}
+    def __init__(s): s.state = {"points": 0, "discovered_ids": [], "journal_entries": {}, "daily_discovery": {}, "farm": {}, "settings": {}, "items": {}}
     def apply(s, key, value):
         want = {"points": (int, float), "discovered_ids": (list,)}.get(key, (dict,))
         if gd_type(value) not in want: raise TypeError(f"{key}: wrong type reached the system")
@@ -78,6 +97,7 @@ class SaveManager:
         data = copy.deepcopy(save)
         while v < SAVE_VERSION_MODEL[0]:
             if v not in steps: return {}
+            if steps is STEPS: STEP_PORTS[v](data)
             v += 1; data[KEY] = float(v)
         return data
     def load(sm, systems):
@@ -96,7 +116,7 @@ class SaveManager:
 SAVE_VERSION_MODEL = [SAVE_VERSION]
 
 # ---------------------------------------------------------------- 3. cases
-FARM = {"version": 1, "seeds": {"wild_carrot": 2}, "basket": {"wild_carrot": [1, 0, 1]}, "milestones": ["first_harvest"],
+FARM = {"version": 1, "starter_seeds": ["wild_carrot", "meadow_herb"], "milestones": ["first_harvest"],
         "counts": {"planted": 3, "harvested": 1}, "harvested_plots": ["farm_plot_01"], "garden_found": True,
         "plots": {"farm_plot_01": {"state": "GROWING", "soil_memory": ["meadow_herb"], "crop": "wild_carrot", "stage": 2,
                                    "needs_water": True, "stage_time_left": 12.5, "soil": 2, "care": 1, "quality": 1,
@@ -106,7 +126,8 @@ def full_state():
     s = Systems(); s.state.update(points=120, discovered_ids=["river_stone", "wild_mint"],
                                   journal_entries={"river_stone": {"name": "Smooth River Stone", "points_earned": 8.0}},
                                   daily_discovery={"target_id": "wild_mint", "target_date": "2026-09-29", "completed_date": ""},
-                                  farm=copy.deepcopy(FARM), settings={"movement_mode": "tap_to_move"})
+                                  farm=copy.deepcopy(FARM), settings={"movement_mode": "tap_to_move"},
+                                  items={"wild_carrot_seed": [2], "wild_carrot": [1, 0, 1]})
     return s
 def roundtrip_equal(a, b): return godot_json(json.dumps(a)) == godot_json(json.dumps(b))
 
@@ -116,10 +137,20 @@ b = Systems(); assert SaveManager(disk).load(b)
 assert all(roundtrip_equal(a.state[k], b.state[k]) for k in SECTIONS), "current save round-trips"
 first = disk["save.json"]; SaveManager(disk).save(b); assert godot_json(disk["save.json"]) == godot_json(first), "save -> load -> save identical"
 assert godot_json(first)[KEY] == SAVE_VERSION and roundtrip_equal(b.state["farm"], FARM), "farm (and its plot states) untouched"
-# pre-M04.0 save (no version): loads the same, stamped on the next save
-legacy = json.loads(first); del legacy[KEY]; disk = {"save.json": json.dumps(legacy)}
-c = Systems(); assert SaveManager(disk).load(c) and all(roundtrip_equal(a.state[k], c.state[k]) for k in SECTIONS)
-SaveManager(disk).save(c); assert godot_json(disk["save.json"])[KEY] == SAVE_VERSION, "legacy save stamped with save_version"
+# M04.0 (v1) and pre-M04.0 (no version) saves: the old farm layout (seeds and basket inside farm, no items)
+# loads to the current state; stamped on the next save; every other section untouched
+old_layout = json.loads(first); del old_layout["items"]
+old_layout["farm"] = {k: v for k, v in old_layout["farm"].items() if k != "starter_seeds"}
+old_layout["farm"].update(seeds={"wild_carrot": 2, "meadow_herb": 0}, basket={"wild_carrot": [1, 0, 1]})
+for label, version in (("v1", 1), ("v0", None)):
+    legacy = copy.deepcopy(old_layout)
+    if version is None: del legacy[KEY]
+    else: legacy[KEY] = version
+    disk = {"save.json": json.dumps(legacy)}
+    c = Systems(); assert SaveManager(disk).load(c), label
+    assert all(roundtrip_equal(a.state[k], c.state[k]) for k in SECTIONS if k != "items"), f"{label}: every other section unchanged"
+    assert roundtrip_equal(c.state["items"], {"wild_carrot_seed": [2], "meadow_herb_seed": [0], "wild_carrot": [1, 0, 1]}), label
+    SaveManager(disk).save(c); assert godot_json(disk["save.json"])[KEY] == SAVE_VERSION, f"{label} save stamped with save_version"
 # newer save: neither loaded nor overwritten
 for v in (SAVE_VERSION + 1, 99):
     newer = json.loads(first); newer[KEY] = v; newer["inventory"] = {"items": ["x"]}; text = json.dumps(newer)
@@ -149,7 +180,8 @@ assert walked[KEY] == 4.0 and walked["points"] == 1.0
 assert SaveManager.migrate({"points": 1.0}, 1, steps=[0, 2, 3]) == {}, "a missing step rejects"
 assert SaveManager.migrate({"points": 1.0, KEY: 4.0}, 4, steps=[]) == {"points": 1.0, KEY: 4.0}, "already current: returned unchanged"
 SAVE_VERSION_MODEL[0] = SAVE_VERSION
-assert SaveManager.migrate({"a": 1.0}, 0) == {"a": 1.0, KEY: float(SAVE_VERSION)}, "the real 0 -> 1 step changes nothing but the version"
+assert SaveManager.migrate({"a": 1.0}, 1) == {"a": 1.0, "items": {}, KEY: float(SAVE_VERSION)}, "no farm: 1 -> 2 only adds an empty items section"
+assert SaveManager.migrate({"a": 1.0}, 0) == SaveManager.migrate({"a": 1.0}, 1), "the real 0 -> 1 step changes nothing but the version"
 # fuzz: nothing of the wrong type ever reaches a system; loading is deterministic
 rnd = random.Random(8)
 def junk(depth=0):

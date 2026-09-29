@@ -7,6 +7,15 @@ seed, farm milestone, app paused/closed). Hazards 1–3 below are fixed by
 it; 4 is handled by the new save points; 5 by dropping unknown crop ids.
 The rest of this document is the audit it was built from.
 
+**Since M04.2 (save_version 2):** seeds in hand and the basket are no
+longer farm fields. They are the crops' seed and produce items in the
+player's `ItemStore` (produce keeps a count per quality, D-18), saved as
+the top-level `"items"` section: `{"wild_carrot_seed": [1], "wild_carrot":
+[0, 2, 1]}`. The farm block drops `seeds` / `basket` and gains
+`starter_seeds` (the crops whose starting seeds were given, once ever).
+SaveManager's 1 → 2 step converts older saves. The tables and shape below
+are the version-1 audit, kept as history.
+
 ## How saving works today
 
 - `SaveManager` writes one JSON file (`user://save.json`) with `points`,

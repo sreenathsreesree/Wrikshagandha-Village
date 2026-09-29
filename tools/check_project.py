@@ -933,8 +933,9 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
-          "scripts/autoload/farm_manager.gd": "369f295b54e5a083", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
-          "scripts/autoload/save_manager.gd": "feceb5cb5835e7b1", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
+          # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2.)
+          "scripts/autoload/farm_manager.gd": "d122e4a1c5dbab26", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          "scripts/autoload/save_manager.gd": "fc285a957c28d7c5", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
           "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
@@ -1260,22 +1261,27 @@ for f, s2 in scripts.items():
 notes.append(f"places: {len(places)} from data/places ({sum(p['secret'] for p in places.values())} secret, garden "
              f"{[k for k, v in places.items() if v['garden']]}), all matched to landmarks")
 
-# ------------------------------------------------------------ items (M04.1)
+# ------------------------------------------------------------ items (M04.1, M04.2)
 # Items are ItemDefinition resources in data/items/ (like crops, discoveries
 # and places), loaded through ResourceDirectory. An ItemStore counts them by
-# id: only add()/remove() change a count, both refuse unknown ids and
-# amounts below 1, remove() is all-or-nothing, so no count goes negative.
-# Nothing holds items yet: seeds and the basket stay in FarmManager (pinned)
-# until M04.2, which also adds the save section (D-17).
+# id, one count per quality level (quality is an attribute, D-18): only
+# add()/remove()/apply_save_data() change counts; add/remove refuse unknown
+# ids, levels and amounts below 1; remove() is all or nothing; loading drops
+# malformed entries only with a warning. Since M04.2 the player's store (in
+# FarmManager, O-14) is the one source of truth for seeds and the basket.
 ITEM_GD, STORE = "scripts/items/item_definition.gd", "scripts/items/item_store.gd"
 idf = scripts.get(ITEM_GD, "")
-ITEM_FIELDS = {"id": "String", "display_name": "String", "category": "String", "crop_id": "String"}
+ITEM_FIELDS = {"id": "String", "display_name": "String", "category": "String", "crop_id": "String", "quality_levels": "int"}
 ITEM_CATEGORIES = ["seed", "produce"]
+fm_src = scripts.get(FM, "")
+qnames = re.search(r'^const QUALITY_NAMES := \[([^\]]*)\]', fm_src, re.M)
+QUALITY_LEVELS = len(qnames.group(1).split(",")) if qnames else 0
 item_fields = dict((m.group(1), m.group(2)) for m in re.finditer(r"^@export(?:_enum\([^)]*\))? var (\w+): (\w+)", idf, re.M))
 cat_enum = re.search(r"^@export_enum\(([^)]*)\) var category: String = \"seed\"", idf, re.M)
 if not re.search(r"^extends Resource\s*\nclass_name ItemDefinition", idf, re.M) or item_fields != ITEM_FIELDS \
-   or not cat_enum or [c.strip().strip('"') for c in cat_enum.group(1).split(",")] != ITEM_CATEGORIES:
-    err(f"{ITEM_GD}: ItemDefinition is a Resource with exactly {sorted(ITEM_FIELDS)}, category one of {ITEM_CATEGORIES}")
+   or not cat_enum or [c.strip().strip('"') for c in cat_enum.group(1).split(",")] != ITEM_CATEGORIES \
+   or "@export var quality_levels: int = 1" not in idf:
+    err(f"{ITEM_GD}: ItemDefinition is a Resource with exactly {sorted(ITEM_FIELDS)}, category one of {ITEM_CATEGORIES}, quality_levels default 1")
 items = {}
 for f in sorted(glob.glob("data/items/*.tres")):
     txt = open(f, encoding="utf-8").read()
@@ -1288,13 +1294,16 @@ for f in sorted(glob.glob("data/items/*.tres")):
     if iid in items:
         err(f"{f}: duplicate item id '{iid}'")
     items[iid] = {"name": vals.get("display_name", '""').strip('"'), "category": vals.get("category", '"seed"').strip('"'),
-                  "crop": vals.get("crop_id", '""').strip('"')}
+                  "crop": vals.get("crop_id", '""').strip('"'), "levels": int(vals.get("quality_levels", "1"))}
     if not items[iid]["name"]:
         err(f"{f}: an item needs a display_name")
     if items[iid]["category"] not in ITEM_CATEGORIES:
         err(f"{f}: category '{items[iid]['category']}' is not one of {ITEM_CATEGORIES}")
     if items[iid]["crop"] not in crop_ids:
         err(f"{f}: crop_id '{items[iid]['crop']}' is not a crop in data/crops")
+    want_levels = QUALITY_LEVELS if items[iid]["category"] == "produce" else 1
+    if items[iid]["levels"] != want_levels:
+        err(f"{f}: quality_levels {items[iid]['levels']} — produce keeps FarmManager's {QUALITY_LEVELS} qualities, seeds none (1)")
 if not items:
     err("data/items: no item definitions")
 for cid in sorted(crop_ids):
@@ -1308,35 +1317,51 @@ st_funcs = {m.group(2): code_only(m.group(0)) for m in
 ld = st_funcs.get("load_definitions", "")
 if not re.search(r"^extends RefCounted\s*\nclass_name ItemStore", st, re.M) or 'const ITEMS_PATH := "res://data/items/"' not in st \
    or not st.count("static func load_definitions(") == 1 or "ResourceDirectory.list_tres_paths(ITEMS_PATH)" not in ld \
-   or "as ItemDefinition" not in ld or 'definition.id == ""' not in ld:
+   or "as ItemDefinition" not in ld or 'definition == null or definition.id == "" or definition.quality_levels < 1' not in ld:
     err(f"{STORE}: ItemStore (a RefCounted) loads data/items/ through ResourceDirectory, skipping unusable files")
-STORE_API = ["load_definitions", "_init", "is_valid_item", "get_definition", "get_quantity", "has", "add", "remove", "get_quantities"]
+STORE_API = ["load_definitions", "crop_item_ids", "_init", "is_valid_item", "get_definition", "get_quantity", "has", "add", "remove",
+             "get_save_data", "apply_save_data", "_accepts", "_counts_of", "_whole_counts"]
 if list(st_funcs) != STORE_API:
     err(f"{STORE}: the store's API is exactly {STORE_API} (found {list(st_funcs)})")
 QTY_WRITE = re.compile(r"\b_quantities\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(erase|clear|merge|assign|make_read_only|sort)\b)")
 DEF_WRITE = re.compile(r"\b_definitions\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(erase|clear|merge|assign)\b)")
 for fn, body in st_funcs.items():
-    if QTY_WRITE.search(body) and fn not in ("add", "remove"):
-        err(f"{STORE}: {fn}() changes a count — only add() and remove() may")
+    if QTY_WRITE.search(body) and fn not in ("add", "remove", "apply_save_data"):
+        err(f"{STORE}: {fn}() changes a count — only add(), remove() and apply_save_data() may")
     if DEF_WRITE.search(body) and fn != "_init":
         err(f"{STORE}: {fn}() changes the known items — only _init() may")
 fields_code = code_only(st.split("static func", 1)[0])
 if re.findall(r"^var (\w+)", fields_code, re.M) != ["_definitions", "_quantities"]:
     err(f"{STORE}: the store's state is exactly _definitions and _quantities")
-add_b, rem_b = st_funcs.get("add", ""), st_funcs.get("remove", "")
-if not re.search(r"if not is_valid_item\(item_id\) or amount < 1:\s*push_warning\([^)]*\)\s*return false\s*"
-                 r"_quantities\[item_id\] = get_quantity\(item_id\) \+ amount\s*return true\s*$", add_b):
-    err(f"{STORE}: add() refuses an unknown id or an amount below 1, otherwise adds exactly that amount (no cap drops items)")
-if not re.search(r"if not is_valid_item\(item_id\) or amount < 1:\s*push_warning\([^)]*\)\s*return false\s*"
-                 r"if get_quantity\(item_id\) < amount:\s*return false\s*var left := get_quantity\(item_id\) - amount\s*"
-                 r"if left == 0:\s*_quantities\.erase\(item_id\)\s*else:\s*_quantities\[item_id\] = left\s*return true\s*$", rem_b):
-    err(f"{STORE}: remove() refuses an unknown id, an amount below 1 or more than is held (all or nothing), never going below 0")
-if "return int(_quantities.get(item_id, 0))" not in st_funcs.get("get_quantity", "") \
-   or "return amount >= 1 and get_quantity(item_id) >= amount" not in st_funcs.get("has", "") \
+GUARD = r"if not _accepts\(item_id, quality\) or amount < 1:\s*push_warning\(.*?\)\n\s*return false\s*"
+if not re.search(GUARD + r"var counts := _counts_of\(item_id\)\s*counts\[quality\] = int\(counts\[quality\]\) \+ amount\s*"
+                 r"_quantities\[item_id\] = counts\s*return true\s*$", st_funcs.get("add", "")):
+    err(f"{STORE}: add() refuses an unknown id or quality or an amount below 1, otherwise adds exactly that amount at that quality (no cap drops items)")
+if not re.search(GUARD + r"if get_quantity\(item_id, quality\) < amount:\s*return false\s*var counts := _counts_of\(item_id\)\s*"
+                 r"counts\[quality\] = int\(counts\[quality\]\) - amount\s*if counts\.max\(\) == 0:\s*_quantities\.erase\(item_id\)\s*"
+                 r"else:\s*_quantities\[item_id\] = counts\s*return true\s*$", st_funcs.get("remove", "")):
+    err(f"{STORE}: remove() refuses an unknown id or quality, an amount below 1 or more than is held (all or nothing), never going below 0")
+if "return is_valid_item(item_id) and quality >= 0 and quality < get_definition(item_id).quality_levels" not in st_funcs.get("_accepts", ""):
+    err(f"{STORE}: _accepts() = a known item and a quality level it has")
+gq = st_funcs.get("get_quantity", "")
+if "var counts: Array = _quantities.get(item_id, [])" not in gq or "total += count" not in gq \
+   or "return int(counts[quality]) if quality < counts.size() else 0" not in gq \
+   or "return amount >= 1 and get_quantity(item_id, quality) >= amount" not in st_funcs.get("has", "") \
    or "return _definitions.has(item_id)" not in st_funcs.get("is_valid_item", "") \
-   or "return _quantities.duplicate()" not in st_funcs.get("get_quantities", ""):
-    err(f"{STORE}: counts are read through get_quantity()/has(); is_valid_item() = a known definition; get_quantities() returns a copy")
-if not re.search(r"_definitions\.has\(definition\.id\)", st_funcs.get("_init", "")):
+   or "return _quantities.duplicate(true)" not in st_funcs.get("get_save_data", "") \
+   or "return (_quantities[item_id] as Array).duplicate()" not in st_funcs.get("_counts_of", ""):
+    err(f"{STORE}: counts are read through get_quantity()/has() (all levels or one); is_valid_item() = a known definition; the save data and working counts are copies")
+ap = st_funcs.get("apply_save_data", "")
+if not re.search(r"var loaded := \{\}\s*for item_id: String in data:\s*var counts := _whole_counts\(item_id, data\[item_id\]\)\s*"
+                 r"if counts\.is_empty\(\):\s*push_warning\(.*?\)\n\s*continue\s*if counts\.max\(\) > 0:\s*loaded\[item_id\] = counts\s*"
+                 r"_quantities = loaded\s*$", ap):
+    err(f"{STORE}: apply_save_data() replaces all counts, keeps only valid entries and drops the rest with a warning (never silently)")
+wc = st_funcs.get("_whole_counts", "")
+if not all(k in wc for k in ("if not is_valid_item(item_id) or typeof(value) != TYPE_ARRAY:", "if entry.size() != get_definition(item_id).quality_levels:",
+                             "if typeof(count) != TYPE_INT and typeof(count) != TYPE_FLOAT:", "counts.append(maxi(int(count), 0))")):
+    err(f"{STORE}: a saved entry is valid only for a known id with one number per quality level; counts never negative")
+if not re.search(r"^var _definitions: Dictionary = \{\}\s*\nvar _quantities: Dictionary = \{\}", st, re.M) \
+   or not re.search(r"if definition == null or definition.id == \"\" or _definitions\.has\(definition\.id\):", st_funcs.get("_init", "")):
     err(f"{STORE}: _init() ignores a duplicate item id")
 for f, s2 in scripts.items():
     if f.startswith("tools/"): continue
@@ -1348,8 +1373,95 @@ for f, s2 in scripts.items():
     for lit in re.findall(r'"([^"]+)"', code):
         if lit in items or lit in {v["name"] for v in items.values()}:
             err(f"{f}: item data '{lit}' hard-coded in a script — it belongs in data/items/")
+    if f not in (FM, STORE) and re.search(r"\bItemStore\.new\(", code):
+        err(f"{f}: creates an ItemStore — the player's items have one store (FarmManager's, O-14)")
+    if f != "scripts/autoload/save_manager.gd" and re.search(r"(?<!func )get_item_save_data\(|FarmManager\.apply_save_data\(", code):
+        err(f"{f}: reads or loads the player's items — only SaveManager does")
+
+# One source of truth (M04.2): FarmManager keeps no count of its own.
+fm_code = code_only(fm_src)
+fm_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", fm_src, re.M | re.S)}
+HOLDING_VARS = {"_items", "_seed_item_ids", "_produce_item_ids", "_starter_seeds_given", "_found_seed_crop_ids", "_found_seed_origins"}
+holding_like = {v for v in re.findall(r"^var (\w+)", fm_code, re.M) if re.search(r"seed|produce|basket|item|harvest_count|inventory", v)}
+if holding_like != HOLDING_VARS or "var _items: ItemStore" not in fm_code:
+    err(f"{FM}: seeds and the basket live only in the ItemStore — no second copy (seed/produce/basket state {sorted(holding_like)}, expected {sorted(HOLDING_VARS)})")
+if re.search(r"\b_items\b(?!\.|: ItemStore| = ItemStore\.new\()", fm_code) or fm_code.count("_items = ItemStore.new(") != 1 \
+   or "_items = ItemStore.new(item_definitions)" not in fm_funcs.get("_ready", ""):
+    err(f"{FM}: the store is created once in _ready() and never handed out (only its methods are used)")
+for v in ("_seed_item_ids", "_produce_item_ids"):
+    if len(re.findall(rf"\b{v} =[^=]", fm_code)) != 1 or f'{v} = ItemStore.crop_item_ids(item_definitions, "{"seed" if "seed" in v else "produce"}")' not in fm_funcs.get("_ready", ""):
+        err(f"{FM}: {v} is built once in _ready() from the item data")
+STORE_CALLS = {("add", "notify_crop_harvested"): 2, ("add", "_grant_found_seeds"): 1, ("add", "_give_starting_seeds"): 1,
+               ("remove", "choose_seed"): 1, ("apply_save_data", "apply_save_data"): 1, ("get_save_data", "get_item_save_data"): 1}
+calls = {}
+for fn, body in fm_funcs.items():
+    for m in re.finditer(r"\b_items\.(add|remove|apply_save_data|get_save_data)\(", body):
+        calls[(m.group(1), fn)] = calls.get((m.group(1), fn), 0) + 1
+if calls != STORE_CALLS:
+    err(f"{FM}: the store changes only where the seed/basket rules say (found {sorted(calls.items())}, expected {sorted(STORE_CALLS.items())})")
+if 'return _items.get_quantity(_seed_item_ids.get(crop_id, ""))' not in fm_funcs.get("get_seed_count", "") \
+   or not re.search(r'var item_id: String = _produce_item_ids\.get\(crop_id, ""\)\s*if quality < 0:\s*return _items\.get_quantity\(item_id\)\s*'
+                    r'return _items\.get_quantity\(item_id, clampi\(quality, QUALITY_PLAIN, QUALITY_FINE\)\)', fm_funcs.get("get_produce_count", "")):
+    err(f"{FM}: seed and produce counts are read from the store (the same clamped quality as before)")
+cs = fm_funcs.get("choose_seed", "")
+if not re.search(r"if crop == null or get_seed_count\(crop\.crop_id\) <= 0:\s*return false", cs) \
+   or not (0 <= cs.find("if not _pending_plot.plant(crop, soil):") < cs.find('_items.remove(_seed_item_ids.get(crop.crop_id, ""))')):
+    err(f"{FM}: planting is refused without a seed, and the seed is taken only after the plot planted")
+hv = fm_funcs.get("notify_crop_harvested", "")
+if '_items.add(_seed_item_ids.get(crop_definition.crop_id, ""))\n' not in hv \
+   or '_items.add(_produce_item_ids.get(crop_definition.crop_id, ""), 1, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))' not in hv:
+    err(f"{FM}: a harvest returns exactly one seed and puts one produce at the quality it grew")
+gf = fm_funcs.get("_grant_found_seeds", "")
+if not re.search(r'if _found_seed_crop_ids\.has\(crop\.crop_id\):\s*continue.*_found_seed_crop_ids\.append\(crop\.crop_id\).*'
+                 r'_items\.add\(_seed_item_ids\.get\(crop\.crop_id, ""\)\)\n', gf, re.S):
+    err(f"{FM}: a found seed is one seed, once ever per crop")
+gs_ = fm_funcs.get("_give_starting_seeds", "")
+if not re.search(r"for crop in _crops:\s*if _starter_seeds_given\.has\(crop\.crop_id\):\s*continue\s*_starter_seeds_given\.append\(crop\.crop_id\)\s*"
+                 r'if crop\.starting_seeds > 0:\s*_items\.add\(_seed_item_ids\.get\(crop\.crop_id, ""\), crop\.starting_seeds\)\s*$', gs_) \
+   or "_give_starting_seeds()" not in fm_funcs.get("_ready", ""):
+    err(f"{FM}: each crop's starting seeds are given once ever (at a fresh start, or for a crop the save hasn't seen)")
+fa = fm_funcs.get("apply_save_data", "")
+if not re.search(r"func apply_save_data\(data: Dictionary, items: Dictionary\) -> void:\s*if data\.is_empty\(\):\s*return\s*"
+                 r"_items\.apply_save_data\(items\)\s*_starter_seeds_given\.clear\(\)\s*for crop_id: Variant in data\.get\(\"starter_seeds\", \[\]\):"
+                 r".*?_give_starting_seeds\(\)", fa, re.S):
+    err(f"{FM}: apply_save_data() keeps a fresh farm for an empty farm section; otherwise loads the items, then gives any starting seeds not yet given")
+fsd = fm_funcs.get("get_save_data", "")
+if re.search(r'"(seeds|basket)":', fsd) or '"starter_seeds": Array(_starter_seeds_given),' not in fsd:
+    err(f"{FM}: the farm section no longer holds seeds or the basket (they are the items section); it records starter_seeds")
+# The quality rules themselves are unchanged by M04.2.
+QUALITY_RULES = {"rate_soil": "08687935b173", "rate_care": "f6fa6d2a3dc8", "combine_quality": "352aae2471d5",
+                 "get_harvest_points": "b2554a355faf", "get_quality_name": "b06aa2985f01", "get_basket": "094c15abfe71",
+                 "get_produce_total": "79b22fabce3d"}
+changed_q = [n for n, h in QUALITY_RULES.items() if _hash_body(fm_src, n) != h]
+if changed_q or not re.search(r"^const QUALITY_PLAIN := 0\nconst QUALITY_GOOD := 1\nconst QUALITY_FINE := 2\n"
+                              r'const QUALITY_NAMES := \["Plain", "Good", "Fine"\]', fm_src, re.M) \
+   or not all(c in fm_src for c in ("const NEGLECT_FACTOR := 3.0\n", "const QUALITY_POINT_SCALE := [0.75, 1.0, 1.5]\n",
+                                    "const QUALITY_SIZE := [0.9, 1.0, 1.1]\n", "const SOIL_MEMORY := 2\n")):
+    err(f"{FM}: produce quality rules changed {changed_q} — M04.2 moves where produce is held, never how quality is decided")
+# Save 1 -> 2 (M04.2): seeds and basket move from the farm section to "items".
+SMF = "scripts/autoload/save_manager.gd"
+sm_src = scripts.get(SMF, "")
+smf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |^static func |\Z)", sm_src, re.M | re.S)}
+if not re.search(r"^\t\t\t1:\s*_move_holdings_to_items\(data\)", smf.get("_migrate", ""), re.M):
+    err(f"{SMF}: _migrate() step 1 moves the farm's seeds and basket into items")
+mv = smf.get("_move_holdings_to_items", "")
+mv_ok = all(k in mv for k in ('var seed_items := ItemStore.crop_item_ids(definitions, "seed")',
+                              'var produce_items := ItemStore.crop_item_ids(definitions, "produce")',
+                              'var seeds: Variant = farm.get("seeds", {})', 'var basket: Variant = farm.get("basket", {})',
+                              'farm["starter_seeds"] = (seeds as Dictionary).keys()', "items[seed_items[crop_id]] = [seeds[crop_id]]",
+                              "items[produce_items[crop_id]] = basket[crop_id]", 'farm.erase("seeds")', 'farm.erase("basket")',
+                              'data["items"] = items'))
+if not mv_ok or set(re.findall(r'\bdata\["(\w+)"\]\s*=', mv)) != {"items"} or re.search(r"\bdata\.(erase|clear|merge)\b", mv) \
+   or len(re.findall(r"else:\s*push_warning\([^)]*\)", mv)) != 2 or re.search(r'farm\.erase\("(?!seeds|basket)', mv) \
+   or set(re.findall(r'farm\["(\w+)"\]\s*=', mv)) != {"starter_seeds"}:
+    err(f"{SMF}: the 1 -> 2 step moves every seed count and basket row (counts as they are, a dropped crop warned about) into items, "
+        "records starter_seeds, and touches nothing else")
+if '"items": FarmManager.get_item_save_data(),' not in code_only(func_body(sm_src, "save_game") or "") \
+   or 'FarmManager.apply_save_data(data.get("farm", {}), data.get("items", {}))' not in code_only(func_body(sm_src, "load_game") or ""):
+    err(f"{SMF}: the items section is written from and loaded into the player's store, together with the farm")
 notes.append(f"items: {len(items)} from data/items ({sum(v['category'] == 'seed' for v in items.values())} seed, "
-             f"{sum(v['category'] == 'produce' for v in items.values())} produce, one each per crop); ItemStore API {len(STORE_API)} functions")
+             f"{sum(v['category'] == 'produce' for v in items.values())} produce x{QUALITY_LEVELS} qualities); ItemStore API {len(STORE_API)} "
+             f"functions; FarmManager keeps no seed/basket copy; save step 1 -> 2 moves them to items")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

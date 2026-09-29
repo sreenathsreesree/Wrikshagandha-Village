@@ -8,3 +8,4 @@ id = "elderbloom"
 display_name = "Elderbloom"
 category = "produce"
 crop_id = "elderbloom"
+quality_levels = 3

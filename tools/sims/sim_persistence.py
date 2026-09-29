@@ -7,6 +7,10 @@ Checks across app restarts:
  - milestone bonus points awarded once ever (no re-award on relaunch)
  - READY counts rebuilt from plots; a save taken mid-harvest never double counts
  - capture -> apply -> capture is identical
+Since M04.2 the save is the farm section (no seeds/basket; starter_seeds)
+plus the items section (the crops' seed items, and produce items with a
+count per quality); an emptied item isn't listed, and a crop whose starting
+seeds were given reads as 0 when its seed item is absent.
 """
 import os, json, random, re, glob, copy
 
@@ -18,6 +22,10 @@ for f in sorted(glob.glob(f"{ROOT}/data/crops/*.tres")):
     cid = g("crop_id").strip('"')
     crops[cid] = dict(start=int(g("starting_seeds", "1")), src=g("found_seed_source", '"none"').strip('"'),
                       src_id=g("found_seed_source_id", '""').strip('"'))
+ITEM_OF = {}
+for f in sorted(glob.glob(f"{ROOT}/data/items/*.tres")):
+    s_ = open(f).read(); g_ = lambda k, d=None: (re.search(rf'^{k} = "?([^"\n]*)"?$', s_, re.M) or [None, d])[1]
+    ITEM_OF[(g_("crop_id"), g_("category", "seed"))] = g_("id")
 BONUS = {"first_harvest": 10, "all_starter_crops": 40, "garden_complete": 30, "garden_in_bloom": 50}
 PLOTS = [f"farm_plot_0{i}" for i in range(1, 8)]
 UNLOCK = {"farm_plot_06": "first_harvest", "farm_plot_07": "all_starter_crops"}
@@ -73,18 +81,22 @@ class Farm:
     def save(f):
         plots = copy.deepcopy(f.saved_plots)
         for pid, p in f.plots.items(): plots[pid] = p.capture()
-        return {"version": 1, "seeds": dict(f.seeds), "found_seeds": copy.deepcopy(f.found), "grown": list(f.grown),
-                "basket": {k: list(v) for k, v in f.basket.items()}, "milestones": list(f.milestones),
-                "counts": {"planted": f.planted, "harvested": f.harvested},
+        items = {ITEM_OF[(c, "seed")]: [n] for c, n in f.seeds.items() if n > 0}
+        items.update({ITEM_OF[(c, "produce")]: list(k) for c, k in f.basket.items() if max(k) > 0})
+        farm = {"version": 1, "starter_seeds": list(crops), "found_seeds": copy.deepcopy(f.found), "grown": list(f.grown),
+                "milestones": list(f.milestones), "counts": {"planted": f.planted, "harvested": f.harvested},
                 "harvested_plots": list(f.harvested_plots), "garden_found": f.garden_found, "plots": plots}
-    def apply(f, d):
+        return {"farm": farm, "items": items}
+    def apply(f, save):
+        d, items = save.get("farm", {}), save.get("items", {})
         if not d: return
+        given = set(d.get("starter_seeds", []))
         for c, v in crops.items():
-            sv = d.get("seeds", {}).get(c)
-            f.seeds[c] = max(int(sv), 0) if sv is not None else max(v["start"], 0)
+            held = items.get(ITEM_OF[(c, "seed")], [0])[0]
+            f.seeds[c] = max(int(held), 0) + (max(v["start"], 0) if c not in given else 0)
         f.found = {k: v for k, v in d.get("found_seeds", {}).items() if k in crops}
         f.grown = [x for x in d.get("grown", []) if x in crops]
-        f.basket = {k: [max(int(x), 0) for x in v] for k, v in d.get("basket", {}).items() if k in crops and len(v) == 3}
+        f.basket = {c: [max(int(x), 0) for x in items[ITEM_OF[(c, "produce")]]] for c in crops if ITEM_OF[(c, "produce")] in items}
         f.milestones = [str(x) for x in d.get("milestones", [])]
         f.planted = int(d.get("counts", {}).get("planted", 0)); f.harvested = int(d.get("counts", {}).get("harvested", 0))
         f.harvested_plots = [str(x) for x in d.get("harvested_plots", [])]
@@ -111,10 +123,11 @@ def run(trials=300, sessions=8, steps=400):
     stats = dict(saves=0, midharvest_saves=0, ready_restored=0)
     for t in range(trials):
         rnd = random.Random(900 + t)
-        save_json, points, bonus_ever = None, 0, {}
+        save_json, points, bonus_ever, saved_basket = None, 0, {}, {}
         found_ever = set()
         for sess in range(sessions):
             farm = boot(save_json, points)
+            assert {c: k for c, k in farm.basket.items() if max(k) > 0} == saved_basket, "the basket (every quality) survives a relaunch"
             stats["ready_restored"] += sum(farm.ready.values())
             check(farm)
             # capture -> apply -> capture identity
@@ -161,9 +174,11 @@ def run(trials=300, sessions=8, steps=400):
                     stats["saves"] += 1
                     stats["midharvest_saves"] += any(x.harvesting and x.paid for x in farm.plots.values())
                     save_json = json.dumps(farm.save()); points = farm.points
+                    saved_basket = {c: list(k) for c, k in farm.basket.items() if max(k) > 0}
                 check(farm)
             # app backgrounded: save; bonus accounting
             save_json = json.dumps(farm.save()); points = farm.points
+            saved_basket = {c: list(k) for c, k in farm.basket.items() if max(k) > 0}
             for m in farm.milestones: bonus_ever[m] = bonus_ever.get(m, 0)
         # every milestone paid at most once across all sessions
         final = boot(save_json, points)
