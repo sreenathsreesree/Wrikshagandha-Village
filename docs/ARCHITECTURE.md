@@ -174,13 +174,13 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 11. Saving
 - **Current:**
-  - One JSON file, `user://save.json`, with keys `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (versioned `version: 1`), `settings`.
-  - Every key is read with a default, so older saves load.
+  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`.
+  - **Versioning (M04.0, D-17):** `save_version` (currently 1; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step (M04.2 will add 1 → 2 when seeds/basket move to inventory).
+  - Every section is read with a default, so older saves load and a wrongly typed section only resets itself.
   - Autosave on: new discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed.
   - **Not saved:** exploration progress, time of day, player position.
   - The farm save format is documented in `docs/farming_persistence_plan.md`.
 - **Direction:**
-  - Top-level save version + migrations (proposal P-01, before inventory).
   - Exploration progress (P-02).
   - Full versioned persistence in Phase 15.
 - **Rule:** systems expose `get_save_data()` / `apply_save_data()`; world objects restore by stable id on registration.

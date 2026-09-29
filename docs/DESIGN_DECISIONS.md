@@ -28,6 +28,7 @@ blocked (`[!]`) until the developer records a decision here.
 | D-14 | Crop count stays at 4 (no more crops before the farming loop is proven fun) | Developer instruction (farm depth milestone) |
 | D-15 | **The world itself is the control.** Tap ground → walk there; tap an object → walk to it and interact. Taps work in both movement modes. The movement-mode setting only chooses whether the joystick is shown. Joystick/keyboard input always takes over from a tap-started walk; a new tap replaces the current target. Refines D-07 | Developer instruction (touch interaction fix) |
 | D-16 | Interaction range for tapped objects is the existing player interaction range (the InteractionZone), not a separate reach: the player walks toward the object and interacts once it's in range. No per-object distances. Resolves O-08 | Developer instruction (touch interaction fix) |
+| D-17 | **Save versioning (was P-01).** The save file carries a top-level integer `save_version` (1 since M04.0; absent = 0 = written before M04.0). A load migrates older saves one step at a time (one step per version in `SaveManager._migrate()`); refuses a save from a newer build and never overwrites it that session; treats a version that isn't a whole number ≥ 0 like a corrupted file; passes a section to its system only if its JSON type is the expected one (else that section's default). **Rule:** any change to what is saved (new section, renamed or reshaped field) bumps `SAVE_VERSION` and adds its step — the bump is what stops an older build from silently dropping newer data. `farm.version` stays as FarmManager's own (unused) field | Developer instruction (M04.0) |
 
 ## Open — Five Rishis (pending final design decision)
 
@@ -63,6 +64,5 @@ blocked (`[!]`) until the developer records a decision here.
 
 | ID | Proposal | Why |
 |---|---|---|
-| P-01 | Pull a **minimal save-versioning step** (top-level save version + one migration hook) into Phase 04 (milestone M04.0), ahead of the full Save phase (15) | Inventory will move seeds/basket out of FarmManager, changing existing save keys; without versioning, old saves lose farm data |
 | P-03 | **Zoom range 7–15 m** (camera distance = spring-arm length; the scene's 11 m stays the starting value) and a **1.1× distance change per mouse-wheel notch**. Provisional values in `follow_camera.gd` / `input_manager.gd`, to be tuned or approved after the Android playtest (M01.6, "M03.5 zoom") | The plan (M03.5) asks for clamped zoom but gives no limits; nothing in the project defined any. The range keeps the current view in the middle (≈ ±35 % distance) |
 | P-02 | Persist exploration progress as part of Phase 05's repeat-reward protection (milestone M05.2) | Exploration bonuses currently re-award on every launch while points are saved |

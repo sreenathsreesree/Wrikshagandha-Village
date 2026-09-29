@@ -934,7 +934,7 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           "scripts/autoload/farm_manager.gd": "369f295b54e5a083", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
-          "scripts/autoload/save_manager.gd": "2da42b4bc60ce76a", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
+          "scripts/autoload/save_manager.gd": "feceb5cb5835e7b1", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
           "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
@@ -1259,6 +1259,69 @@ for f, s2 in scripts.items():
             err(f"{f}: place name '{name}' inside a script string — use ExplorationManager.get_place_display_name()")
 notes.append(f"places: {len(places)} from data/places ({sum(p['secret'] for p in places.values())} secret, garden "
              f"{[k for k, v in places.items() if v['garden']]}), all matched to landmarks")
+
+# ------------------------------------------------------------ save versioning (M04.0, P-01)
+# One versioned save file, written and read only by SaveManager: every save
+# carries save_version; a load validates it (absent = 0, malformed rejected,
+# newer refused and never overwritten), migrates step by step, and passes
+# only correctly typed sections to their systems.
+SM = "scripts/autoload/save_manager.gd"
+sm = scripts.get(SM, "")
+sv = const_val(sm, "SAVE_VERSION")
+if sv is None or sv != int(sv) or sv < 1 or 'const VERSION_KEY := "save_version"' not in sm:
+    err(f"{SM}: an explicit integer SAVE_VERSION >= 1 and VERSION_KEY \"save_version\"")
+sg = code_only(func_body(sm, "save_game") or "")
+if not re.match(r"func save_game\(\) -> void:\s*if _saving_blocked:\s*push_warning\([^)]*\)\s*return", sg) or "VERSION_KEY: SAVE_VERSION," not in sg:
+    err(f"{SM}: save_game() refuses while saving is blocked and always writes save_version")
+lg = code_only(func_body(sm, "load_game") or "")
+order = ["JSON.parse_string(text)", "if typeof(parsed) != TYPE_DICTIONARY:", "var version := read_version(parsed)",
+         "if version < 0:", "if version > SAVE_VERSION:", "_saving_blocked = true", "var data := _migrate(parsed, version)",
+         "if data.is_empty():", "data = _valid_sections(data)", "PointsManager.set_points("]
+idx = [lg.find(k) for k in order]
+if -1 in idx or idx != sorted(idx):
+    err(f"{SM}: load_game() must parse, check the dictionary, read the version, reject malformed/newer (blocking saves), migrate, validate sections — before applying anything")
+fut = re.search(r"if version > SAVE_VERSION:(.*?)return false", lg, re.S)
+if not fut or "_saving_blocked = true" not in fut.group(1) or "apply" in fut.group(1):
+    err(f"{SM}: a newer save is neither loaded nor overwritten")
+applied = lg[lg.find("data = _valid_sections(data)"):]
+if re.search(r"\bparsed\b", applied):
+    err(f"{SM}: sections are applied only from the migrated, validated data")
+_rvm = re.search(r"^static func read_version\(.*?(?=^func |^static func |\Z)", sm, re.M | re.S)
+rv = code_only(_rvm.group(0) if _rvm else "")
+if not all(k in rv for k in ("if not save.has(VERSION_KEY):\n\t\treturn 0", "typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT",
+                             "if number < 0.0 or number != floorf(number):\n\t\treturn -1")):
+    err(f"{SM}: read_version(): absent = 0; a non-number, negative or fractional version = -1 (malformed)")
+mg = code_only(func_body(sm, "_migrate") or "")
+steps = sorted(int(x) for x in re.findall(r"^\t\t\t(\d+):", mg, re.M))
+if sv is not None and steps != list(range(int(sv))):
+    err(f"{SM}: _migrate() needs exactly one step for each version 0..{int(sv) - 1 if sv else '?'} (found {steps})")
+if not re.search(r"^\t\t\t0:\s*pass\b", mg, re.M):
+    err(f"{SM}: _migrate() step 0 (a save from before M04.0) keeps every section as it is — only save_version was missing")
+if not re.search(r"_:\s*push_warning\([^)]*\)\s*return \{\}", mg) or "version += 1" not in mg or "data[VERSION_KEY] = version" not in mg \
+   or "save.duplicate(true)" not in mg:
+    err(f"{SM}: _migrate() steps one version at a time on a copy, stamps the version, rejects an unknown step")
+written = set(re.findall(r'^\t\t"(\w+)": ', sg, re.M))
+typed = set(re.findall(r'^\t"(\w+)": \[', sm, re.M))
+read = set(re.findall(r'data\.get\("(\w+)"', lg))
+PRE_M04_SECTIONS = {"points": "TYPE_INT, TYPE_FLOAT", "discovered_ids": "TYPE_ARRAY", "journal_entries": "TYPE_DICTIONARY",
+                    "daily_discovery": "TYPE_DICTIONARY", "farm": "TYPE_DICTIONARY", "settings": "TYPE_DICTIONARY"}
+section_types = dict(re.findall(r'^\t"(\w+)": \[([^\]]*)\],', sm, re.M))
+if any(section_types.get(k) != v for k, v in PRE_M04_SECTIONS.items()):
+    err(f"{SM}: every section saved before M04.0 is still read with the type it was written with "
+        f"(expected {PRE_M04_SECTIONS}) — old saves, incl. M03.3 farm plots, must keep loading")
+vs = code_only(func_body(sm, "_valid_sections") or "")
+if not re.search(r"for key: String in SECTION_TYPES:.*if allowed\.has\(typeof\(data\[key\]\)\):\s*valid\[key\] = data\[key\]\s*else:", vs, re.S) \
+   or len(re.findall(r"\bvalid\b", vs)) != 3 or not re.search(r"return valid\s*$", vs):
+    err(f"{SM}: _valid_sections() passes on only sections whose type is listed in SECTION_TYPES")
+if not written or written != typed or typed != read:
+    err(f"{SM}: every section written is type-checked and read back (written {sorted(written)}, typed {sorted(typed)}, read {sorted(read)})")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == SM: continue
+    if re.search(r"FileAccess|DirAccess\.remove|\"user://|JSON\.(parse|stringify)|ConfigFile", code_only(s2)):
+        err(f"{f}: file/JSON persistence outside SaveManager — the save is written and read only by SaveManager")
+    if re.search(r"SaveManager\.(_\w+|SAVE_PATH)", code_only(s2)):
+        err(f"{f}: reaches into SaveManager internals")
+notes.append(f"save: save_version {int(sv) if sv is not None else sv} ({SM}); migration steps {steps}; sections {sorted(typed)}")
 
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from

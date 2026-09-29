@@ -172,7 +172,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
 | A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | **Resolved in code:** physics layers M01.1; place list, garden place id, curiosity pairs and secret count M03.6 (`data/places/`) |
 | A6 | Unused interaction path (`interact_requested`) | **Resolved in M02.5** (removed; guarded by the toolkit) |
-| A7 | No top-level save versioning before inventory changes save keys | Phase 04 (P-01, proposed) → Phase 15 |
+| A7 | No top-level save versioning before inventory changes save keys | **Resolved in code:** M04.0 (P-01 → D-17: `save_version`, step migrations, newer saves refused); full save phase still Phase 15 |
 | A8 | ~50 per-frame scripts; runtime navmesh bake cost unknown on device | Phase 01 test, Phase 16 |
 
 ---
@@ -430,6 +430,12 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - zoom survives a `load_area(...)` reload; zooming at a camera-bounds edge doesn't move the focus;
     - note whether 7–15 m feels right at both ends and the wheel step feels right (proposal P-03);
   - **M03.6 place data (quick regression — behaviour should be identical):** the Journal's "Places" list shows the same 8 places in the same order ("???" until visited); reaching the Overlook and the garden shows the same arrival cards ("A quiet place to grow." for the garden); finding a secret spot shows its name; finding all four secret spots still gives the "Every Secret Found" bonus; the curiosity bonus still fires for the pond nook / mystery tree before their discoveries; the garden's Journal heading and "in bloom" milestone still say "Quiet Garden"; found-seed places still grant their seeds.
+  - **M04.0 save versioning** (desktop, where `user://save.json` can be opened — Godot's "Open User Data Folder"; Android for (a) only):
+    - (a) install this build over a pre-M04.0 build that has a save with progress (points, journal, a planted plot mid-growth, seeds, basket, a movement mode): everything loads as before; after the next autosave (collect a discovery) the file starts with `"save_version":1` and still holds everything;
+    - (b) fresh install / no save: the first save has `"save_version":1`;
+    - (c) set `save_version` to `99`: launch → a fresh game, a warning "newer than this build" in the output; play, plant, pause and quit → the file is byte-for-byte unchanged (still 99);
+    - (d) set `save_version` to `"abc"`, `-1` or `1.5`: launch → a fresh game and a "malformed save_version" warning (the file is replaced on the next autosave, as a corrupted file is today);
+    - (e) set `"farm": []` (or `"points": "x"`): launch → everything else loads; that section starts empty; a "wrong type" warning; no script error.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -725,11 +731,28 @@ Goal: one universal item model.
 
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
-| M04.0 | *(Proposed P-01)* Top-level save version + migration hook | Old saves load; version recorded | Relaunch with an old save | `[!]` awaiting approval of P-01 |
+| M04.0 | Top-level save version + migration hook (P-01 → D-17) | Old saves load; version recorded | Relaunch with an old save | `[~]` |
 | M04.1 | Item definitions (id, name, category, stackable, glyph, element id, value) + item store | Items stored and saved | — | `[ ]` |
 | M04.2 | Seeds and harvests become items; migrate from FarmManager (A3) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[ ]` |
 | M04.3 | Discoveries and collectibles can grant items | Collect → item | Tap a collectible | `[ ]` |
 | M04.4 | Inventory UI; seed picker and basket become filtered views | One inventory screen | Android: readability | `[ ]` |
+
+**M04.0 — Save versioning (P-01)** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.0 save versioning")
+- **Objective:** an explicit save schema version, deterministic validation, safe handling of newer saves and a migration path, before M04.2 changes save keys; M03.3 farm persistence unchanged.
+- **Audit (before):**
+  - One writer/reader, `SaveManager` → `user://save.json`: `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm`, `settings`. No top-level version; only `farm.version = 1`, written by FarmManager and never read.
+  - Autosave (GameState): discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed; load once at boot.
+  - Missing sections defaulted, extra keys ignored; a corrupted file ignored and later overwritten. **Risks:** a section of the wrong type reached a system's typed `apply` (script error part-way through a load); a save from a newer build loaded partially and the next autosave dropped what the older build didn't know.
+  - Not saved (unchanged): exploration progress (P-02), time of day, player position, camera zoom, respawns, events.
+- **Files:** `scripts/autoload/save_manager.gd` (pin updated deliberately); `tools/check_project.py`; new `tools/sims/sim_save_versioning.py`; docs. Nothing else.
+- **Implementation:** `SAVE_VERSION := 1` and `save_version` written first in every save; `read_version()` (absent → 0 = a pre-M04.0 save; not a whole number ≥ 0 → malformed, ignored like a corrupted file); a newer version is not loaded and sets `_saving_blocked` so the session never overwrites it; `_migrate()` walks one `match` step per version on a copy (step 0 = pre-M04.0: nothing to rewrite) and rejects a missing step; `SECTION_TYPES` + `_valid_sections()` pass only correctly typed sections to the systems (a wrong type falls back to that section's default). The six apply calls and `farm` (incl. M03.3 plot states) are unchanged. M04.2 adds the first real step (1 → 2).
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: integer `SAVE_VERSION` ≥ 1 and the `save_version` key; `save_game()` refuses while blocked and always writes the version; `load_game()` order (parse → dictionary → version → malformed → newer, blocking saves → migrate → validate → apply) with nothing applied from the unvalidated data and nothing applied for a newer save; `read_version()` rules; exactly one migration step per older version, step 0 changes nothing, unknown step rejected, stamped copy; the six pre-M04.0 sections keep their types and are written, type-checked and read back as one set; `_valid_sections()` passes only listed types; no other script does file/JSON/`user://` persistence or touches SaveManager internals.
+  - `sim_save_versioning.py` (a port using Godot's float-only JSON numbers and typed system applies): current save round-trips identically (farm plots included); a pre-M04.0 save loads identically and is stamped on its next save; newer saves are neither loaded nor overwritten; malformed versions/files ignored; wrongly typed sections defaulted without affecting the others; migration dispatch in order, a missing step rejects; 3,000 random/garbage saves never reach a system with a wrong type, and loading is deterministic.
+  - Mutation-tested: 42 GDScript mutations (missing/wrong version, newer save accepted/applied/overwritten, malformed version/file accepted, migration skipped/missing/unknown/unstamped/dropping `farm`, validation removed or bypassed, M03.3 `farm` section dropped or retyped, second file writers, reaching into SaveManager) all caught by `check_project.py` with the SaveManager pin removed; 7 model mutations caught by the simulation; one allowed control (another script calling `save_game()`) correctly passes.
+- **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M04.0 save versioning").
+- **Commit:** §15.
 
 ### PHASE 05 — ECONOMY
 Goal: an internal coin economy with repeat-reward protection.
@@ -881,8 +904,9 @@ No large world expansion before this gate passes.
 | M03.4 | `32c98b8` |
 | M03.5 | `44e3bb5` |
 | M03.6 | `b76e49c` |
+| M04.0 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 03 — Camera / world shell. M03.1–M03.6 implemented (`[~]`, runtime test pending; Phase 03 is complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's and M03.6's runtime tests). Phase 03's table is complete; the next phase is **Phase 04 — Inventory**, starting with **M04.0** (proposed P-01, awaiting approval) or **M04.1 — item definitions + item store**. Either starts only on the developer's instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0's runtime tests). Next in code: **M04.1 — item definitions + item store**, only on the developer's explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

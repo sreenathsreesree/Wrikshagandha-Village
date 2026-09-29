@@ -2,13 +2,45 @@ extends Node
 
 ## Local save/load only. Reads and writes a single JSON file under the
 ## platform-specific user:// directory (app-private storage on Android).
-## Every field is read with a default, so a save written before Journal /
+## Every section is read with a default, so a save written before Journal /
 ## Daily Discovery existed still loads cleanly.
+##
+## Versioning (M04.0, P-01): the file carries a top-level save_version.
+## - absent: written before M04.0 (version 0) — same sections, migrated up;
+## - older than SAVE_VERSION: migrated one step at a time (_migrate);
+## - newer than this build: neither loaded nor overwritten this session —
+##   an older build would drop what it doesn't know;
+## - not a whole number >= 0: malformed, treated like a corrupted file.
+## A section of the wrong type is ignored (its default is used) instead of
+## reaching a system's apply function. Bump SAVE_VERSION whenever what is
+## saved changes (a new section, a renamed or reshaped field) and add its
+## step to _migrate() (a step that changes nothing is fine when old data
+## needs no rewrite): the bump is what stops an older build from loading a
+## newer save and dropping what it doesn't know on its next save.
 
 const SAVE_PATH := "user://save.json"
+const SAVE_VERSION := 1
+const VERSION_KEY := "save_version"
+## Every section and the JSON types it may have; anything else is ignored.
+const SECTION_TYPES := {
+	"points": [TYPE_INT, TYPE_FLOAT],
+	"discovered_ids": [TYPE_ARRAY],
+	"journal_entries": [TYPE_DICTIONARY],
+	"daily_discovery": [TYPE_DICTIONARY],
+	"farm": [TYPE_DICTIONARY],
+	"settings": [TYPE_DICTIONARY],
+}
+
+## Set when the file on disk is newer than this build: saving is refused for
+## the rest of the session so that file survives.
+var _saving_blocked: bool = false
 
 func save_game() -> void:
+	if _saving_blocked:
+		push_warning("SaveManager: the save file is from a newer version; not overwriting it")
+		return
 	var data := {
+		VERSION_KEY: SAVE_VERSION,
 		"points": PointsManager.get_points(),
 		"discovered_ids": DiscoveryManager.get_discovered_ids(),
 		"journal_entries": JournalManager.get_save_data(),
@@ -36,13 +68,69 @@ func load_game() -> bool:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("SaveManager: save file corrupted, ignoring")
 		return false
-	PointsManager.set_points(int(parsed.get("points", 0)))
-	DiscoveryManager.set_discovered_ids(parsed.get("discovered_ids", []))
-	JournalManager.apply_save_data(parsed.get("journal_entries", {}))
-	DailyDiscoveryManager.apply_save_data(parsed.get("daily_discovery", {}))
-	FarmManager.apply_save_data(parsed.get("farm", {}))
-	InputManager.apply_settings_data(parsed.get("settings", {}))
+	var version := read_version(parsed)
+	if version < 0:
+		push_warning("SaveManager: save file has a malformed save_version, ignoring")
+		return false
+	if version > SAVE_VERSION:
+		_saving_blocked = true
+		push_warning("SaveManager: save_version %d is newer than this build (%d); not loading or overwriting it" % [version, SAVE_VERSION])
+		return false
+	var data := _migrate(parsed, version)
+	if data.is_empty():
+		return false
+	data = _valid_sections(data)
+	PointsManager.set_points(int(data.get("points", 0)))
+	DiscoveryManager.set_discovered_ids(data.get("discovered_ids", []))
+	JournalManager.apply_save_data(data.get("journal_entries", {}))
+	DailyDiscoveryManager.apply_save_data(data.get("daily_discovery", {}))
+	FarmManager.apply_save_data(data.get("farm", {}))
+	InputManager.apply_settings_data(data.get("settings", {}))
 	return true
 
 func has_save_file() -> bool:
 	return FileAccess.file_exists(SAVE_PATH)
+
+## The save's schema version: 0 if absent (written before M04.0); -1 if it
+## isn't a whole number >= 0 (JSON numbers arrive as floats).
+static func read_version(save: Dictionary) -> int:
+	if not save.has(VERSION_KEY):
+		return 0
+	var value: Variant = save[VERSION_KEY]
+	if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
+		return -1
+	var number := float(value)
+	if number < 0.0 or number != floorf(number):
+		return -1
+	return int(number)
+
+## Brings a save from an older version up to SAVE_VERSION, one step at a
+## time; each step turns version n data into version n + 1 data. An empty
+## result means a step is missing (never expected: checked by the toolkit).
+func _migrate(save: Dictionary, from_version: int) -> Dictionary:
+	var data := save.duplicate(true)
+	var version := from_version
+	while version < SAVE_VERSION:
+		match version:
+			0:
+				pass  # before M04.0: the same sections, only save_version was missing
+			_:
+				push_warning("SaveManager: no migration from save_version %d" % version)
+				return {}
+		version += 1
+		data[VERSION_KEY] = version
+	return data
+
+## Only sections of an expected type go on to their system; a wrong type is
+## dropped (so its default applies) rather than breaking the load halfway.
+func _valid_sections(data: Dictionary) -> Dictionary:
+	var valid := {}
+	for key: String in SECTION_TYPES:
+		if not data.has(key):
+			continue
+		var allowed: Array = SECTION_TYPES[key]
+		if allowed.has(typeof(data[key])):
+			valid[key] = data[key]
+		else:
+			push_warning("SaveManager: ignoring save section '%s' of the wrong type" % key)
+	return valid
