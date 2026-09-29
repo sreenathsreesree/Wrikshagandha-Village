@@ -28,7 +28,7 @@ assert '_ledger.append({"amount": amount, "reason": reason})' in WL["_record"] a
 assert "if parsed.is_empty() or _balance + int(parsed.amount) < 0:" in WL["apply_save_data"] and "break" in WL["apply_save_data"]
 assert "int(amount) == 0" in WL["_parse_entry"] and "typeof(reason) != TYPE_STRING" in WL["_parse_entry"]
 assert '"wallet": Wallet.get_save_data(),' in SMS and 'Wallet.apply_save_data(data.get("wallet", {}))' in SMS
-assert re.search(r"^const SAVE_VERSION := 4", SMS, re.M) and re.search(r"^\t\t\t3:\s*pass", SMS, re.M)
+assert int(re.search(r"^const SAVE_VERSION := (\d+)", SMS, re.M).group(1)) >= 4 and re.search(r"^\t\t\t3:\s*pass", SMS, re.M)
 al = re.findall(r'^(\w+)="\*?res://', CFG.split("[autoload]", 1)[1].split("\n[", 1)[0], re.M)
 assert al.index("Wallet") < al.index("SaveManager") < al.index("GameState"), "the Wallet exists before the save is loaded"
 

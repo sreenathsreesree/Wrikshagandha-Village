@@ -165,9 +165,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 10. Economy (Phase 05)
 - **Today:** Wriksha Points (`PointsManager`, one saved int) are the **score** — earned by discoveries, harvests, farm milestones, exploration and the daily discovery; never spent. **Coins** (M05.1, D-20) are the future currency, in the `Wallet` autoload: an append-only ledger of `{amount, reason}` entries whose sum is the balance (never negative); `credit`/`debit` refuse amounts below 1, empty reasons and overdrafts; a load replays the saved ledger and keeps its valid prefix. No system credits or debits coins yet (earn rules M05.3, selling M06.2); points and coins stay separate until O-02 (M05.5).
-- **Known faucets:**
-  - Exploration bonuses re-award every launch (exploration progress isn't saved).
-  - Repeat discoveries pay full points without limit.
+- **Repeat-reward protection (M05.2, D-21):** exploration progress is saved (places reached, secrets found, the "every secret found" and curiosity bonuses), so each exploration bonus pays once ever; loading pays nothing. Session-only by design: the discovery-count thresholds (bounded — they count first-ever discoveries, which are saved), the first/rare discovery beats, the session summary (its "places explored" now counts all places ever visited). Already once-ever: first-ever discoveries and Journal entries, farm milestones, found seeds; once per day: the daily bonus.
+- **Known faucet (by design, until M05.3):** every discovery collection pays its full points and a collectible (M04.3) — repeatable; caps / diminishing returns are earn-rule *rates* (O-01) and belong with the earn rules as data (M05.3).
 - **Planned:**
   - Earn rules as data, with caps, diminishing returns and one-time-ever rewards.
   - An economy configuration resource. It holds the redemption reference (1000 coins = ₹10) as configuration only, read by no gameplay code (decision D-10).
@@ -175,14 +174,13 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 11. Saving
 - **Current:**
-  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`, `items` (M04.2: `{item_id: [count per quality level]}`; since M04.3 the `Inventory`'s, loaded before `farm`), `wallet` (M05.1: `{"ledger": [{amount, reason}, ...]}`).
-  - **Versioning (M04.0, D-17):** `save_version` (currently 4 — M05.1 added `wallet`; M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; M04.3 lets `items` hold collectibles; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`; 2 → 3 nothing to rewrite (the bump stops an M04.2 build dropping collectibles); 3 → 4 nothing to rewrite (an older save has no wallet = an empty one).
+  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`, `items` (M04.2: `{item_id: [count per quality level]}`; since M04.3 the `Inventory`'s, loaded before `farm`), `wallet` (M05.1: `{"ledger": [{amount, reason}, ...]}`), `exploration` (M05.2: `{landmarks, secrets, all_secrets_bonus, curiosity_bonus}` — restored without paying anything; unknown or wrong-kind places dropped; a malformed bonus flag counts as paid).
+  - **Versioning (M04.0, D-17):** `save_version` (currently 5 — M05.2 added `exploration`; M05.1 `wallet`; M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; M04.3 lets `items` hold collectibles; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`; 2 → 3 nothing to rewrite (the bump stops an M04.2 build dropping collectibles); 3 → 4 nothing to rewrite (an older save has no wallet = an empty one); 4 → 5 nothing to rewrite (no exploration section = nothing reached yet — each place can pay once more after the update, then never).
   - Every section is read with a default, so older saves load and a wrongly typed section only resets itself.
   - Autosave on: new discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed.
-  - **Not saved:** exploration progress, time of day, player position.
+  - **Not saved:** time of day, player position, camera zoom, discovery respawns, environmental events; exploration's session-only beats and thresholds (M05.2).
   - The farm save format is documented in `docs/farming_persistence_plan.md`.
 - **Direction:**
-  - Exploration progress (P-02).
   - Full versioned persistence in Phase 15.
 - **Rule:** systems expose `get_save_data()` / `apply_save_data()`; world objects restore by stable id on registration.
 - **Area reloads (M03.3):** farm plot states are captured by id before their area unloads (`FarmManager.release_plots_in`) and restored on re-registration; `farm.plots` in a save = boot states not yet claimed + unloaded states + live captures. Same save format.

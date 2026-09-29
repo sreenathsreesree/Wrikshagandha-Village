@@ -1,8 +1,14 @@
 extends Node
 
-## Rewards exploring broadly during a play session — not saved between
-## sessions, and not tied to any specific item, so it never needs to know
-## about rarity or category beyond the "is this rare?" check below.
+## Rewards exploring — not tied to any specific item, so it never needs to
+## know about rarity or category beyond the "is this rare?" check below.
+##
+## Saved (M05.2, P-02, D-21): which places were reached and which secret
+## places found, and whether the "every secret found" and curiosity bonuses
+## were paid — each of those rewards is once ever, so a relaunch never pays
+## them again. Session-only, as before: the discovery-count thresholds
+## (they count first-ever discoveries, which are themselves saved, so they
+## are bounded), the first/rare discovery beats and the session summary.
 ## Thresholds are data (a dictionary), not branching logic; places — their
 ## names, order, secret/garden roles and curiosity pairings — are
 ## PlaceDefinition resources in res://data/places/ (M03.6), never script
@@ -10,12 +16,12 @@ extends Node
 ##
 ## Everything here is deliberately calm, not an XP/level system: most
 ## signals carry no points at all (first discovery, first rare find) and
-## the ones that do are small, one-time-per-session flats — recognition
-## that something happened, not a score to grind.
+## the ones that do are small, one-time flats — recognition that something
+## happened, not a score to grind.
 ##
-## "Places" (get_places_progress()) is the small session-only "Exploration
-## Memory" the Journal screen reads from: a fixed, ordered list of named
-## locations, each simply visited-or-not this session. It reuses the same
+## "Places" (get_places_progress()) is the small "Exploration Memory" the
+## Journal screen reads from: a fixed, ordered list of named locations,
+## each simply visited-or-not (ever, since M05.2). It reuses the same
 ## _reached_landmarks/_found_secret_locations bookkeeping already needed
 ## for landmark_reached/secret_location_found, so there's no separate
 ## place-tracking system underneath it.
@@ -128,7 +134,7 @@ func mark_secret_location_found(location_id: String) -> void:
 ## Rewards exploration *order*, not grinding: reaching this secret spot
 ## before the nearby discovery it's paired with means the player found it
 ## out of curiosity, not by following the item's own trail. Fires at most
-## once per session, whichever qualifying location gets there first.
+## once ever (saved), whichever qualifying location gets there first.
 func _maybe_award_curiosity_bonus(location_id: String) -> void:
 	if _curiosity_bonus_given:
 		return
@@ -196,6 +202,51 @@ func get_garden_place_id() -> String:
 		if place.garden:
 			return place.id
 	return ""
+
+## For SaveManager (M05.2): exploration progress that must survive a
+## relaunch so its one-time rewards are never paid twice.
+func get_save_data() -> Dictionary:
+	return {
+		"landmarks": Array(_reached_landmarks),
+		"secrets": Array(_found_secret_locations),
+		"all_secrets_bonus": _all_secrets_bonus_awarded,
+		"curiosity_bonus": _curiosity_bonus_given,
+	}
+
+## For SaveManager, at boot, before any landmark exists. Pays nothing and
+## announces nothing. Only known places of the right kind are kept (reached
+## landmarks = non-secret places, found secrets = secret places), once
+## each; anything else is dropped with a warning. A one-time bonus counts
+## as paid unless the save plainly says it wasn't (absent — a save from
+## before M05.2 — means not paid; a malformed value means paid). ("Every
+## secret found" can only pay while finding a new secret, so a list that
+## already holds every secret can never pay it again either.)
+func apply_save_data(data: Dictionary) -> void:
+	_reached_landmarks.clear()
+	_found_secret_locations.clear()
+	_restore_places(data.get("landmarks", []), false, _reached_landmarks)
+	_restore_places(data.get("secrets", []), true, _found_secret_locations)
+	_curiosity_bonus_given = _was_paid(data, "curiosity_bonus")
+	_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")
+
+func _restore_places(saved: Variant, secret: bool, into: Array[String]) -> void:
+	if typeof(saved) != TYPE_ARRAY:
+		push_warning("ExplorationManager: saved places are not a list; ignored")
+		return
+	for place_id: Variant in saved:
+		var place: PlaceDefinition = null
+		if typeof(place_id) == TYPE_STRING:
+			place = _find_place(place_id)
+		if place == null or place.secret != secret or into.has(place.id):
+			push_warning("ExplorationManager: ignoring saved place %s" % str(place_id))
+			continue
+		into.append(place.id)
+
+func _was_paid(data: Dictionary, key: String) -> bool:
+	if not data.has(key):
+		return false
+	var value: Variant = data[key]
+	return value if typeof(value) == TYPE_BOOL else true
 
 func _find_place(place_id: String) -> PlaceDefinition:
 	for place in _places:

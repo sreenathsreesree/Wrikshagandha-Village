@@ -938,9 +938,9 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
-          #  SaveManager by M05.1: the wallet section, save v4.)
+          #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
           "scripts/autoload/farm_manager.gd": "5598302543a2bb18", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
-          "scripts/autoload/save_manager.gd": "314bdb4e391510c0", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
+          "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
           "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
@@ -1681,6 +1681,76 @@ pm = code_only(scripts.get("scripts/autoload/points_manager.gd", ""))
 if re.search(r"Wallet|coin", pm, re.I) or re.search(r"\bWallet\b", code_only(scripts.get("scripts/autoload/farm_manager.gd", ""))):
     err("Wriksha Points and coins stay separate until O-02 (M05.5)")
 notes.append(f"wallet: ledger-derived balance, API {len(WL_API)} functions, no coin sources yet")
+
+# ------------------------------------------------------------ repeat-reward protection (M05.2, P-02, D-21)
+# Exploration progress is saved: places reached, secrets found and the two
+# once-ever bonuses. Every exploration reward is paid only behind its
+# "already?" check; loading restores that state and pays nothing; malformed
+# saved state can only make a bonus count as paid. Repeatable discovery
+# collection (points, collectibles, daily) is unchanged.
+EXF = "scripts/autoload/exploration_manager.gd"
+ex_src = scripts.get(EXF, "")
+exf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", ex_src, re.M | re.S)}
+ex_code = code_only(ex_src)
+pays = {}
+for fn, body in exf.items():
+    n = len(re.findall(r"PointsManager\.add_points\(", body))
+    if n: pays[fn] = n
+if pays != {"_on_discovery_made": 1, "mark_landmark_reached": 1, "mark_secret_location_found": 2, "_maybe_award_curiosity_bonus": 1}:
+    err(f"{EXF}: exploration pays points only in its known reward sites ({pays})")
+ml, ms, mc = exf.get("mark_landmark_reached", ""), exf.get("mark_secret_location_found", ""), exf.get("_maybe_award_curiosity_bonus", "")
+if not (0 <= ml.find("if _reached_landmarks.has(landmark_id):\n\t\treturn") < ml.find("_reached_landmarks.append(landmark_id)") < ml.find("PointsManager.add_points(LANDMARK_BONUS)")):
+    err(f"{EXF}: a landmark pays once ever — checked, recorded, then paid")
+if not (0 <= ms.find("if _found_secret_locations.has(location_id):\n\t\treturn") < ms.find("_found_secret_locations.append(location_id)") < ms.find("PointsManager.add_points(SECRET_LOCATION_BONUS)")) \
+   or not re.search(r"and not _all_secrets_bonus_awarded:\s*_all_secrets_bonus_awarded = true\s*PointsManager\.add_points\(ALL_SECRET_LOCATIONS_BONUS\)", ms):
+    err(f"{EXF}: a secret place and 'every secret found' each pay once ever — checked, recorded, then paid")
+if not (0 <= mc.find("if _curiosity_bonus_given:\n\t\treturn") < mc.find("_curiosity_bonus_given = true") < mc.find("PointsManager.add_points(CURIOSITY_BONUS)")):
+    err(f"{EXF}: the curiosity bonus pays once ever — checked, recorded, then paid")
+ONCE = {"_reached_landmarks": {"mark_landmark_reached", "apply_save_data"}, "_found_secret_locations": {"mark_secret_location_found", "apply_save_data"},
+        "_all_secrets_bonus_awarded": {"mark_secret_location_found", "apply_save_data"}, "_curiosity_bonus_given": {"_maybe_award_curiosity_bonus", "apply_save_data"}}
+for var, allowed in ONCE.items():
+    writers = {fn for fn, b in exf.items() if re.search(rf"\b{var}\s*(=[^=]|\.(append|clear|erase|remove_at|assign)\b)", b)}
+    if writers != allowed:
+        err(f"{EXF}: {var} is written only when its reward is paid and on load (found {sorted(writers)})")
+if not re.search(r'return \{\s*"landmarks": Array\(_reached_landmarks\),\s*"secrets": Array\(_found_secret_locations\),\s*'
+                 r'"all_secrets_bonus": _all_secrets_bonus_awarded,\s*"curiosity_bonus": _curiosity_bonus_given,\s*\}', exf.get("get_save_data", "")):
+    err(f"{EXF}: the save holds exactly the places reached, secrets found and the two once-ever bonus flags")
+apx = exf.get("apply_save_data", "")
+if not re.search(r"_reached_landmarks\.clear\(\)\s*_found_secret_locations\.clear\(\)\s*"
+                 r'_restore_places\(data\.get\("landmarks", \[\]\), false, _reached_landmarks\)\s*'
+                 r'_restore_places\(data\.get\("secrets", \[\]\), true, _found_secret_locations\)\s*'
+                 r'_curiosity_bonus_given = _was_paid\(data, "curiosity_bonus"\)\s*'
+                 r'_all_secrets_bonus_awarded = _was_paid\(data, "all_secrets_bonus"\)\s*$', apx):
+    err(f"{EXF}: a load restores places of the right kind and the two once-ever flags")
+for fn in ("apply_save_data", "_restore_places", "_was_paid"):
+    if re.search(r"PointsManager|FarmManager|\.emit\(|mark_\w+\(|_maybe_award", exf.get(fn, "")):
+        err(f"{EXF}: {fn}() pays or announces something — loading restores state only")
+rp = exf.get("_restore_places", "")
+if not re.search(r"if typeof\(saved\) != TYPE_ARRAY:\s*push_warning\(.*?\)\n\s*return", rp) \
+   or not re.search(r"var place: PlaceDefinition = null\s*if typeof\(place_id\) == TYPE_STRING:\s*place = _find_place\(place_id\)", rp) \
+   or not re.search(r"if place == null or place\.secret != secret or into\.has\(place\.id\):\s*push_warning\(.*?\)\n\s*continue\s*into\.append\(place\.id\)", rp):
+    err(f"{EXF}: only known places of the right kind are restored, once each; the rest is dropped with a warning")
+if not re.search(r"if not data\.has\(key\):\s*return false\s*var value: Variant = data\[key\]\s*return value if typeof\(value\) == TYPE_BOOL else true", exf.get("_was_paid", "")):
+    err(f"{EXF}: a once-ever bonus is unpaid only if absent (pre-M05.2) or saved as false — anything malformed counts as paid")
+SESSION_ONLY = ("_session_discovery_count", "_session_rare_discovery_count", "_awarded_thresholds", "_first_discovery_announced",
+                "_rare_discovery_announced", "_summary_shown")
+if any(v in exf.get("get_save_data", "") + apx for v in SESSION_ONLY):
+    err(f"{EXF}: session beats and thresholds stay session-only (thresholds count first-ever discoveries, already saved)")
+dm = code_only(func_body(scripts.get("scripts/autoload/discovery_manager.gd", ""), "discover") or "")
+if not re.search(r"^\tPointsManager\.add_points\(definition\.points_value\)$", dm, re.M) or len(re.findall(r"add_points\(", dm)) != 1 \
+   or "discovery_repeated.emit(definition)" not in dm \
+   or "if is_first_time:\n\t\tdiscovered_ids.append(id)" not in dm:
+    err("scripts/autoload/discovery_manager.gd: collecting a discovery stays repeatable (points every time; first-ever vs repeat by saved ids)")
+sm5 = scripts.get("scripts/autoload/save_manager.gd", "")
+if '"exploration": ExplorationManager.get_save_data(),' not in code_only(func_body(sm5, "save_game") or "") \
+   or 'ExplorationManager.apply_save_data(data.get("exploration", {}))' not in code_only(func_body(sm5, "load_game") or "") \
+   or not re.search(r"^\t\t\t4:\s*pass\b", code_only(func_body(sm5, "_migrate") or ""), re.M):
+    err("scripts/autoload/save_manager.gd: the exploration section is saved and loaded; step 4 -> 5 (M05.2) rewrites nothing (absent = nothing reached)")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f in (EXF, "scripts/autoload/save_manager.gd"): continue
+    if re.search(r"ExplorationManager\.(get_save_data|apply_save_data)\(|ExplorationManager\._", code_only(s2)):
+        err(f"{f}: reaches into exploration progress — only SaveManager saves/loads it")
+notes.append("repeat-reward protection: exploration progress saved; once-ever bonuses guarded; loading pays nothing")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
