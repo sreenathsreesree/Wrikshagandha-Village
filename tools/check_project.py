@@ -1860,6 +1860,62 @@ if 'if target_date == today and target_id != "" and not DiscoveryManager.is_clai
     err("daily discovery: a claimed once-ever discovery is never today's target — the next one in order is taken")
 notes.append(f"rewards: {len(rules)} rules in data/rewards ({len(thr_values)} thresholds); {sum(PAY_SITES.values())} pay sites; once-ever discoveries by respawn_seconds <= 0")
 
+# ------------------------------------------------------------ economy configuration (M05.4, D-23)
+# EconomyConfig holds D-10's redemption reference (1000 coins = ₹10) as
+# configuration only: no gameplay script, scene or UI reads it; it isn't
+# the Wallet's and isn't a points ↔ coins rate. No economy rate lives in
+# gameplay code, except FarmManager's frozen QUALITY_POINT_SCALE (a farm-
+# quality rule, pinned by the M04.2 quality contract). RewardRules stay in
+# data/rewards/, separate.
+EC_GD, EC_TRES = "scripts/economy/economy_config.gd", "data/economy/economy_config.tres"
+ec_src = scripts.get(EC_GD, "")
+EC_FIELDS = [("redemption_reference_coins", "int", "1000"), ("redemption_reference_amount", "int", "10"),
+             ("redemption_reference_currency", "String", '"INR"')]
+if not re.search(r"^extends Resource\s*\nclass_name EconomyConfig", ec_src, re.M) \
+   or re.findall(r"^@export var (\w+): (\w+) = (.+)$", ec_src, re.M) != EC_FIELDS \
+   or re.search(r"^(func|var|const|signal) ", code_only(ec_src), re.M):
+    err(f"{EC_GD}: EconomyConfig is a Resource with exactly the three redemption-reference fields (1000 coins = 10 INR) and nothing else")
+ec_files = sorted(glob.glob("data/economy/*.tres"))
+if ec_files != [EC_TRES]:
+    err(f"data/economy: exactly one economy config ({EC_TRES}) (found {ec_files})")
+else:
+    txt = open(EC_TRES, encoding="utf-8").read()
+    vals = dict(re.findall(r'^(\w+) = (.+)$', txt.split("[resource]", 1)[1], re.M))
+    if f'path="res://{EC_GD}"' not in txt or 'script_class="EconomyConfig"' not in txt or \
+       vals != {"script": 'ExtResource("1")', "redemption_reference_coins": "1000", "redemption_reference_amount": "10",
+                "redemption_reference_currency": '"INR"'}:
+        err(f"{EC_TRES}: the redemption reference is exactly 1000 coins = 10 INR (D-10) — {vals}")
+ECON_REF = re.compile(r"\bEconomyConfig\b|economy_config|res://data/economy|redemption_reference|\bredemption\b|₹|\bINR\b", re.I)
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == EC_GD: continue
+    if ECON_REF.search(code_only(s2)):
+        err(f"{f}: reads or shows the redemption reference — it is configuration for a future backend only (D-10, D-23)")
+for path in glob.glob("scenes/**/*.tscn", recursive=True) + glob.glob("data/**/*.tres", recursive=True):
+    if path == EC_TRES: continue
+    if ECON_REF.search(open(path, encoding="utf-8").read()):
+        err(f"{path}: references or shows the redemption reference")
+if re.search(r"^[^#\n]*(economy|redemption)", open("project.godot", encoding="utf-8").read(), re.M | re.I):
+    err("project.godot: no economy autoload or setting — EconomyConfig is plain data")
+for f in glob.glob("data/rewards/*.tres"):
+    if re.search(r"economy_config|EconomyConfig|redemption", open(f, encoding="utf-8").read()):
+        err(f"{f}: reward rules and the economy configuration stay separate")
+# No economy rate in gameplay code: the only rate-named constant is the frozen farm-quality multiplier.
+ECON_CONST = re.compile(r"^const (\w*(POINT|COIN|REWARD|BONUS|PRICE|COST|RATE|REDEMPTION|EXCHANGE)\w*) :=", re.M)
+rate_consts = sorted((f, m.group(1)) for f, s2 in scripts.items() if not f.startswith("tools/")
+                     for m in ECON_CONST.finditer(code_only(s2)) if not m.group(1).endswith("_PATH"))
+if rate_consts != [(FM, "QUALITY_POINT_SCALE")] or "const QUALITY_POINT_SCALE := [0.75, 1.0, 1.5]\n" not in scripts.get(FM, ""):
+    err(f"no economy rate in gameplay code — only FarmManager's frozen QUALITY_POINT_SCALE [0.75, 1.0, 1.5] (found {rate_consts})")
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    if re.search(r"points_value\s*[*/]\s*[\d.]|[\d.]\s*\*\s*\w*\.points_value", code):
+        err(f"{f}: scales points_value by a literal — a rate belongs in data")
+    if f != FM and "QUALITY_POINT_SCALE" in code:
+        err(f"{f}: uses the farm-quality multiplier outside FarmManager's harvest rule")
+if [fn for fn in re.findall(r"^func (\w+)\(", fm_src, re.M) if "QUALITY_POINT_SCALE" in (func_body(fm_src, fn) or "")] != ["get_harvest_points"]:
+    err(f"{FM}: QUALITY_POINT_SCALE is used only by get_harvest_points()")
+notes.append("economy config: redemption reference 1000 coins = 10 INR, read by nothing; one frozen farm-quality multiplier")
+
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
 # carries save_version; a load validates it (absent = 0, malformed rejected,

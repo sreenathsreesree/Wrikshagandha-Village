@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="EconomyConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/economy/economy_config.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+redemption_reference_coins = 1000
+redemption_reference_amount = 10
+redemption_reference_currency = "INR"

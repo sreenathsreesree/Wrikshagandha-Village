@@ -149,6 +149,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 - **Current:**
   - `FarmManager` owns: crops loaded from `data/crops/`; the seed and basket *rules* (the counts are items in the `Inventory` autoload — M04.2, M04.3); quality rules (soil rotation + care → Plain/Good/Fine); farm milestones and plot unlocks; garden interest for wildlife; seed choice; persistence (`get_save_data`/`apply_save_data`, plot states restored in `register_plot`).
   - `FarmPlot` holds one plot's state and memory; `CropDefinition` holds the data; `CropVisual` the presentation.
+  - **Crop order = `points_value` (documented coupling, M05.4 E3):** `_sort_crops()` orders crops by `points_value` then id, so a crop's points also decide its place in the seed picker, basket, Journal and Inventory; changing a crop's points can re-order them.
   - **Seed invariant:** seeds in hand + crops in the ground = starting seeds + exploration seeds found (ever).
 - **Direction:**
   - Seeds and basket are items since M04.2, held by the `Inventory` autoload since M04.3.
@@ -167,10 +168,10 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 - **Today:** Wriksha Points (`PointsManager`, one saved int) are the **score** — earned by discoveries, harvests, farm milestones, exploration and the daily discovery; never spent. **Coins** (M05.1, D-20) are the future currency, in the `Wallet` autoload: an append-only ledger of `{amount, reason}` entries whose sum is the balance (never negative); `credit`/`debit` refuse amounts below 1, empty reasons and overdrafts; a load replays the saved ledger and keeps its valid prefix. No system credits or debits coins yet (earn rules M05.3, selling M06.2); points and coins stay separate until O-02 (M05.5).
 - **Repeat-reward protection (M05.2, D-21):** exploration progress is saved (places reached, secrets found, the "every secret found" and curiosity bonuses), so each exploration bonus pays once ever; loading pays nothing. Session-only by design: the discovery-count thresholds (bounded — they count first-ever discoveries, which are saved), the first/rare discovery beats, the session summary (its "places explored" now counts all places ever visited). Already once-ever: first-ever discoveries and Journal entries, farm milestones, found seeds; once per day: the daily bonus.
 - **Reward rules as data (M05.3, D-22):** every flat Wriksha Points reward is a `RewardRule` (`id`, `points`, optional `threshold`) in `data/rewards/` — landmark, secret place, every secret, curiosity, the two discovery-count thresholds, the daily bonus, the four farm milestone bonuses — read through `RewardRules` (a plain class each paying system builds). Per-definition amounts stay on their definitions (discovery / crop `points_value`; the harvest quality scale is FarmManager's rule). Points are paid only at the 9 known sites; points only (coins wait for O-02). A never-respawning discovery (the Ancient Seed) is a **once-ever claim**: its first collection (recorded in the saved `discovered_ids`) means it never spawns, pays or becomes the daily target again.
+- **Economy configuration (M05.4, D-23):** `EconomyConfig` (`scripts/economy/economy_config.gd`, one file `data/economy/economy_config.tres`) holds D-10's redemption reference — `redemption_reference_coins = 1000`, `redemption_reference_amount = 10`, `redemption_reference_currency = "INR"` (1000 coins = ₹10) — as configuration for a future backend/redemption phase only: no script, scene, UI or autoload reads it; it is not the Wallet's and not a points ↔ coins rate (O-02). Earn amounts stay where they are: `RewardRule`s in `data/rewards/` (separate), discovery/crop `points_value`. **No economy rate lives in gameplay code** except FarmManager's `QUALITY_POINT_SCALE [0.75, 1.0, 1.5]`, a frozen farm-quality rule (D-11, pinned by the M04.2 quality contract), used only by `get_harvest_points()`.
 - **Known faucet (deliberate, O-01 open):** every collection of a respawning discovery pays its full points and a collectible (M04.3), and a relaunch resets respawn timers — no caps or diminishing returns until the economy decision.
 - **Planned:**
   - Caps / diminishing returns for repeatable rewards (O-01), when decided.
-  - An economy configuration resource. It holds the redemption reference (1000 coins = ₹10) as configuration only, read by no gameplay code (decision D-10).
 - Real money, payments and backend come later, as a separate phase.
 
 ## 11. Saving
@@ -209,6 +210,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | `DiscoveryDefinition` | `data/discoveries/*.tres` | DiscoveryDatabase via `ResourceDirectory` (handles `.tres.remap` in exports) |
 | `CropDefinition` | `data/crops/*.tres` | FarmManager via `ResourceDirectory` |
 | `PlaceDefinition` (M03.6) | `data/places/*.tres` | ExplorationManager via `ResourceDirectory`, ordered by `order` |
+| `EconomyConfig` (M05.4) | `data/economy/economy_config.tres` | **nothing** — configuration only (D-10 redemption reference, D-23) |
 | `RewardRule` (M05.3) | `data/rewards/*.tres` | `RewardRules` via `ResourceDirectory` (ExplorationManager, DailyDiscoveryManager, FarmManager) |
 | `ItemDefinition` (M04.1) | `data/items/*.tres` | `ItemStore.load_definitions()` via `ResourceDirectory` (Inventory, FarmManager's crop→item maps, SaveManager's 1 → 2 step) |
 
