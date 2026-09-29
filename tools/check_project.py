@@ -1669,7 +1669,7 @@ for f, s2 in scripts.items():
     if f.startswith("tools/") or f == WL: continue
     code = code_only(s2)
     if re.search(r"\bWallet\.(credit|debit)\(", code):
-        err(f"{f}: changes coins — nothing earns or spends coins before M05.3/M06.2 (a later milestone lists its callers here)")
+        err(f"{f}: changes coins — no coin earn/spend exists: points and coins are permanently independent (M05.5, D-24); M06.2 (after O-01) is where legitimate coin earn/spend may be introduced, listing its callers here")
     if re.search(r"\bWallet\.(_\w+)|\bWallet\.(get_save_data|apply_save_data)\(", code) and f != "scripts/autoload/save_manager.gd":
         err(f"{f}: reaches into the Wallet — only SaveManager saves/loads it; others read get_balance()/can_afford()/get_ledger()")
     if f != WL and "balance_changed.emit" in code:
