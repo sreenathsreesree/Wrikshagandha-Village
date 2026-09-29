@@ -1681,7 +1681,7 @@ if '"wallet": Wallet.get_save_data(),' not in code_only(func_body(sm_w, "save_ga
     err("scripts/autoload/save_manager.gd: the wallet section is saved and loaded; step 3 -> 4 (M05.1) rewrites nothing (absent = an empty wallet)")
 pm = code_only(scripts.get("scripts/autoload/points_manager.gd", ""))
 if re.search(r"Wallet|coin", pm, re.I) or re.search(r"\bWallet\b", code_only(scripts.get("scripts/autoload/farm_manager.gd", ""))):
-    err("Wriksha Points and coins stay separate until O-02 (M05.5)")
+    err("Wriksha Points and coins are permanently independent (O-02 closed, D-24)")
 notes.append(f"wallet: ledger-derived balance, API {len(WL_API)} functions, no coin sources yet")
 
 # ------------------------------------------------------------ repeat-reward protection (M05.2, P-02, D-21)
@@ -1915,6 +1915,46 @@ for f, s2 in scripts.items():
 if [fn for fn in re.findall(r"^func (\w+)\(", fm_src, re.M) if "QUALITY_POINT_SCALE" in (func_body(fm_src, fn) or "")] != ["get_harvest_points"]:
     err(f"{FM}: QUALITY_POINT_SCALE is used only by get_harvest_points()")
 notes.append("economy config: redemption reference 1000 coins = 10 INR, read by nothing; one frozen farm-quality multiplier")
+
+# ------------------------------------------------------------ points and coins independent (M05.5, D-24)
+# O-02 closed: Wriksha Points (PointsManager, the score) and coins (Wallet)
+# are permanently independent — no conversion, no mirroring, no bridge in
+# either direction; no current coin sources or sinks; EconomyConfig is no
+# rate. The point reward paths are exactly the audited ones.
+PMF, WLF = "scripts/autoload/points_manager.gd", "scripts/autoload/wallet.gd"
+pm_src = scripts.get(PMF, "")
+if re.search(r"\bWallet\b|\bcoins?\b|balance|ledger|credit|debit|Economy", code_only(pm_src), re.I):
+    err(f"{PMF}: PointsManager never references the Wallet, coins or the economy configuration")
+if re.search(r"\bPointsManager\b|\bpoints_changed\b|add_points|set_points|get_points|\bEconomyConfig\b|economy_config", code_only(scripts.get(WLF, ""))):
+    err(f"{WLF}: the Wallet never references PointsManager, points or the economy configuration")
+PM_FUNCS = {"add_points": "dec5bed36182", "set_points": "0257bfe4b241", "get_points": "f81f6d9b791c"}
+pm_now = {n: _hash_body(pm_src, n) for n in re.findall(r"^func (\w+)\(", pm_src, re.M)}
+if pm_now != PM_FUNCS or re.findall(r"^var (\w+)", code_only(pm_src), re.M) != ["points"] or not re.search(r"^signal points_changed\(total: int\)$", pm_src, re.M):
+    err(f"{PMF}: the points API and behaviour are unchanged by M05.5 (found {pm_now})")
+BRIDGE = re.compile(r"(?i)\w*(points?_?to_?coins?|coins?_?to_?points?|convert\w*|conversion|exchange_rate|mirror\w*)\b")
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    if f != PMF and re.search(r"PointsManager\.points\s*(=[^=]|\+=|-=)", code):
+        err(f"{f}: writes PointsManager.points directly — points change only through PointsManager's methods")
+    if re.search(r"\bWallet\.", code) and re.search(r"\bPointsManager\.", code) and f != "scripts/autoload/save_manager.gd":
+        err(f"{f}: touches both PointsManager and the Wallet — nothing bridges points and coins")
+    if re.search(r"balance_changed\.connect\(", code):
+        err(f"{f}: listens to the coin balance — no coin consumer exists yet (and never a points bridge)")
+    if f != "scripts/ui/hud.gd" and re.search(r"points_changed\.connect\(", code):
+        err(f"{f}: listens to the points total — only the HUD shows it; nothing mirrors it")
+    m = BRIDGE.search(code)
+    if m:
+        err(f"{f}: '{m.group(0)}' — no points <-> coins conversion or mirroring exists (D-24)")
+for line in code_only(func_body(scripts.get("scripts/autoload/save_manager.gd", ""), "save_game") or "").splitlines() + \
+            code_only(func_body(scripts.get("scripts/autoload/save_manager.gd", ""), "load_game") or "").splitlines():
+    if "Wallet" in line and "Points" in line:
+        err(f"scripts/autoload/save_manager.gd: '{line.strip()}' — points and coins are saved and loaded independently")
+for f in glob.glob("data/rewards/*.tres"):
+    keys = set(re.findall(r'^(\w+) = ', open(f, encoding="utf-8").read().split("[resource]", 1)[-1], re.M))
+    if not keys <= {"script", "id", "points", "threshold"}:
+        err(f"{f}: a reward rule pays Wriksha Points only (found {sorted(keys)})")
+notes.append("points and coins: independent (D-24) — no bridge, no conversion, no coin sources or sinks")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

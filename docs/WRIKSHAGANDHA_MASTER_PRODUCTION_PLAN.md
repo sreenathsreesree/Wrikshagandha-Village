@@ -135,7 +135,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
   - It lives in economy configuration, is read by no gameplay code, and serves a separate future backend/redemption phase.
 - **No real-money redemption, payment systems or crypto** now.
   - That phase needs server-authoritative balances, anti-fraud, accounts, KYC/compliance and legal review.
-- **Open:** the relationship between the existing Wriksha Points and coins (O-02).
+- **Decided (D-24, closes O-02):** Wriksha Points (the score) and coins (the Wallet's currency) are permanently independent — no conversion, no mirroring, either way.
 
 ---
 
@@ -153,7 +153,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 | Wildlife / day-night / events | Prototype | 14 wildlife actors, 600 s day, environmental events |
 | Saving | Partial | One JSON save; farm block versioned; no top-level version |
 | Inventory | Missing | Seeds/basket live inside FarmManager |
-| Economy / wallet | Missing | Only Wriksha Points |
+| Economy / wallet | Foundation in code (M05.1–M05.5) | Wriksha Points = the score; coins = the `Wallet` (ledger, balance 0, no sources yet); reward amounts as data; points and coins independent (D-24) |
 | NPCs, dialogue, houses, interiors, area loading | Missing | — |
 | Audio | Hooks only | 10 empty sound slots; no audio files in the repo |
 | Five Elements | Earth-like Meadow only | — |
@@ -453,6 +453,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
   - **M05.2 repeat rewards** (Android): reach a landmark and a secret place (bonus cards and points as before), note the points; pause/close and relaunch; reach the same places again → no card, no points; the Journal's Places list still shows them visited; a new place still pays once; collecting the same discovery again still pays its points (and a collectible); the daily bonus still pays once per day; desktop: the save has `"save_version":5` and an `"exploration"` section listing the places; after updating from an M05.1 build, each place pays once more, then never.
   - **M05.3 rewards** (Android): every reward card shows the same amount as before (landmark +15, secret +15, every secret +50, curiosity +20, 3rd/5th new discovery +20/+40 and the summary at the 5th, daily +25 on the Daily screen and card, first harvest +10, all starter crops +40, garden complete +30, in bloom +50); collect the Ancient Seed (+100, found seed as before) → relaunch → it is no longer in the world and never pays again; an area reload doesn't bring it back; other discoveries still respawn and pay every time; on a day whose target would have been the Ancient Seed, the Daily screen shows another discovery.
   - **M05.4 economy config** (regression only — nothing reads it): the project opens in Godot with no errors for `scripts/economy/economy_config.gd` / `data/economy/economy_config.tres` (the file shows 1000 / 10 / INR in the Inspector); no coin or rupee amount appears anywhere in the game; harvest points unchanged (e.g. Wild Carrot Plain 9 / Good 12 / Fine 18); every M05.3 reward amount unchanged.
+  - **M05.5 points/coins** (regression only): every reward shows the same "+N Wriksha Points" and the HUD total grows exactly as before; nothing mentions coins anywhere; after a relaunch the points total is kept and the save still has `"wallet":{"ledger":[]}`.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -881,7 +882,7 @@ Goal: an internal coin economy with repeat-reward protection.
 | M05.2 | Repeat-reward protection: persist exploration progress (P-02 → D-21); one-time-ever rewards (caps/diminishing returns on repeatable rewards → M05.3, rates are O-01) | Relaunch never re-awards | Relaunch test | `[~]` |
 | M05.3 | Reward architecture: earn rules as data (D-22); never-respawning discoveries once-ever; caps on repeatable rewards deferred (O-01) | Rewards configurable without code; the Ancient Seed pays once ever | Relaunch after the Ancient Seed | `[~]` |
 | M05.4 | Economy configuration (incl. redemption reference as unused config) — `EconomyConfig`, D-23 | No economy rate in gameplay code (only the frozen farm-quality multiplier) | — (nothing reads it; regression only) | `[~]` |
-| M05.5 | Points ↔ coins relationship per O-02 | Decision implemented | — | `[!]` blocked on O-02 |
+| M05.5 | Points ↔ coins relationship per O-02 → D-24: permanently independent | Decision implemented (separation enforced) | — (regression only) | `[~]` |
 | M05.6 | Economy simulation in `tools/sims/` | Earn/spend balances and abuse loops modelled | — | `[ ]` |
 
 
@@ -950,6 +951,20 @@ Goal: an internal coin economy with repeat-reward protection.
   - `sim_economy_config.py`: the reference is 1000 = 10 INR and read by nothing; an economy snapshot — 11 reward rules, 9 discovery and 4 crop `points_value`s, the quality scale and the full crop × quality harvest-points table — unchanged; crop order = points order (the E3 coupling).
   - Mutation-tested (FarmManager and SaveManager pins removed; FarmPlot's too for the multiplier-outside-FarmManager case): 27 code/data/config mutations caught by `check_project.py` — wrong coins/amount/currency, missing/extra fields, logic in the config, a second config, gameplay/UI/scene/Wallet/points references, an economy autoload, a reward rule referencing it, new rate constants, literal point scaling; the quality scale changed or moved and the harvest minimum removed are caught by the existing M04.2 farming contract; 3 model mutations caught by the snapshot.
 - **Runtime:** nothing reads the configuration, so there is nothing new to see — a regression check only (M01.6, "M05.4 economy config").
+- **Commit:** §15.
+
+
+**M05.5 — Points and coins separation** `[~]` Implemented and verified in code — runtime regression pending (M01.6 checklist, "M05.5 points/coins")
+- **Decision (developer, O-02 closed → D-24):** Wriksha Points and coins are permanently independent. Points stay the score (PointsManager), earned, saved and displayed exactly as before, never converted to/from or mirrored into coins; coins stay the Wallet's, with no current sources or sinks (balance 0); EconomyConfig stays an unread redemption reference, never a rate.
+- **Audit:** O-02 appeared in DESIGN_DECISIONS (open list; D-20), the plan (§10 "Open", the M05.5 row, the M05.1 entry, §16) and ARCHITECTURE §10, plus comments in `wallet.gd`, `reward_rule.gd`, `economy_config.gd`; stale "coins do not exist" wording in O-02's note and the plan's status table. Code: the Wallet is used only by SaveManager (save/load); PointsManager by the 9 pay sites, the HUD and SaveManager; no bridge existed. Gaps: nothing stopped a direct write to `PointsManager.points`, a script touching both systems, a `points_changed`/`balance_changed` bridge, conversion-named logic, a Wallet referencing points, or a coins key in a reward file.
+- **Implementation:** no gameplay change and no save change (`SAVE_VERSION` stays 5). Comment-only updates in `wallet.gd` and `reward_rule.gd` (their O-02 references were stale). New checker contracts; a new model simulation; documentation.
+- **Files:** `scripts/autoload/wallet.gd`, `scripts/rewards/reward_rule.gd` (comments only), `tools/check_project.py`, new `tools/sims/sim_points_coins.py`, docs.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes (16 simulations).
+  - New checks: PointsManager's code never references the Wallet, coins, balance/ledger/credit/debit or the economy config, and its API/behaviour is pinned by body hashes (add/set/get, one `points` variable, the `points_changed` signal); the Wallet's code never references PointsManager or points; nobody but PointsManager writes `PointsManager.points`; no script except SaveManager touches both systems, and SaveManager never mixes them on one line; nobody listens to `balance_changed`, only the HUD to `points_changed`; no conversion/mirror/exchange-named logic anywhere; reward files carry only id/points/threshold. Existing: no Wallet credit/debit callers, RewardRule's fixed fields, EconomyConfig unread and rate constants banned, the 9-site points pay map.
+  - `sim_points_coins.py`: points are paid only at the 9 audited sites and the Wallet is touched only by SaveManager's save/load (static); 2,000 random multi-launch players earn exactly the audited amounts (independent snapshot) while the wallet stays at 0 with an empty ledger; save/reload keeps both independently; 5,000 cross-mutations — points never move the wallet, the wallet never moves points.
+  - Mutation-tested (FarmManager, SaveManager and FarmPlot pins removed; PointsManager/Wallet unpinned): 25 mutations — mirroring/bridges in PointsManager, Wallet, pay sites, save/load and the HUD, conversion helpers, signal bridges, direct points writes, exchange-rate constants, new/removed pay sites, coin fields in reward data, EconomyConfig as a rate — all caught by `check_project.py`; 4 model mutations caught by the simulation.
+- **Runtime:** nothing changes in play — a regression check only (M01.6, "M05.5 points/coins").
 - **Commit:** §15.
 
 ### PHASE 06 — FARMING INTEGRATION
@@ -1100,8 +1115,9 @@ No large world expansion before this gate passes.
 | M05.2 | `b1891cf` |
 | M05.3 | `91c6fd3` |
 | M05.4 | `ff5cabd` |
+| M05.5 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 05: M05.1 (Wallet + ledger, save v4) M05.2 (repeat-reward protection, save v5) M05.3 (reward rules as data, once-ever discoveries) and M05.4 (economy configuration) implemented (`[~]`). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's, M04.0–M04.5's, M05.1–M05.4's runtime tests). Next in code: M05.5 is blocked on O-02 (points ↔ coins); **M05.6 — economy simulation** is the next unblocked row — only on the developer's explicit instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 05: M05.1 (Wallet + ledger, save v4) M05.2 (repeat-reward protection, save v5) M05.3 (reward rules as data, once-ever discoveries) M05.4 (economy configuration) and M05.5 (points and coins independent, D-24) implemented (`[~]`). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's, M04.0–M04.5's, M05.1–M05.5's runtime tests). Next in code: **M05.6 — economy simulation**, only on the developer's explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

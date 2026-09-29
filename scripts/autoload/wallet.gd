@@ -3,7 +3,8 @@ extends Node
 ## The player's coins (M05.1, D-20): one balance and the append-only ledger
 ## of every change to it. Coins are the future buying/selling currency
 ## (D-10: internal only); they are not Wriksha Points, which stay the
-## score (PointsManager). How the two relate is O-02 (M05.5).
+## score (PointsManager). The two are permanently independent (O-02 closed,
+## D-24): no conversion, no mirroring, in either direction.
 ##
 ## The ledger is the truth: each entry is {"amount": signed whole number,
 ## "reason": what it was for}; the balance is always the sum of the
