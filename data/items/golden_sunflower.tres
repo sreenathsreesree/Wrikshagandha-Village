@@ -9,3 +9,4 @@ display_name = "Golden Sunflower"
 category = "produce"
 crop_id = "golden_sunflower"
 quality_levels = 3
+sell_value = 8

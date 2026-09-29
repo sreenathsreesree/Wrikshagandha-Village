@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Economy simulation (M05.6) — the CURRENT economy, modelled from the
-repository. Not the engine; invents no coin economics (O-01 open).
+"""Economy simulation (M05.6; coins since M06.2, D-25) — the CURRENT economy,
+modelled from the repository. Not the engine.
 1. Source register: every Wriksha Points earning path, derived from the code
    (the pay sites, their guards, what is saved) and the data (reward rules,
    discovery respawns, crop timings, plots). Each source is classified —
@@ -18,9 +18,14 @@ repository. Not the engine; invents no coin economics (O-01 open).
    random players with random crashes and relaunches: nothing is paid twice,
    a crash loses a payment together with its claim, never one without the
    other.
-4. Coins: zero earn sources, zero spend sources — no Wallet.credit/debit
-   caller, the Wallet touched only by SaveManager's save/load — and in every
-   modelled loop the balance stays 0 with an empty ledger.
+4. Coins (M06.2, D-25): one earn source — selling produce through
+   Market.sell(), the only Wallet.credit() caller — and no sink (no debit
+   caller). In the random players above, harvests add produce and points
+   but never coins; a sale removes the produce and adds its price (data:
+   sell_value x the quality percent, rounded half up per unit) as one
+   ledger entry; points never move on a sale; the wallet always equals the
+   sales, and a crash loses a sale's coins together with its produce, never
+   one without the other. Coin throughput is quantified like harvest points.
 """
 import glob, itertools, json, os, random, re
 
@@ -46,6 +51,11 @@ MEADOW = _src("scenes", "world", "Meadow.tscn")
 PLOTS = len(re.findall(r'^plot_id = "', MEADOW, re.M))
 SCALE = [float(x) for x in re.search(r"^const QUALITY_POINT_SCALE := \[([^\]]*)\]", _src("scripts", "autoload", "farm_manager.gd"), re.M).group(1).split(",")]
 def harvest_points(crop, q): return max(int(CROPS[crop]["points"] * SCALE[q] + 0.5), 1)
+ITEMS = {v["id"]: v for v in map(_vals, glob.glob(os.path.join(REPO, "data", "items", "*.tres")))}
+PRODUCE = {v["crop_id"]: i for i, v in ITEMS.items() if v.get("category") == "produce"}          # crop -> produce item
+SELL = {i: int(v.get("sell_value", "0")) for i, v in ITEMS.items()}
+PERCENTS = [int(x) for x in re.search(r"^quality_percents = Array\[int\]\(\[([^\]]*)\]\)", _src("data", "market", "sell_rules.tres"), re.M).group(1).split(",")]
+def unit_price(item, q): return (SELL[item] * PERCENTS[q] + 50) // 100 if ITEMS[item].get("category") == "produce" and SELL[item] >= 1 else 0
 MILESTONE_RULES = {re.search(rf'^const {c} := "(\w+)"', _src("scripts", "autoload", "farm_manager.gd"), re.M).group(1)
                    for c in re.findall(r"_rewards\.points\(([A-Z_]+)\)", SCRIPTS[FM])}
 
@@ -106,6 +116,10 @@ SNAPSHOT = {
     "plots": 7, "places": {"landmarks": 4, "secrets": 4},
     "quality_scale": [0.75, 1.0, 1.5],
     "harvest": {"wild_carrot": [9, 12, 18], "meadow_herb": [11, 15, 23], "golden_sunflower": [15, 20, 30], "elderbloom": [23, 30, 45]},
+    # M06.2 (D-25): the locked O-01 sell prices — coins per unit, Plain / Good / Fine.
+    "sell_values": {"wild_carrot": 5, "meadow_herb": 6, "golden_sunflower": 8, "elderbloom": 12},
+    "quality_percents": [80, 100, 140],
+    "unit_prices": {"wild_carrot": [4, 5, 7], "meadow_herb": [5, 6, 8], "golden_sunflower": [6, 8, 11], "elderbloom": [10, 12, 17]},
 }
 assert CLASS == SNAPSHOT["classes"], f"a source changed classification: {CLASS}"
 now_amounts = {"landmark": RULES["landmark"][0], "secret_location": RULES["secret_location"][0], "all_secret_locations": RULES["all_secret_locations"][0],
@@ -116,6 +130,9 @@ assert set(RULES) == {"landmark", "secret_location", "all_secret_locations", "cu
 assert DISC == SNAPSHOT["discoveries"], f"discovery points/respawn changed: {DISC}"
 assert {c: (v["points"], v["cycle"], v["starting"]) for c, v in CROPS.items()} == SNAPSHOT["crops"]
 assert SCALE == SNAPSHOT["quality_scale"] and {c: [harvest_points(c, q) for q in range(len(SCALE))] for c in CROPS} == SNAPSHOT["harvest"], "harvest points changed"
+assert {i: n for i, n in SELL.items() if n} == SNAPSHOT["sell_values"] and PERCENTS == SNAPSHOT["quality_percents"], "a sell price changed"
+assert {PRODUCE[c]: [unit_price(PRODUCE[c], q) for q in range(len(PERCENTS))] for c in CROPS} == SNAPSHOT["unit_prices"], "a unit price changed"
+assert all(unit_price(i, 0) == 0 for i, v in ITEMS.items() if v.get("category") != "produce"), "seeds and collectibles never sell"
 assert PLOTS == SNAPSHOT["plots"] and {"landmarks": sum(not s for s in PLACES.values()), "secrets": sum(PLACES.values())} == SNAPSHOT["places"]
 
 # ---------------------------------------------------------------- 2. bounds and abuse loops
@@ -139,6 +156,12 @@ rate = {c: harvest_points(c, len(SCALE) - 1) / CROPS[c]["cycle"] for c in CROPS}
 plots_left, harvest_per_hour = PLOTS, 0.0
 for c in sorted(CROPS, key=lambda c: -rate[c]):
     use = min(plots_left, seed_cap[c]); plots_left -= use; harvest_per_hour += use * rate[c] * 3600
+def coin_ceiling(q):  # coins/hour if every harvest at quality q is sold: bounded exactly as harvest is (plots, seeds, growth)
+    left, total = PLOTS, 0.0
+    for c in sorted(CROPS, key=lambda c: -unit_price(PRODUCE[c], q) / CROPS[c]["cycle"]):
+        use = min(left, seed_cap[c]); left -= use; total += use * unit_price(PRODUCE[c], q) * 3600 / CROPS[c]["cycle"]
+    return total
+coins_per_hour = {q: coin_ceiling(q) for q in range(len(PERCENTS))}
 # the model's own checks of the bounds
 assert all(isinstance(v, int) and v >= 0 for v in BOUNDED.values()), "bounded sources have a finite lifetime total"
 assert BOUNDED["discovery_thresholds"] == max_threshold_total(len(DISC)) < sum(THRESH.values()) * len(DISC), "thresholds are bounded by first-ever discoveries"
@@ -148,7 +171,7 @@ assert plots_left >= 0 and sum(min(seed_cap[c], PLOTS) for c in CROPS) >= 1, "ha
 gs_ready = F[GS]["_ready"]
 TRIGGERS = set(re.findall(r"(\w+\.\w+)\.connect\(", gs_ready))
 assert TRIGGERS == {"DiscoveryManager.discovery_made", "FarmManager.crop_planted", "FarmManager.crop_harvested", "FarmManager.seed_found",
-                    "FarmManager.milestone_reached", "InputManager.movement_mode_changed"}, f"autosave triggers changed: {TRIGGERS}"
+                    "FarmManager.milestone_reached", "Market.produce_sold", "InputManager.movement_mode_changed"}, f"autosave triggers changed: {TRIGGERS}"
 assert "NOTIFICATION_APPLICATION_PAUSED" in F[GS]["_notification"] and "NOTIFICATION_WM_CLOSE_REQUEST" in F[GS]["_notification"]
 AL = re.findall(r'^(\w+)="\*?res://', _src("project.godot").split("[autoload]", 1)[1].split("\n[", 1)[0], re.M)
 assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager", "Inventory", "ExplorationManager", "FarmManager")), \
@@ -156,8 +179,9 @@ assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager"
 # which payment is saved at once, which waits for the next save
 AUTOSAVED = {"first_discovery": "DiscoveryManager.discovery_made" in TRIGGERS, "threshold": "DiscoveryManager.discovery_made" in TRIGGERS,
              "harvest": "FarmManager.crop_harvested" in TRIGGERS, "milestone": "FarmManager.milestone_reached" in TRIGGERS,
+             "sale": "Market.produce_sold" in TRIGGERS,
              "repeat_discovery": False, "landmark": False, "secret": False, "daily_on_repeat": False}
-assert AUTOSAVED == {"first_discovery": True, "threshold": True, "harvest": True, "milestone": True,
+assert AUTOSAVED == {"first_discovery": True, "threshold": True, "harvest": True, "milestone": True, "sale": True,
                      "repeat_discovery": False, "landmark": False, "secret": False, "daily_on_repeat": False}
 
 class Game:
@@ -168,9 +192,11 @@ class Game:
         g.places, g.milestones, g.daily = list(d.get("places", [])), list(d.get("milestones", [])), d.get("daily", "")
         g.all_secrets, g.curiosity = d.get("all_secrets", False), d.get("curiosity", False)
         g.wallet = d.get("wallet", {"ledger": []}); g.session_first, g.thresholds = 0, []
+        g.produce, g.harvested, g.sold = dict(d.get("produce", {})), dict(d.get("harvested", {})), list(d.get("sold", []))
         g.log = list(d.get("log", []))                     # what was paid, for auditing duplicates
     def save(g): return json.dumps({"points": g.points, "found": g.found, "places": g.places, "milestones": g.milestones, "daily": g.daily,
-                                    "all_secrets": g.all_secrets, "curiosity": g.curiosity, "wallet": g.wallet, "log": g.log})
+                                    "all_secrets": g.all_secrets, "curiosity": g.curiosity, "wallet": g.wallet, "log": g.log,
+                                    "produce": g.produce, "harvested": g.harvested, "sold": g.sold})
     def pay(g, source, key, n): g.points += n; g.log.append([source, key, n])
     def collect(g, d, day):
         p, r = DISC[d]
@@ -195,9 +221,15 @@ class Game:
         return False                                                                # not autosaved
     def harvest(g, c, q):
         g.pay("harvest", c, harvest_points(c, q))
+        k = f"{PRODUCE[c]}:{q}"; g.produce[k] = g.produce.get(k, 0) + 1; g.harvested[k] = g.harvested.get(k, 0) + 1   # produce, never coins
         for m in sorted(MILESTONE_RULES):
             if m not in g.milestones and rnd.random() < 0.1: g.milestones.append(m); g.pay("milestone", m, RULES[m][0])
         return True                                                                 # crop_harvested autosaves
+    def sell(g, item, q, n):  # Market.sell: all checks, remove, one credit, announce (autosave)
+        k = f"{item}:{q}"; coins = unit_price(item, q) * n
+        if n < 1 or g.produce.get(k, 0) < n or coins < 1: return False
+        g.produce[k] -= n; g.wallet["ledger"].append({"amount": coins, "reason": f"sell:{item}:{q}"}); g.sold.append([item, q, n, coins])
+        return True
 def check(g):
     once = [(s, k) for s, k, n in g.log if s in ("landmark", "secret", "all_secrets", "curiosity", "milestone")] + \
            [("discovery", k) for s, k, n in g.log if s == "discovery" and DISC[k][1] <= 0]
@@ -206,8 +238,12 @@ def check(g):
     assert g.points == sum(n for _, _, n in g.log), "points = exactly what was paid"
     claims = {("landmark", p) for p in g.places if not PLACES[p]} | {("secret", p) for p in g.places if PLACES[p]} | {("milestone", m) for m in g.milestones}
     assert claims == {(s, k) for s, k, n in g.log if s in ("landmark", "secret", "milestone")}, "every paid claim is recorded and every claim was paid"
-    assert g.wallet == {"ledger": []}, "the wallet stays empty"
-rnd = random.Random(56); crashes = 0; lost_together = 0
+    ledger = g.wallet["ledger"]
+    assert len(ledger) == len(g.sold) and all(e == {"amount": unit_price(i, q) * n, "reason": f"sell:{i}:{q}"} and c == unit_price(i, q) * n
+                                              for e, (i, q, n, c) in zip(ledger, g.sold)), "one ledger entry per sale, its price, sell:<item>:<quality>"
+    for k, n in g.harvested.items():
+        assert g.produce.get(k, 0) == n - sum(x[2] for x in g.sold if f"{x[0]}:{x[1]}" == k) >= 0, "produce = harvested - sold, never negative"
+rnd = random.Random(56); crashes = 0; lost_together = 0; sales = 0
 for _ in range(3000):
     disk, g, day = None, Game(), rnd.randint(0, 99)
     for _ in range(rnd.randint(1, 8)):                                              # launches
@@ -220,24 +256,38 @@ for _ in range(3000):
             elif r < 0.65:
                 p = rnd.choice(sorted(PLACES)); saved_now = g.reach(p)
                 assert saved_now == AUTOSAVED["secret" if PLACES[p] else "landmark"], "model vs GameState triggers"
-            elif r < 0.9:
+            elif r < 0.85:
+                before = sum(e["amount"] for e in g.wallet["ledger"])
                 saved_now = g.harvest(rnd.choice(sorted(CROPS)), rnd.randrange(len(SCALE)))
                 assert saved_now == AUTOSAVED["harvest"], "model vs GameState triggers"
+                assert sum(e["amount"] for e in g.wallet["ledger"]) == before, "a harvest pays no coins"
+            elif r < 0.93:
+                k = rnd.choice(sorted(g.produce)) if g.produce and rnd.random() < 0.9 else f"{rnd.choice(sorted(ITEMS))}:{rnd.randrange(len(PERCENTS))}"
+                item, q = k.rsplit(":", 1); before = g.points
+                saved_now = g.sell(item, int(q), rnd.randint(0, 4))
+                assert g.points == before, "a sale never moves points"
+                assert not saved_now or AUTOSAVED["sale"], "model vs GameState triggers"
+                sales += saved_now
             else: day += 1; saved_now = False
             if saved_now: disk = g.save()
             check(g)
         if rnd.random() < 0.3:                                                      # crash: no pause save
-            crashes += 1; before = g.points
-            g = Game(disk); check(g); lost_together += g.points < before
+            crashes += 1; before = (g.points, len(g.sold))
+            g = Game(disk); check(g); lost_together += (g.points, len(g.sold)) < before
         else:
             disk = g.save(); g = Game(disk); check(g)                                # pause/close save, relaunch
         if disk: assert Game(disk).save() == Game(Game(disk).save()).save(), "reload is stable"
 
-# ---------------------------------------------------------------- 4. coins: zero sources, zero sinks
-callers = sorted((f, m.group(1)) for f, s in SCRIPTS.items() for m in re.finditer(r"\bWallet\.(credit|debit)\(", s))
-assert callers == [], f"a coin source or sink appeared: {callers}"
+# ---------------------------------------------------------------- 4. coins: one source (selling produce), no sinks
+MK, BS = "scripts/autoload/market.gd", "scripts/ui/basket_screen.gd"
+callers = sorted((f, fn, m.group(1)) for f, funcs in F.items() for fn, body in funcs.items() for m in re.finditer(r"\bWallet\.(credit|debit)\(", body))
+assert callers == [(MK, "sell", "credit")], f"a coin source or sink appeared: {callers}"
 wallet_users = sorted({f for f, s in SCRIPTS.items() if re.search(r"\bWallet\.", s)})
-assert wallet_users == [SM] and sorted(set(re.findall(r"Wallet\.(\w+)\(", SCRIPTS[SM]))) == ["apply_save_data", "get_save_data"]
+assert wallet_users == sorted([SM, MK, BS]) and sorted(set(re.findall(r"Wallet\.(\w+)\(", SCRIPTS[SM]))) == ["apply_save_data", "get_save_data"]
+assert sorted(set(re.findall(r"Wallet\.(\w+)", SCRIPTS[BS]))) == ["balance_changed", "get_balance"], "the basket only shows the balance"
+assert not re.search(r"PointsManager|points_value|QUALITY_POINT_SCALE|EconomyConfig", SCRIPTS[MK]), "the Market knows no points"
+assert "Market.produce_sold.connect(_save.unbind(4))" in F[GS]["_ready"], "GameState saves after a sale"
+assert sales > 0 and all(v > 0 for v in coins_per_hour.values())
 wl = F["scripts/autoload/wallet.gd"]
 assert set(wl) == {"get_balance", "can_afford", "get_ledger", "credit", "debit", "get_save_data", "apply_save_data", "_record", "_parse_entry"}
 assert "_ready" not in wl and "_process" not in wl, "the Wallet does nothing on its own"
@@ -248,10 +298,11 @@ for s in sorted(REGISTER_SITES):
     c = CLASS[s] if s != "discovery_collection" else "repeatable x8 + once-ever x1 (ancient_seed)"
     print(f"  {s:22} {c}")
 print(f"bounded lifetime totals: {BOUNDED} (sum {sum(BOUNDED.values())})")
-print(f"abuse loops (quantified, expected — caps are O-01): relaunch loop {relaunch_loop[0]} points + {relaunch_loop[1]} collectibles per relaunch; "
+print(f"abuse loops (quantified, expected — points; D-25 keeps coins off these sources): relaunch loop {relaunch_loop[0]} points + {relaunch_loop[1]} collectibles per relaunch; "
       f"natural respawn farming {sum(natural.values()):.0f} points/hour (walking ignored); daily clock loop {RULES['daily_discovery'][0]} per clock change; "
       f"harvest upper bound {harvest_per_hour:.0f} points/hour ({PLOTS} plots, seed caps {seed_cap})")
 print(f"save lifecycle: autosaved {sorted(k for k, v in AUTOSAVED.items() if v)}, waits {sorted(k for k, v in AUTOSAVED.items() if not v)}; "
       f"3000 players, {crashes} crashes ({lost_together} lost unsaved earnings together with their claims), no duplicate payment")
-print("coins: 0 earn sources, 0 spend sources, balance 0, empty ledger")
+print(f"coins: 1 earn source (Market.sell, produce only), 0 sinks; {sales} random sales, wallet = sales, harvest pays no coins; "
+      f"coin ceiling if every harvest is sold: {', '.join(f'{n:.0f}' for n in coins_per_hour.values())} coins/hour at Plain/Good/Fine")
 print("ALL ECONOMY SIMULATIONS PASSED")

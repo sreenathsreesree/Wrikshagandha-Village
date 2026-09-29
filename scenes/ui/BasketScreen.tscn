@@ -56,6 +56,11 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 26
 text = "Basket"
 
+[node name="CoinsLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/Header"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Coins 0"
+
 [node name="CloseButton" type="Button" parent="Panel/MarginContainer/VBoxContainer/Header"]
 layout_mode = 2
 text = "✕"
@@ -69,3 +74,65 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
+
+[node name="SellPanel" type="VBoxContainer" parent="Panel/MarginContainer/VBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="SellTitle" type="Label" parent="Panel/MarginContainer/VBoxContainer/SellPanel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Sell"
+
+[node name="DetailLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/SellPanel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+
+[node name="Stepper" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer/SellPanel"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 18
+
+[node name="MinusButton" type="Button" parent="Panel/MarginContainer/VBoxContainer/SellPanel/Stepper"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "−"
+
+[node name="QuantityLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/SellPanel/Stepper"]
+custom_minimum_size = Vector2(64, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "1"
+horizontal_alignment = 1
+
+[node name="PlusButton" type="Button" parent="Panel/MarginContainer/VBoxContainer/SellPanel/Stepper"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "+"
+
+[node name="TotalLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/SellPanel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+
+[node name="MessageLabel" type="Label" parent="Panel/MarginContainer/VBoxContainer/SellPanel"]
+layout_mode = 2
+modulate = Color(1, 1, 1, 0.8)
+
+[node name="Actions" type="HBoxContainer" parent="Panel/MarginContainer/VBoxContainer/SellPanel"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 18
+
+[node name="CancelButton" type="Button" parent="Panel/MarginContainer/VBoxContainer/SellPanel/Actions"]
+custom_minimum_size = Vector2(140, 56)
+layout_mode = 2
+text = "Cancel"
+
+[node name="ConfirmButton" type="Button" parent="Panel/MarginContainer/VBoxContainer/SellPanel/Actions"]
+custom_minimum_size = Vector2(140, 56)
+layout_mode = 2
+text = "Sell"

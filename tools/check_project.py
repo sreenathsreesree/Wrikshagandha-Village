@@ -923,8 +923,9 @@ if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D"
     err("navigation: the Meadow keeps its NavigationRegion3D (settings unchanged, baked at load from the navigation_source group); the Player keeps its NavigationAgent3D")
 # M04.3 (O-14) added Inventory: after DiscoveryManager (it connects to it), before FarmManager and GameState.
 # M05.1 (D-20) added Wallet (coins + ledger), before SaveManager and GameState (which loads the save).
+# M06.2 (D-25) added Market (selling produce), after Inventory and Wallet, before GameState (which saves on a sale).
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "Wallet", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager"]
+             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
     err(f"project.godot: autoloads changed {found_al} — adding one is a documented decision, never a side effect")
@@ -939,8 +940,9 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
+          # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold.)
           "scripts/autoload/farm_manager.gd": "794080fbd0bfa2f1", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
-          "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
+          "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "d518671dbcca5ee7",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
           #  farm_manager.gd by M05.3: milestone bonuses from reward data.)
@@ -1280,7 +1282,7 @@ notes.append(f"places: {len(places)} from data/places ({sum(p['secret'] for p in
 ITEM_GD, STORE = "scripts/items/item_definition.gd", "scripts/items/item_store.gd"
 idf = scripts.get(ITEM_GD, "")
 ITEM_FIELDS = {"id": "String", "display_name": "String", "category": "String", "crop_id": "String", "quality_levels": "int",
-               "discovery_id": "String"}
+               "discovery_id": "String", "sell_value": "int"}
 ITEM_CATEGORIES = ["seed", "produce", "collectible"]
 INV = "scripts/autoload/inventory.gd"
 disc_names = {}
@@ -1294,7 +1296,8 @@ item_fields = dict((m.group(1), m.group(2)) for m in re.finditer(r"^@export(?:_e
 cat_enum = re.search(r"^@export_enum\(([^)]*)\) var category: String = \"seed\"", idf, re.M)
 if not re.search(r"^extends Resource\s*\nclass_name ItemDefinition", idf, re.M) or item_fields != ITEM_FIELDS \
    or not cat_enum or [c.strip().strip('"') for c in cat_enum.group(1).split(",")] != ITEM_CATEGORIES \
-   or "@export var quality_levels: int = 1" not in idf or '@export var discovery_id: String = ""' not in idf:
+   or "@export var quality_levels: int = 1" not in idf or '@export var discovery_id: String = ""' not in idf \
+   or "@export var sell_value: int = 0" not in idf:
     err(f"{ITEM_GD}: ItemDefinition is a Resource with exactly {sorted(ITEM_FIELDS)}, category one of {ITEM_CATEGORIES}, quality_levels default 1")
 items = {}
 for f in sorted(glob.glob("data/items/*.tres")):
@@ -1309,7 +1312,7 @@ for f in sorted(glob.glob("data/items/*.tres")):
         err(f"{f}: duplicate item id '{iid}'")
     items[iid] = {"name": vals.get("display_name", '""').strip('"'), "category": vals.get("category", '"seed"').strip('"'),
                   "crop": vals.get("crop_id", '""').strip('"'), "levels": int(vals.get("quality_levels", "1")),
-                  "discovery": vals.get("discovery_id", '""').strip('"')}
+                  "discovery": vals.get("discovery_id", '""').strip('"'), "sell_value": vals.get("sell_value", "0")}
     if not items[iid]["name"]:
         err(f"{f}: an item needs a display_name")
     if items[iid]["category"] not in ITEM_CATEGORIES:
@@ -1324,6 +1327,10 @@ for f in sorted(glob.glob("data/items/*.tres")):
     want_levels = QUALITY_LEVELS if items[iid]["category"] == "produce" else 1
     if items[iid]["levels"] != want_levels:
         err(f"{f}: quality_levels {items[iid]['levels']} — produce keeps FarmManager's {QUALITY_LEVELS} qualities, seeds none (1)")
+    # M06.2 (D-25): only produce sells; every produce item has a whole price >= 1; seeds and collectibles never sell.
+    sv = items[iid]["sell_value"]
+    if not re.fullmatch(r"\d+", sv) or (items[iid]["category"] == "produce") != (int(sv) >= 1):
+        err(f"{f}: sell_value {sv} — only produce sells (a whole sell_value >= 1); seeds and collectibles stay unsellable (0)")
 if not items:
     err("data/items: no item definitions")
 for did in sorted(disc_names):
@@ -1401,8 +1408,8 @@ for f, s2 in scripts.items():
         err(f"{f}: creates an ItemStore — the player's items have one store, the Inventory's (O-14)")
     if f != "scripts/autoload/save_manager.gd" and re.search(r"Inventory\.(get_save_data|apply_save_data)\(|FarmManager\.apply_save_data\(", code):
         err(f"{f}: saves or loads the player's items or farm — only SaveManager does")
-    if f not in (FM, INV) and re.search(r"\bInventory\.(add|remove)\(", code):
-        err(f"{f}: changes the player's items — only FarmManager's seed/basket rules and Inventory's discovery rewards do")
+    if f not in (FM, INV, "scripts/autoload/market.gd") and re.search(r"\bInventory\.(add|remove)\(", code):
+        err(f"{f}: changes the player's items — only FarmManager's seed/basket rules, Inventory's discovery rewards and the Market's sale do")
 
 # One owner (M04.3, O-14): the Inventory autoload holds the player's store;
 # FarmManager keeps no count of its own and changes the Inventory only where
@@ -1467,8 +1474,9 @@ if len(re.findall(r"\b_definitions\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(append|erase|c
 SP, BS = "scripts/ui/seed_picker.gd", "scripts/ui/basket_screen.gd"
 for f in (SP, BS):
     code = code_only(scripts.get(f, ""))
-    if re.search(r"^var ", code, re.M):
-        err(f"{f}: a filtered view keeps no state of its own (member vars)")
+    # M06.2: the basket may hold the one sale being chosen (not counts) — nothing else.
+    if re.findall(r"^var (\w+)", code, re.M) != ([] if f == SP else ["_pending"]):
+        err(f"{f}: a filtered view keeps no state of its own (member vars; the basket only its pending sale)")
     if re.search(r"FarmManager\.(get_seed_count|get_basket|get_produce_count|get_produce_total)\(|Inventory\.(get_quantity|has|get_save_data)\(", code):
         err(f"{f}: reads the player's items only through Inventory.get_view()")
 sp_rb = code_only(func_body(scripts.get(SP, ""), "_rebuild") or "")
@@ -1480,7 +1488,7 @@ bs_src = scripts.get(BS, "")
 br = code_only(func_body(bs_src, "_basket_rows") or "")
 if not re.search(r'var held := \{\}\s*for row: Dictionary in Inventory\.get_view\("produce"\):\s*held\[\(row\.item as ItemDefinition\)\.crop_id\] = row\s*'
                  r"var rows: Array = \[\]\s*for crop in FarmManager\.get_crops\(\):\s*if held\.has\(crop\.crop_id\):\s*"
-                 r'rows\.append\(\{"crop": crop, "total": held\[crop\.crop_id\]\.total, "counts": held\[crop\.crop_id\]\.counts\}\)\s*return rows\s*$', br) \
+                 r'rows\.append\(\{"crop": crop, "item": held\[crop\.crop_id\]\.item, "total": held\[crop\.crop_id\]\.total, "counts": held\[crop\.crop_id\]\.counts\}\)\s*return rows\s*$', br) \
    or "var rows := _basket_rows()" not in code_only(func_body(bs_src, "_refresh") or "") \
    or "var count := int(row.counts[quality])" not in code_only(func_body(bs_src, "_quality_split") or "") \
    or "FarmManager.produce_changed.connect(_on_produce_changed)" not in (func_body(bs_src, "_ready") or ""):
@@ -1529,9 +1537,19 @@ if "inventory_button.pressed.connect(inventory_screen.open)" not in (func_body(h
    or not re.search(r'\[node name="InventoryScreen" parent="\." instance=ExtResource\("\w+"\)\]', hud_tscn) \
    or 'path="res://scenes/ui/InventoryScreen.tscn"' not in hud_tscn:
     err("HUD: an Inventory button opens the one InventoryScreen")
+# M06.2: a sale changes items without any farm signal, so the basket (its view)
+# and the HUD's basket button (its visibility) also refresh on items_changed.
+ITEMS_CHANGED_LISTENERS = {IS: "Inventory.items_changed.connect(_on_items_changed)", BS: "Inventory.items_changed.connect(_on_produce_changed)",
+                           "scripts/ui/hud.gd": "Inventory.items_changed.connect(_update_basket_button)"}
 for f in scripts:
-    if f not in (IS, INV) and "items_changed" in code_only(scripts[f]):
-        err(f"{f}: listens to items_changed — only the Inventory screen does (the picker and basket keep FarmManager's post-planting signals)")
+    code = code_only(scripts[f])
+    if f == INV or "items_changed" not in code:
+        continue
+    if f not in ITEMS_CHANGED_LISTENERS or code.count("items_changed.connect(") != 1 or ITEMS_CHANGED_LISTENERS[f] not in (func_body(scripts[f], "_ready") or ""):
+        err(f"{f}: listens to items_changed — only the Inventory screen, the basket and the HUD's basket button do (the picker keeps FarmManager's post-planting signal)")
+for f, line in ITEMS_CHANGED_LISTENERS.items():
+    if line not in (func_body(scripts.get(f, ""), "_ready") or ""):
+        err(f"{f}: refreshes on Inventory.items_changed ({line})")
 fm_code = code_only(fm_src)
 fm_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", fm_src, re.M | re.S)}
 HOLDING_VARS = {"_seed_item_ids", "_produce_item_ids", "_starter_seeds_given", "_found_seed_crop_ids", "_found_seed_origins"}
@@ -1668,8 +1686,11 @@ if "return _balance" not in wlf.get("get_balance", "") or "return amount >= 1 an
 for f, s2 in scripts.items():
     if f.startswith("tools/") or f == WL: continue
     code = code_only(s2)
-    if re.search(r"\bWallet\.(credit|debit)\(", code):
-        err(f"{f}: changes coins — no coin earn/spend exists: points and coins are permanently independent (M05.5, D-24); M06.2 (after O-01) is where legitimate coin earn/spend may be introduced, listing its callers here")
+    if re.search(r"\bWallet\.debit\(", code):
+        err(f"{f}: spends coins — M06.2 is earn-only (D-25): no coin sink exists")
+    credits = [fn for fn in re.findall(r"^func (\w+)\(", s2, re.M) if re.search(r"\bWallet\.credit\(", code_only(func_body(s2, fn) or ""))]
+    if re.search(r"\bWallet\.credit\(", code) and (f != "scripts/autoload/market.gd" or credits != ["sell"] or code.count("Wallet.credit(") != 1):
+        err(f"{f}: credits coins — the one coin source is selling produce: Market.sell() is the only caller of Wallet.credit() (D-25; points and coins independent, D-24)")
     if re.search(r"\bWallet\.(_\w+)|\bWallet\.(get_save_data|apply_save_data)\(", code) and f != "scripts/autoload/save_manager.gd":
         err(f"{f}: reaches into the Wallet — only SaveManager saves/loads it; others read get_balance()/can_afford()/get_ledger()")
     if f != WL and "balance_changed.emit" in code:
@@ -1682,7 +1703,9 @@ if '"wallet": Wallet.get_save_data(),' not in code_only(func_body(sm_w, "save_ga
 pm = code_only(scripts.get("scripts/autoload/points_manager.gd", ""))
 if re.search(r"Wallet|coin", pm, re.I) or re.search(r"\bWallet\b", code_only(scripts.get("scripts/autoload/farm_manager.gd", ""))):
     err("Wriksha Points and coins are permanently independent (O-02 closed, D-24)")
-notes.append(f"wallet: ledger-derived balance, API {len(WL_API)} functions, no coin sources yet")
+if not any("Wallet.credit(" in code_only(s2) for s2 in scripts.values()):
+    err("Market.sell() credits the Wallet — selling produce is the one coin source (D-25)")
+notes.append(f"wallet: ledger-derived balance, API {len(WL_API)} functions; one credit caller (Market.sell), no debit")
 
 # ------------------------------------------------------------ repeat-reward protection (M05.2, P-02, D-21)
 # Exploration progress is saved: places reached, secrets found and the two
@@ -1939,8 +1962,9 @@ for f, s2 in scripts.items():
         err(f"{f}: writes PointsManager.points directly — points change only through PointsManager's methods")
     if re.search(r"\bWallet\.", code) and re.search(r"\bPointsManager\.", code) and f != "scripts/autoload/save_manager.gd":
         err(f"{f}: touches both PointsManager and the Wallet — nothing bridges points and coins")
-    if re.search(r"balance_changed\.connect\(", code):
-        err(f"{f}: listens to the coin balance — no coin consumer exists yet (and never a points bridge)")
+    if re.search(r"balance_changed\.connect\(", code) and (f != BS or code.count("balance_changed.connect(") != 1
+                                                           or "Wallet.balance_changed.connect(_on_balance_changed)" not in code):
+        err(f"{f}: listens to the coin balance — only the basket's coin label does (and never a points bridge)")
     if f != "scripts/ui/hud.gd" and re.search(r"points_changed\.connect\(", code):
         err(f"{f}: listens to the points total — only the HUD shows it; nothing mirrors it")
     m = BRIDGE.search(code)
@@ -1954,7 +1978,112 @@ for f in glob.glob("data/rewards/*.tres"):
     keys = set(re.findall(r'^(\w+) = ', open(f, encoding="utf-8").read().split("[resource]", 1)[-1], re.M))
     if not keys <= {"script", "id", "points", "threshold"}:
         err(f"{f}: a reward rule pays Wriksha Points only (found {sorted(keys)})")
-notes.append("points and coins: independent (D-24) — no bridge, no conversion, no coin sources or sinks")
+notes.append("points and coins: independent (D-24) — no bridge, no conversion; coins only from selling produce, no sinks")
+
+# ------------------------------------------------------------ selling produce (M06.2, O-01 closed -> D-25)
+# The one coin source: the Market autoload sells produce the player holds.
+# Only produce with a sell_value sells; one unit's price is its sell_value x
+# the quality's percent (data/market/sell_rules.tres) / 100, rounded half up
+# in whole numbers, then x the quantity. A sale validates everything, then
+# removes the items, credits the Wallet once ("sell:<item_id>:<quality>"),
+# puts the items back if the credit is refused, and announces produce_sold,
+# on which GameState saves (items and wallet together). The Market knows no
+# points, no farm points scale and no redemption reference; no sink exists.
+MK, SR_GD, SR_TRES = "scripts/autoload/market.gd", "scripts/economy/sell_rules.gd", "data/market/sell_rules.tres"
+mk_src = scripts.get(MK, "")
+mk_code = code_only(mk_src)
+mkf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", mk_src, re.M | re.S)}
+def body_lines(fn): return [l.strip() for l in mkf.get(fn, "").splitlines()[1:] if l.strip()]
+if not mk_src.startswith("extends Node\n") or re.search(r"^class_name", mk_src, re.M) \
+   or list(mkf) != ["_ready", "get_unit_price", "sell", "_unit_coins"] or re.findall(r"^var (\w+)", mk_code, re.M) != ["_quality_percents"] \
+   or re.findall(r"^signal .*$", mk_src, re.M) != ["signal produce_sold(item_id: String, quality: int, quantity: int, coins: int)"] \
+   or re.findall(r"^const (\w+) := (.+)$", mk_code, re.M) != [("SELL_RULES_PATH", '"res://data/market/sell_rules.tres"')]:
+    err(f"{MK}: the Market is a plain autoload Node — _ready/get_unit_price/sell/_unit_coins, the rules' percents, one produce_sold signal")
+if re.search(r"\bPointsManager\b|\bpoints?\b|points_value|QUALITY_POINT_SCALE|add_points|EconomyConfig|economy_config|SaveManager|save_game"
+             r"|FarmManager|DiscoveryManager|ExplorationManager|DailyDiscoveryManager|RewardRules?|_process|Timer|create_timer", mk_code):
+    err(f"{MK}: the Market prices from item data and the sell rules only — never points, the farm's points scale, the redemption reference, saving or other systems")
+if body_lines("_ready") != ["var rules := load(SELL_RULES_PATH) as SellRules", "if rules == null:",
+                            'push_warning("Market: %s is not a SellRules resource; nothing can be sold" % SELL_RULES_PATH)', "return",
+                            "_quality_percents = rules.quality_percents.duplicate()"]:
+    err(f"{MK}: _ready() takes the quality percents from the one SellRules file, and sells nothing without it")
+if body_lines("_unit_coins") != ["if quality >= _quality_percents.size():", "return 0", '@warning_ignore("integer_division")',
+                                 "return (item.sell_value * _quality_percents[quality] + 50) / 100"]:
+    err(f"{MK}: one unit = sell_value x the quality's percent / 100, rounded half up in whole numbers")
+if body_lines("get_unit_price") != ["var item := Inventory.get_definition(item_id)",
+                                    'if item == null or item.category != "produce" or item.sell_value < 1:', "return 0",
+                                    "if quality < 0 or quality >= item.quality_levels:", "return 0", "return _unit_coins(item, quality)"]:
+    err(f"{MK}: get_unit_price() is 0 for anything unsellable, else one unit's coins")
+SELL_BODY = ["var item := Inventory.get_definition(item_id)",
+             "if item == null:", "return 0",
+             'if item.category != "produce":', "return 0",
+             "if item.sell_value < 1:", "return 0",
+             "if quality < 0 or quality >= item.quality_levels:", "return 0",
+             "if quantity < 1:", "return 0",
+             "if not Inventory.has(item_id, quantity, quality):", "return 0",
+             "var coins := _unit_coins(item, quality) * quantity",
+             "if coins < 1:", "return 0",
+             "if not Inventory.remove(item_id, quantity, quality):", "return 0",
+             'if not Wallet.credit(coins, "sell:%s:%d" % [item_id, quality]):',
+             "Inventory.add(item_id, quantity, quality)", "return 0",
+             "produce_sold.emit(item_id, quality, quantity, coins)",
+             "return coins"]
+if body_lines("sell") != SELL_BODY or not mkf.get("sell", "").startswith("func sell(item_id: String, quality: int, quantity: int) -> int:"):
+    err(f"{MK}: sell() validates (item, produce, sell_value, quality, quantity, held), prices, removes, credits once as "
+        f"\"sell:<item_id>:<quality>\", restores the exact items if the credit is refused, then announces — in that order")
+if len(re.findall(r"\bInventory\.(add|remove)\(", mk_code)) != 2 or mk_code.count("produce_sold.emit(") != 1:
+    err(f"{MK}: the Market changes items only in sell() (one removal, one restore) and announces each sale once")
+sr_src = scripts.get(SR_GD, "")
+if not re.search(r"^extends Resource\s*\nclass_name SellRules", sr_src, re.M) \
+   or re.findall(r"^@export var (\w+): (.+?) = (.+)$", sr_src, re.M) != [("quality_percents", "Array[int]", "[]")] \
+   or re.search(r"^(func|var|const|signal|static) ", code_only(sr_src), re.M):
+    err(f"{SR_GD}: SellRules is a Resource with exactly quality_percents (Array[int]) and no logic")
+sr_files = sorted(glob.glob("data/market/*.tres"))
+QUALITY_GOOD = int(const_val(fm_src, "QUALITY_GOOD") or -1)
+if sr_files != [SR_TRES]:
+    err(f"data/market: exactly one sell rules file ({SR_TRES}) (found {sr_files})")
+else:
+    txt = open(SR_TRES, encoding="utf-8").read()
+    pm_ = re.search(r"^quality_percents = Array\[int\]\(\[([^\]]*)\]\)$", txt, re.M)
+    pct = [int(x) for x in pm_.group(1).split(",")] if pm_ and re.fullmatch(r"\s*\d+(\s*,\s*\d+)*\s*", pm_.group(1)) else []
+    if f'path="res://{SR_GD}"' not in txt or 'script_class="SellRules"' not in txt or len(pct) != QUALITY_LEVELS \
+       or min(pct or [0]) < 1 or pct != sorted(pct) or not (0 <= QUALITY_GOOD < len(pct) and pct[QUALITY_GOOD] == 100):
+        err(f"{SR_TRES}: one whole percent >= 1 per quality level ({QUALITY_LEVELS}), rising with quality, Good = 100 (sell_value is the Good price) — {pct}")
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    if f not in (MK, ITEM_GD) and re.search(r"\bsell_value\b", code):
+        err(f"{f}: reads sell_value — prices come only from the Market (get_unit_price)")
+    if f != MK and re.search(r"res://data/market|\bSellRules\b", code) and f != SR_GD:
+        err(f"{f}: reads the sell rules — only the Market does")
+    if f != BS and re.search(r"\bMarket\.sell\(", code):
+        err(f"{f}: sells — only the basket's Confirm asks the Market to sell")
+    if f not in ("scripts/autoload/game_state.gd", "scripts/ui/hud.gd") and "produce_sold.connect(" in code:
+        err(f"{f}: listens to sales — only GameState (to save) and the HUD (to show the coins) do")
+gs_src = scripts.get("scripts/autoload/game_state.gd", "")
+if "Market.produce_sold.connect(_save.unbind(4))" not in (func_body(gs_src, "_ready") or ""):
+    err("scripts/autoload/game_state.gd: GameState saves after every sale (Market.produce_sold) — items and wallet in one save")
+if not (0 <= found_al.index("Inventory") < found_al.index("Market") and found_al.index("Wallet") < found_al.index("Market") < found_al.index("GameState")
+        if all(n in found_al for n in ("Inventory", "Wallet", "Market", "GameState")) else False) or found_al.count("Market") != 1:
+    err("project.godot: exactly one Market autoload, after Inventory and Wallet and before GameState")
+hud_ps = code_only(func_body(hud_src, "_on_produce_sold") or "")
+if "Market.produce_sold.connect(_on_produce_sold)" not in (func_body(hud_src, "_ready") or "") \
+   or '"+%d Coins" % coins' not in hud_ps or re.search(r"Points|✿|PointsManager", hud_ps):
+    err("scripts/ui/hud.gd: a sale shows \"+N Coins\" on the shared card — coins, never points")
+bs_code = code_only(bs_src)
+bsf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", bs_src, re.M | re.S)}
+if re.search(r"\bPointsManager\b|points_changed|✿|Wallet\.(credit|debit|get_ledger|can_afford)\(", bs_code) \
+   or re.findall(r"\bWallet\.\w+", bs_code) != ["Wallet.balance_changed", "Wallet.get_balance"] \
+   or '"Coins %d" % balance' not in bsf.get("_on_balance_changed", ""):
+    err(f"{BS}: the basket shows the coin balance (\"Coins N\") from the Wallet's balance — never points, never spending")
+if bs_code.count("Market.sell(") != 1 or "Market.sell(" not in bsf.get("_on_confirm_pressed", "") \
+   or not re.search(r'var quantity := clampi\(int\(_pending\["quantity"\]\), 1, maxi\(held, 1\)\)', bsf.get("_update_sell_panel", "")) \
+   or "confirm_button.disabled = held < quantity or coins < 1" not in bsf.get("_update_sell_panel", "") \
+   or "var coins := Market.get_unit_price(item.id, quality) * quantity" not in bsf.get("_update_sell_panel", "") \
+   or "Inventory.get_view(\"produce\")" not in bsf.get("_held", "") \
+   or "_pending = {}" not in bsf.get("_close_sell_panel", "") or "_close_sell_panel()" not in bsf.get("open", ""):
+    err(f"{BS}: selling is confirm-first — a quantity stepper within 1..held, the Market's price x quantity shown, one Market.sell() on Confirm")
+notes.append(f"selling: Market.sell() the one coin source (produce only, {sum(1 for v in items.values() if v['category'] == 'produce')} items); "
+             f"quality percents from {SR_TRES}; round half up per unit; GameState saves on produce_sold")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

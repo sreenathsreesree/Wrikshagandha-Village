@@ -7,9 +7,9 @@ class_name ItemDefinition
 ##
 ## Only the fields today's items need (M04.1–M04.3). Seeds and harvested
 ## produce belong to a crop, collectibles to a discovery; their glyph,
-## color and value live on that CropDefinition / DiscoveryDefinition rather
-## than being copied here. Fields such as a glyph of its own, an element or
-## a coin value arrive with the first item that needs them (Phase 05+).
+## color and points live on that CropDefinition / DiscoveryDefinition rather
+## than being copied here. Fields such as a glyph of its own or an element
+## arrive with the first item that needs them.
 
 ## Stable, lower_snake_case, equal to the file name; what saves will store.
 @export var id: String = ""
@@ -26,3 +26,7 @@ class_name ItemDefinition
 ## The DiscoveryDefinition.id a collectible comes from: each time that
 ## discovery is collected, Inventory gives one (M04.3).
 @export var discovery_id: String = ""
+## Coins one unit of this item sells for at Good quality (M06.2, D-25): the
+## Market's base price, set independently of any points value. 0 = not
+## sellable; only produce may have one (seeds and collectibles never sell).
+@export var sell_value: int = 0

@@ -1,6 +1,6 @@
 extends CanvasLayer
 
-## Wires the on-screen HUD (points, discovery count, discovery popups, and
+## Wires the on-screen HUD (points, discovery count, discovery and sale popups, and
 ## the Collection/Journal/Daily Discovery/Basket/Inventory screens) to the autoload
 ## systems. Holds no gameplay state itself. There is no Interact button:
 ## the player taps the world (see InputManager).
@@ -46,6 +46,8 @@ func _ready() -> void:
 	FarmManager.milestone_reached.connect(_on_farm_milestone)
 	FarmManager.seed_found.connect(_on_seed_found)
 	FarmManager.produce_changed.connect(_update_basket_button)
+	Inventory.items_changed.connect(_update_basket_button)
+	Market.produce_sold.connect(_on_produce_sold)
 
 	collection_button.pressed.connect(collection_screen.open)
 	journal_button.pressed.connect(journal_screen.open)
@@ -97,6 +99,15 @@ func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int, qu
 	notification_root.add_child(notification)
 	var name_line := "%s · %s\n%s" % [crop_definition.display_name, FarmManager.get_quality_name(quality), FarmManager.get_care_note(care)]
 	notification.show_message("✦ Harvested ✦", name_line, "+%d Wriksha Points · +1 seed" % points_awarded)
+
+## A sale (M06.2): the coins it paid on the shared quiet card — coins,
+## never Wriksha Points.
+func _on_produce_sold(item_id: String, quality: int, quantity: int, coins: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	var item := Inventory.get_definition(item_id)
+	var item_name := item.display_name if item != null else item_id
+	notification.show_compact("%s · %s ×%d" % [item_name, FarmManager.get_quality_name(quality), quantity], "+%d Coins" % coins)
 
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()

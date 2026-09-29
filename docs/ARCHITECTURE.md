@@ -55,7 +55,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - Each area owns its NavigationRegion3D.
   - World state is restored by stable id when an area registers, as FarmPlot already does.
 
-## 3. Autoloads (14 — do not add more without a documented reason; Inventory added by M04.3, D-19; Wallet by M05.1, D-20)
+## 3. Autoloads (15 — do not add more without a documented reason; Inventory added by M04.3, D-19; Wallet by M05.1, D-20; Market by M06.2, D-25)
 | Autoload | Role |
 |---|---|
 | PointsManager | "Wriksha Points" score (one int); `add_points` / `points_changed` |
@@ -65,7 +65,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | CollectionManager | Read-only grouping of discoveries for the Collection screen |
 | DailyDiscoveryManager | One target discovery per calendar day (saved) |
 | Inventory | The player's items (M04.3, D-19): one `ItemStore` — seeds, produce (a count per quality), collectibles; saved as `items`; gives a collectible per discovery collected. After DiscoveryManager, before FarmManager and GameState |
-| Wallet | The player's coins (M05.1, D-20): balance + append-only ledger (the balance is its sum, never negative); `credit`/`debit` only; saved as `wallet`. Nothing earns or spends coins yet. Before SaveManager/GameState |
+| Wallet | The player's coins (M05.1, D-20): balance + append-only ledger (the balance is its sum, never negative); `credit`/`debit` only; saved as `wallet`. Coins are earned only through the Market (M06.2); nothing spends them yet. Before SaveManager/GameState |
+| Market | Selling produce for coins (M06.2, D-25): `get_unit_price`, `sell(item_id, quality, quantity)` — the one `Wallet.credit()` caller; prices from `ItemDefinition.sell_value` × `SellRules` (`data/market/`); emits `produce_sold` (GameState saves). After Inventory and Wallet, before GameState |
 | FarmManager | Farming authority (see §7) |
 | ExplorationManager | Places, landmarks, secret spots, exploration bonuses (**not saved**) |
 | AmbientAudioManager | Audio hooks: 10 `AudioStream` slots, all empty (no audio files yet) |
@@ -164,12 +165,13 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - One inventory screen; seed picker and basket become filtered views.
   - Save migration for the old `farm.seeds` / `farm.basket` keys.
 
-## 10. Economy (Phase 05)
-- **Today:** Wriksha Points (`PointsManager`, one saved int) are the **score** — earned by discoveries, harvests, farm milestones, exploration and the daily discovery; never spent. **Coins** (M05.1, D-20) are the future currency, in the `Wallet` autoload: an append-only ledger of `{amount, reason}` entries whose sum is the balance (never negative); `credit`/`debit` refuse amounts below 1, empty reasons and overdrafts; a load replays the saved ledger and keeps its valid prefix. No system credits or debits coins yet (earn rules M05.3, selling M06.2); points and coins are **permanently independent** (O-02 closed, D-24): no conversion, no mirroring, no reward paying both; coins have no sources or sinks yet.
+## 10. Economy (Phase 05; selling M06.2)
+- **Today:** Wriksha Points (`PointsManager`, one saved int) are the **score** — earned by discoveries, harvests, farm milestones, exploration and the daily discovery; never spent. **Coins** (M05.1, D-20) are the future currency, in the `Wallet` autoload: an append-only ledger of `{amount, reason}` entries whose sum is the balance (never negative); `credit`/`debit` refuse amounts below 1, empty reasons and overdrafts; a load replays the saved ledger and keeps its valid prefix. Coins are earned **only by selling produce** (M06.2, D-25 — see *Selling* below); nothing spends them (no sinks yet); points and coins are **permanently independent** (O-02 closed, D-24): no conversion, no mirroring, no reward paying both.
 - **Repeat-reward protection (M05.2, D-21):** exploration progress is saved (places reached, secrets found, the "every secret found" and curiosity bonuses), so each exploration bonus pays once ever; loading pays nothing. Session-only by design: the discovery-count thresholds (bounded — they count first-ever discoveries, which are saved), the first/rare discovery beats, the session summary (its "places explored" now counts all places ever visited). Already once-ever: first-ever discoveries and Journal entries, farm milestones, found seeds; once per day: the daily bonus.
 - **Reward rules as data (M05.3, D-22):** every flat Wriksha Points reward is a `RewardRule` (`id`, `points`, optional `threshold`) in `data/rewards/` — landmark, secret place, every secret, curiosity, the two discovery-count thresholds, the daily bonus, the four farm milestone bonuses — read through `RewardRules` (a plain class each paying system builds). Per-definition amounts stay on their definitions (discovery / crop `points_value`; the harvest quality scale is FarmManager's rule). Points are paid only at the 9 known sites; points only (coins are independent of points, D-24). A never-respawning discovery (the Ancient Seed) is a **once-ever claim**: its first collection (recorded in the saved `discovered_ids`) means it never spawns, pays or becomes the daily target again.
 - **Economy configuration (M05.4, D-23):** `EconomyConfig` (`scripts/economy/economy_config.gd`, one file `data/economy/economy_config.tres`) holds D-10's redemption reference — `redemption_reference_coins = 1000`, `redemption_reference_amount = 10`, `redemption_reference_currency = "INR"` (1000 coins = ₹10) — as configuration for a future backend/redemption phase only: no script, scene, UI or autoload reads it; it is not the Wallet's and not a points ↔ coins rate (O-02). Earn amounts stay where they are: `RewardRule`s in `data/rewards/` (separate), discovery/crop `points_value`. **No economy rate lives in gameplay code** except FarmManager's `QUALITY_POINT_SCALE [0.75, 1.0, 1.5]`, a frozen farm-quality rule (D-11, pinned by the M04.2 quality contract), used only by `get_harvest_points()`.
-- **Economy flows (M05.6, modelled by `tools/sims/sim_economy.py`):**
+- **Selling (M06.2, O-01 closed → D-25):** harvest → produce in the Inventory → the player sells it on the Basket screen → coins in the Wallet. Only `category == "produce"` items with `sell_value ≥ 1` sell (seeds and collectibles never). Prices: `ItemDefinition.sell_value` (wild carrot 5, meadow herb 6, golden sunflower 8, elderbloom 12 — the Good price, independent of `points_value`) × the quality's percent from `SellRules` (`data/market/sell_rules.tres`: Plain 80 / Good 100 / Fine 140 — not `QUALITY_POINT_SCALE`): `unit = (sell_value × percent + 50) div 100`, `total = unit × quantity`. `Market.sell()` validates (item, produce, price, quality, quantity ≥ 1, held, total ≥ 1), removes the items, credits the Wallet once (`sell:<item_id>:<quality>` — one ledger entry per confirmed sale), puts exactly those items back if the credit is refused, then emits `produce_sold`; GameState saves on it, so items and wallet are written together. UI: the Basket shows "Coins N" (its own label, never ✿ or ₹), a Sell button per held quality, and a confirm panel with a − / + quantity stepper (1..held) and the coins it pays; the HUD shows "+N Coins". The Inventory screen stays read-only. No caps, no sinks, no retroactive coins; `SAVE_VERSION` 5 unchanged.
+- **Economy flows (M05.6, modelled by `tools/sims/sim_economy.py`; selling since M06.2):**
 
 | Player action | Calculation | State change | Saved |
 |---|---|---|---|
@@ -177,15 +179,16 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | 3rd / 5th first-ever discovery of a session | reward rule (threshold) | points | with that discovery's autosave |
 | Reach a landmark / secret place; every secret; curiosity | reward rule | points; `exploration` claim | next save |
 | Collect today's target | reward rule | points; `completed_date` | with a first-ever discovery's autosave, else next save |
-| Harvest | crop `points_value` × FarmManager's quality scale | points; seed back; produce item | autosave (`crop_harvested`) |
+| Harvest | crop `points_value` × FarmManager's quality scale | points; seed back; produce item — **no coins** | autosave (`crop_harvested`) |
 | Farm milestone | reward rule | points; `farm.milestones` | autosave (`milestone_reached`) |
-| (coins) | — | none: no earn or spend source | `wallet` (empty ledger) at every save |
+| Sell produce (Basket, confirmed) | `(sell_value × quality percent + 50) div 100` × quantity | produce removed; coins: one `sell:<item_id>:<quality>` ledger entry | autosave (`produce_sold`) — items and wallet together |
+| (anything else) | — | no coins: discoveries, daily, exploration, thresholds, milestones, collectibles, seeds, points | — |
 
-  Bounded: once-ever (landmarks, secrets, every secret, curiosity, farm milestones, the Ancient Seed) and the per-session thresholds — 500 points in a lifetime. Unbounded, by current decision (O-01 open): repeat collection (~4,450 points/hour naturally; 187 points + 8 collectibles per relaunch, because a relaunch respawns every respawning discovery), the daily bonus under clock changes, and harvests (rate-limited by growth timers, 7 plots and the seed invariant).
+  Bounded: once-ever (landmarks, secrets, every secret, curiosity, farm milestones, the Ancient Seed) and the per-session thresholds — 500 points in a lifetime. Unbounded, by decision (D-22; D-25 keeps coins off every one of these): repeat collection (~4,450 points/hour naturally; 187 points + 8 collectibles per relaunch, because a relaunch respawns every respawning discovery), the daily bonus under clock changes, and harvests (rate-limited by growth timers, 7 plots and the seed invariant). Coins are bounded exactly like harvests: selling every harvest yields at most ≈ 3,500 / 4,390 / 6,090 coins/hour at Plain / Good / Fine (walking, watering and replanting ignored).
 - **Known limitation — autosave gaps (current behaviour, unchanged):** repeat collections, landmarks/secrets/every-secret/curiosity and a daily bonus completed by a repeat collection are saved only at the next autosave or on app pause/close. A crash before then loses those points together with their claims (the reward can be earned again) — never duplicated.
-- **Known faucet (deliberate, O-01 open):** every collection of a respawning discovery pays its full points and a collectible (M04.3), and a relaunch resets respawn timers — no caps or diminishing returns until the economy decision.
+- **Known faucet (deliberate; D-22, O-01 closed by D-25 without caps):** every collection of a respawning discovery pays its full points and a collectible (M04.3), and a relaunch resets respawn timers. It is points only — collectibles don't sell and discoveries pay no coins — so it cannot become a coin faucet.
 - **Planned:**
-  - Caps / diminishing returns for repeatable rewards (O-01), when decided.
+  - Coin sinks (what coins buy) — a later milestone and decision; M06.2 is earn-only.
 - Real money, payments and backend come later, as a separate phase.
 
 ## 11. Saving

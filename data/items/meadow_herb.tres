@@ -9,3 +9,4 @@ display_name = "Meadow Herb"
 category = "produce"
 crop_id = "meadow_herb"
 quality_levels = 3
+sell_value = 6
