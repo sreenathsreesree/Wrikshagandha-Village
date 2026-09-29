@@ -939,10 +939,12 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
-          "scripts/autoload/farm_manager.gd": "5598302543a2bb18", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          "scripts/autoload/farm_manager.gd": "794080fbd0bfa2f1", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
           "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
-          "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
+          # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
+          #  farm_manager.gd by M05.3: milestone bonuses from reward data.)
+          "scripts/interactables/discovery_spawn_point.gd": "1956d72184b1d590",
           "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
           "scripts/world_simulation/time_of_day.gd": "4faf06b101abc1ef"}
 for f, h in PINNED.items():
@@ -1699,12 +1701,12 @@ for fn, body in exf.items():
 if pays != {"_on_discovery_made": 1, "mark_landmark_reached": 1, "mark_secret_location_found": 2, "_maybe_award_curiosity_bonus": 1}:
     err(f"{EXF}: exploration pays points only in its known reward sites ({pays})")
 ml, ms, mc = exf.get("mark_landmark_reached", ""), exf.get("mark_secret_location_found", ""), exf.get("_maybe_award_curiosity_bonus", "")
-if not (0 <= ml.find("if _reached_landmarks.has(landmark_id):\n\t\treturn") < ml.find("_reached_landmarks.append(landmark_id)") < ml.find("PointsManager.add_points(LANDMARK_BONUS)")):
+if not (0 <= ml.find("if _reached_landmarks.has(landmark_id):\n\t\treturn") < ml.find("_reached_landmarks.append(landmark_id)") < ml.find('var bonus := _rewards.points("landmark")') < ml.find("PointsManager.add_points(bonus)")):
     err(f"{EXF}: a landmark pays once ever — checked, recorded, then paid")
-if not (0 <= ms.find("if _found_secret_locations.has(location_id):\n\t\treturn") < ms.find("_found_secret_locations.append(location_id)") < ms.find("PointsManager.add_points(SECRET_LOCATION_BONUS)")) \
-   or not re.search(r"and not _all_secrets_bonus_awarded:\s*_all_secrets_bonus_awarded = true\s*PointsManager\.add_points\(ALL_SECRET_LOCATIONS_BONUS\)", ms):
+if not (0 <= ms.find("if _found_secret_locations.has(location_id):\n\t\treturn") < ms.find("_found_secret_locations.append(location_id)") < ms.find('var bonus := _rewards.points("secret_location")') < ms.find("PointsManager.add_points(bonus)")) \
+   or not re.search(r'and not _all_secrets_bonus_awarded:\s*_all_secrets_bonus_awarded = true\s*var all_bonus := _rewards\.points\("all_secret_locations"\)\s*PointsManager\.add_points\(all_bonus\)', ms):
     err(f"{EXF}: a secret place and 'every secret found' each pay once ever — checked, recorded, then paid")
-if not (0 <= mc.find("if _curiosity_bonus_given:\n\t\treturn") < mc.find("_curiosity_bonus_given = true") < mc.find("PointsManager.add_points(CURIOSITY_BONUS)")):
+if not (0 <= mc.find("if _curiosity_bonus_given:\n\t\treturn") < mc.find("_curiosity_bonus_given = true") < mc.find('var bonus := _rewards.points("curiosity")') < mc.find("PointsManager.add_points(bonus)")):
     err(f"{EXF}: the curiosity bonus pays once ever — checked, recorded, then paid")
 ONCE = {"_reached_landmarks": {"mark_landmark_reached", "apply_save_data"}, "_found_secret_locations": {"mark_secret_location_found", "apply_save_data"},
         "_all_secrets_bonus_awarded": {"mark_secret_location_found", "apply_save_data"}, "_curiosity_bonus_given": {"_maybe_award_curiosity_bonus", "apply_save_data"}}
@@ -1751,6 +1753,112 @@ for f, s2 in scripts.items():
     if re.search(r"ExplorationManager\.(get_save_data|apply_save_data)\(|ExplorationManager\._", code_only(s2)):
         err(f"{f}: reaches into exploration progress — only SaveManager saves/loads it")
 notes.append("repeat-reward protection: exploration progress saved; once-ever bonuses guarded; loading pays nothing")
+
+# ------------------------------------------------------------ reward rules as data (M05.3, D-22)
+# Flat Wriksha Points rewards are RewardRule data (data/rewards/), read
+# through RewardRules (a plain class); per-definition amounts stay on their
+# definitions (discovery / crop points_value; the harvest quality scale is
+# FarmManager's rule). Points only. A never-respawning discovery is a
+# once-ever claim, recorded by the saved discovered_ids.
+RR_GD, RRS = "scripts/rewards/reward_rule.gd", "scripts/rewards/reward_rules.gd"
+rr_src = scripts.get(RR_GD, "")
+if not re.search(r"^extends Resource\s*\nclass_name RewardRule", rr_src, re.M) or \
+   dict(re.findall(r"^@export var (\w+): (\w+)", rr_src, re.M)) != {"id": "String", "points": "int", "threshold": "int"}:
+    err(f"{RR_GD}: RewardRule is a Resource with exactly id, points, threshold")
+rules = {}
+for f in sorted(glob.glob("data/rewards/*.tres")):
+    txt = open(f, encoding="utf-8").read()
+    if f'path="res://{RR_GD}"' not in txt or 'script_class="RewardRule"' not in txt:
+        err(f"{f}: not a RewardRule resource"); continue
+    vals = dict(re.findall(r'^(\w+) = (.+)$', txt.split("[resource]", 1)[1], re.M))
+    rid = vals.get("id", '""').strip('"')
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", rid) or os.path.basename(f) != rid + ".tres":
+        err(f"{f}: reward id '{rid}' must be lower_snake_case and match the file name")
+    pts, thr = vals.get("points", "0"), vals.get("threshold", "0")
+    if not re.fullmatch(r"\d+", pts) or not re.fullmatch(r"\d+", thr):
+        err(f"{f}: points and threshold are whole numbers >= 0")
+        continue
+    rules[rid] = (int(pts), int(thr))
+thr_values = [t for _, t in rules.values() if t]
+if not rules or len(set(thr_values)) != len(thr_values):
+    err(f"data/rewards: reward rules exist and no two share a threshold")
+rs_src = scripts.get(RRS, "")
+rsf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", rs_src, re.M | re.S)}
+if not re.search(r"^extends RefCounted\s*\nclass_name RewardRules", rs_src, re.M) or list(rsf) != ["_init", "points", "thresholds"] \
+   or 'const REWARDS_PATH := "res://data/rewards/"' not in rs_src or "ResourceDirectory.list_tres_paths(REWARDS_PATH)" not in rsf.get("_init", "") \
+   or 'rule == null or rule.id == "" or rule.points < 0 or rule.threshold < 0 or _rules.has(rule.id)' not in rsf.get("_init", "") \
+   or re.findall(r"^var (\w+)", code_only(rs_src), re.M) != ["_rules"] \
+   or any(re.search(r"\b_rules\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(erase|clear|merge)\b)", b) for fn, b in rsf.items() if fn != "_init") \
+   or not re.search(r"if rule == null:\s*push_warning\(.*?\)\n\s*return 0\s*return rule\.points", rsf.get("points", "")) \
+   or not re.search(r"if rule\.threshold > 0:\s*result\[rule\.threshold\] = rule\.points", rsf.get("thresholds", "")):
+    err(f"{RRS}: RewardRules (a RefCounted) loads data/rewards/ via ResourceDirectory, read-only, points(id) (0 + warning if unknown), thresholds()")
+used = set()
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    for rid in re.findall(r'_rewards\.points\("(\w+)"\)|RewardRules\.new\(\)\.points\("(\w+)"\)', code):
+        used.update(x for x in rid if x)
+    for const_name in re.findall(r"_rewards\.points\(([A-Z_]+)\)", code):
+        m = re.search(rf'^const {const_name} := "(\w+)"', s2, re.M)
+        if m: used.add(m.group(1))
+        else: err(f"{f}: reward id constant {const_name} not found")
+    if re.search(r"^const \w*(BONUS|THRESHOLDS)\w* := [\d{\[]", code, re.M):
+        err(f"{f}: a reward amount as a constant — it belongs in data/rewards/")
+    if re.search(r"PointsManager\.add_points\(\s*-?\d", code):
+        err(f"{f}: a literal points amount — rewards come from data")
+    if re.search(r"\.BONUS_POINTS\b", code):
+        err(f"{f}: reads a reward constant — use the owner's getter")
+for rid in sorted(used - set(rules)):
+    err(f"a reward '{rid}' is paid in code but has no data/rewards/{rid}.tres")
+unused = {r for r, (_, t) in rules.items() if not t} - used
+if unused:
+    err(f"data/rewards: rules no code pays {sorted(unused)}")
+PAY_SITES = {("scripts/autoload/discovery_manager.gd", "discover"): 1, ("scripts/farming/farm_plot.gd", "_run_harvest_sequence"): 1,
+             ("scripts/autoload/farm_manager.gd", "_reach"): 1, ("scripts/autoload/daily_discovery_manager.gd", "_on_discovery_made"): 1,
+             (EXF, "_on_discovery_made"): 1, (EXF, "mark_landmark_reached"): 1, (EXF, "mark_secret_location_found"): 2,
+             (EXF, "_maybe_award_curiosity_bonus"): 1}
+sites = {}
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", s2, re.M | re.S):
+        n = len(re.findall(r"PointsManager\.add_points\(", code_only(m.group(0))))
+        if n: sites[(f, m.group(1))] = n
+if sites != PAY_SITES:
+    err(f"Wriksha Points are paid only at the known reward sites (found {sorted(sites.items())})")
+exr = exf.get("_ready", "")
+if "_rewards = RewardRules.new()" not in exr or "_thresholds = _rewards.thresholds()" not in exr \
+   or "_summary_threshold = _thresholds.keys().max() if not _thresholds.is_empty() else 0" not in exr \
+   or "if _thresholds.has(_session_discovery_count) and not _awarded_thresholds.has(_session_discovery_count):" not in exf.get("_on_discovery_made", "") \
+   or "var bonus: int = _thresholds[_session_discovery_count]" not in exf.get("_on_discovery_made", "") \
+   or "if _session_discovery_count == _summary_threshold:" not in exf.get("_on_discovery_made", ""):
+    err(f"{EXF}: discovery-count thresholds and their points come from reward data; the summary shows at the highest threshold")
+for sig, var in (("landmark_reached.emit(landmark_id, bonus)", "mark_landmark_reached"), ("secret_location_found.emit(location_id, bonus)", "mark_secret_location_found"),
+                 ("all_secret_locations_found.emit(all_bonus)", "mark_secret_location_found"), ("curiosity_bonus_awarded.emit(location_id, bonus)", "_maybe_award_curiosity_bonus")):
+    if sig not in exf.get(var, ""):
+        err(f"{EXF}: {var}() announces exactly the points it paid ({sig})")
+ddm = scripts.get("scripts/autoload/daily_discovery_manager.gd", "")
+ddf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", ddm, re.M | re.S)}
+if '_bonus_points = RewardRules.new().points("daily_discovery")' not in ddf.get("_ready", "") or "return _bonus_points" not in ddf.get("get_bonus_points", "") \
+   or not re.search(r"PointsManager\.add_points\(_bonus_points\)\s*daily_completed\.emit\(definition, _bonus_points\)", ddf.get("_on_discovery_made", "")) \
+   or "DailyDiscoveryManager.get_bonus_points()" not in scripts.get("scripts/ui/daily_discovery_screen.gd", ""):
+    err("daily discovery: its bonus comes from reward data; the screen reads it through get_bonus_points()")
+# Once-ever discoveries (D-22): claimed by the first collection (saved discovered_ids).
+dmf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", scripts.get("scripts/autoload/discovery_manager.gd", ""), re.M | re.S)}
+if not re.search(r"var definition := DiscoveryDatabase\.get_definition\(id\)\s*return definition != null and definition\.respawn_seconds <= 0\.0 and discovered_ids\.has\(id\)", dmf.get("is_claimed", "")):
+    err("scripts/autoload/discovery_manager.gd: is_claimed() = a never-respawning discovery already collected (in the saved discovered_ids)")
+if re.findall(r"^var (\w+)", code_only(scripts.get("scripts/autoload/discovery_manager.gd", "")), re.M) != ["discovered_ids"]:
+    err("scripts/autoload/discovery_manager.gd: its only state is the saved discovered_ids — the once-ever claim derives from it, no second record")
+dd = dmf.get("discover", "")
+if not (0 <= dd.find("if is_claimed(id):\n\t\treturn false") < dd.find("var is_first_time") < dd.find("PointsManager.add_points(")):
+    err("scripts/autoload/discovery_manager.gd: a claimed once-ever discovery can't be collected — refused before anything is recorded or paid")
+spf = code_only(func_body(scripts.get("scripts/interactables/discovery_spawn_point.gd", ""), "_spawn") or "")
+if not re.search(r"var instance: DiscoveryInteractable = discovery_scene\.instantiate\(\)\s*if DiscoveryManager\.is_claimed\(instance\.discovery_id\):\s*instance\.free\(\)\s*return\s*instance\.harvested\.connect", spf):
+    err("scripts/interactables/discovery_spawn_point.gd: a claimed once-ever discovery is never spawned (launch, reload, area reload)")
+et = ddf.get("_ensure_today_target", "")
+if 'if target_date == today and target_id != "" and not DiscoveryManager.is_claimed(target_id):' not in et \
+   or not re.search(r"for step in definitions\.size\(\):\s*var candidate: DiscoveryDefinition = definitions\[\(index \+ step\) % definitions\.size\(\)\]\s*if not DiscoveryManager\.is_claimed\(candidate\.id\):", et):
+    err("daily discovery: a claimed once-ever discovery is never today's target — the next one in order is taken")
+notes.append(f"rewards: {len(rules)} rules in data/rewards ({len(thr_values)} thresholds); {sum(PAY_SITES.values())} pay sites; once-ever discoveries by respawn_seconds <= 0")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

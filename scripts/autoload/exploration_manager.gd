@@ -9,7 +9,8 @@ extends Node
 ## them again. Session-only, as before: the discovery-count thresholds
 ## (they count first-ever discoveries, which are themselves saved, so they
 ## are bounded), the first/rare discovery beats and the session summary.
-## Thresholds are data (a dictionary), not branching logic; places — their
+## Every bonus amount and the discovery-count thresholds are reward data
+## (data/rewards/, M05.3), not constants; places — their
 ## names, order, secret/garden roles and curiosity pairings — are
 ## PlaceDefinition resources in res://data/places/ (M03.6), never script
 ## constants.
@@ -35,11 +36,6 @@ signal all_secret_locations_found(bonus_points: int)
 signal curiosity_bonus_awarded(location_id: String, bonus_points: int)
 signal session_summary_ready(summary: Dictionary)
 
-const THRESHOLDS := {3: 20, 5: 40}
-const LANDMARK_BONUS := 15
-const SECRET_LOCATION_BONUS := 15
-const ALL_SECRET_LOCATIONS_BONUS := 50
-const CURIOSITY_BONUS := 20
 const RARE_RARITIES := ["rare", "very_rare", "legendary"]
 
 ## Where the place definitions live (the Journal's "Places" list, arrival
@@ -48,6 +44,11 @@ const RARE_RARITIES := ["rare", "very_rare", "legendary"]
 const PLACES_PATH := "res://data/places/"
 
 var _places: Array[PlaceDefinition] = []
+## Reward amounts (M05.3): {count: points} for the discovery-count
+## thresholds; the session summary shows at the highest one.
+var _rewards: RewardRules
+var _thresholds: Dictionary = {}
+var _summary_threshold: int = 0
 var _secret_place_count: int = 0
 var _session_discovery_count: int = 0
 var _session_rare_discovery_count: int = 0
@@ -62,6 +63,9 @@ var _summary_shown: bool = false
 
 func _ready() -> void:
 	_load_places()
+	_rewards = RewardRules.new()
+	_thresholds = _rewards.thresholds()
+	_summary_threshold = _thresholds.keys().max() if not _thresholds.is_empty() else 0
 	DiscoveryManager.discovery_made.connect(_on_discovery_made)
 
 ## ResourceDirectory handles exported builds (".tres.remap" listings).
@@ -94,12 +98,12 @@ func _on_discovery_made(definition: DiscoveryDefinition) -> void:
 			_rare_discovery_announced = true
 			rare_discovery_noted.emit(definition)
 
-	if THRESHOLDS.has(_session_discovery_count) and not _awarded_thresholds.has(_session_discovery_count):
+	if _thresholds.has(_session_discovery_count) and not _awarded_thresholds.has(_session_discovery_count):
 		_awarded_thresholds.append(_session_discovery_count)
-		var bonus: int = THRESHOLDS[_session_discovery_count]
+		var bonus: int = _thresholds[_session_discovery_count]
 		PointsManager.add_points(bonus)
 		exploration_bonus_awarded.emit(_session_discovery_count, bonus)
-		if _session_discovery_count == 5:
+		if _session_discovery_count == _summary_threshold:
 			_show_session_summary()
 
 func has_reached_landmark(landmark_id: String) -> bool:
@@ -109,8 +113,9 @@ func mark_landmark_reached(landmark_id: String) -> void:
 	if _reached_landmarks.has(landmark_id):
 		return
 	_reached_landmarks.append(landmark_id)
-	PointsManager.add_points(LANDMARK_BONUS)
-	landmark_reached.emit(landmark_id, LANDMARK_BONUS)
+	var bonus := _rewards.points("landmark")
+	PointsManager.add_points(bonus)
+	landmark_reached.emit(landmark_id, bonus)
 	FarmManager.notify_place_reached(landmark_id)
 
 func has_found_secret_location(location_id: String) -> bool:
@@ -120,16 +125,18 @@ func mark_secret_location_found(location_id: String) -> void:
 	if _found_secret_locations.has(location_id):
 		return
 	_found_secret_locations.append(location_id)
-	PointsManager.add_points(SECRET_LOCATION_BONUS)
-	secret_location_found.emit(location_id, SECRET_LOCATION_BONUS)
+	var bonus := _rewards.points("secret_location")
+	PointsManager.add_points(bonus)
+	secret_location_found.emit(location_id, bonus)
 	FarmManager.notify_place_reached(location_id)
 
 	_maybe_award_curiosity_bonus(location_id)
 
 	if _secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count and not _all_secrets_bonus_awarded:
 		_all_secrets_bonus_awarded = true
-		PointsManager.add_points(ALL_SECRET_LOCATIONS_BONUS)
-		all_secret_locations_found.emit(ALL_SECRET_LOCATIONS_BONUS)
+		var all_bonus := _rewards.points("all_secret_locations")
+		PointsManager.add_points(all_bonus)
+		all_secret_locations_found.emit(all_bonus)
 
 ## Rewards exploration *order*, not grinding: reaching this secret spot
 ## before the nearby discovery it's paired with means the player found it
@@ -143,8 +150,9 @@ func _maybe_award_curiosity_bonus(location_id: String) -> void:
 	if paired_discovery_id == "" or DiscoveryManager.is_discovered(paired_discovery_id):
 		return
 	_curiosity_bonus_given = true
-	PointsManager.add_points(CURIOSITY_BONUS)
-	curiosity_bonus_awarded.emit(location_id, CURIOSITY_BONUS)
+	var bonus := _rewards.points("curiosity")
+	PointsManager.add_points(bonus)
+	curiosity_bonus_awarded.emit(location_id, bonus)
 
 ## One row per place, in its fixed order, with the caller deciding
 ## how to render "not visited yet" (the Journal screen shows "???").

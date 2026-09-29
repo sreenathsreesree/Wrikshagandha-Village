@@ -33,8 +33,8 @@ assert "return a.order < b.order" in _body(EX, "_load_places") and "_secret_plac
 assert "_secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count" in _body(EX, "mark_secret_location_found")
 assert 'return place_id.replace("_", " ").capitalize()' in _body(EX, "get_place_display_name")
 assert 'if place != null and place.arrival_text != "":' in _body(EX, "get_place_arrival_text")
-ALL_SECRETS_BONUS = int(re.search(r"^const ALL_SECRET_LOCATIONS_BONUS := (\d+)", EX, re.M).group(1))
-CURIOSITY_BONUS = int(re.search(r"^const CURIOSITY_BONUS := (\d+)", EX, re.M).group(1))
+def _reward(rid): return int(re.search(r"^points = (\d+)", _src("data", "rewards", rid + ".tres"), re.M).group(1))   # M05.3: reward data
+ALL_SECRETS_BONUS, CURIOSITY_BONUS = _reward("all_secret_locations"), _reward("curiosity")
 LANDMARKS = {}
 for path in glob.glob(os.path.join(REPO, "scenes", "**", "*.tscn"), recursive=True):
     for lid, kind in re.findall(r'location_id = "(\w+)"\nkind = (\d)', open(path, encoding="utf-8").read()):

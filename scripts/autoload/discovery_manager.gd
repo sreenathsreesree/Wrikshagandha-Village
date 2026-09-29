@@ -5,6 +5,11 @@ extends Node
 ## repeat are still distinguished (via which signal fires) so Journal/
 ## Collection/session-exploration bookkeeping only cares about first-time,
 ## while points and Daily Discovery completion work identically either way.
+##
+## Once-ever finds (M05.3, D-22): a discovery that never respawns
+## (respawn_seconds <= 0 — the Ancient Seed) is claimed by its first
+## collection. discovered_ids (saved) records that, so after a relaunch or
+## an area reload it neither appears (DiscoverySpawnPoint) nor pays again.
 
 signal discovery_made(definition: DiscoveryDefinition)
 signal discovery_repeated(definition: DiscoveryDefinition)
@@ -15,6 +20,8 @@ func discover(id: String) -> bool:
 	var definition := DiscoveryDatabase.get_definition(id)
 	if definition == null:
 		push_warning("DiscoveryManager: unknown discovery id '%s'" % id)
+		return false
+	if is_claimed(id):
 		return false
 
 	var is_first_time := not discovered_ids.has(id)
@@ -29,6 +36,11 @@ func discover(id: String) -> bool:
 	else:
 		discovery_repeated.emit(definition)
 	return true
+
+## A once-ever discovery (never respawns) that has already been collected.
+func is_claimed(id: String) -> bool:
+	var definition := DiscoveryDatabase.get_definition(id)
+	return definition != null and definition.respawn_seconds <= 0.0 and discovered_ids.has(id)
 
 func is_discovered(id: String) -> bool:
 	return discovered_ids.has(id)

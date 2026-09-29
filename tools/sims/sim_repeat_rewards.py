@@ -28,15 +28,16 @@ def _vals(f): return {k: v.strip('"') for k, v in re.findall(r'^(\w+) = (.+)$', 
 
 # ---------------------------------------------------------------- 1. read from the project
 EX_SRC = _src("scripts", "autoload", "exploration_manager.gd"); EX = _funcs(EX_SRC)
-def const(n): return int(re.search(rf"^const {n} := (\d+)", EX_SRC, re.M).group(1))
-LANDMARK, SECRET, ALL_SECRETS, CURIOSITY = const("LANDMARK_BONUS"), const("SECRET_LOCATION_BONUS"), const("ALL_SECRET_LOCATIONS_BONUS"), const("CURIOSITY_BONUS")
-THRESHOLDS = {int(k): int(v) for k, v in re.findall(r"(\d+): (\d+)", re.search(r"^const THRESHOLDS := \{([^}]*)\}", EX_SRC, re.M).group(1))}
+RULES = {v["id"]: (int(v.get("points", "0")), int(v.get("threshold", "0"))) for v in map(_vals, glob.glob(os.path.join(REPO, "data", "rewards", "*.tres")))}
+LANDMARK, SECRET, ALL_SECRETS, CURIOSITY = (RULES[r][0] for r in ("landmark", "secret_location", "all_secret_locations", "curiosity"))
+THRESHOLDS = {t: p for p, t in RULES.values() if t}
 PLACES = {v["id"]: {"secret": v.get("secret") == "true", "curiosity": v.get("curiosity_discovery_id", "")}
           for v in map(_vals, sorted(glob.glob(os.path.join(REPO, "data", "places", "*.tres"))))}
 SECRETS = [p for p, v in PLACES.items() if v["secret"]]; LANDMARKS = [p for p, v in PLACES.items() if not v["secret"]]
 DISC = {v["id"]: int(v.get("points_value", "10")) for v in map(_vals, sorted(glob.glob(os.path.join(REPO, "data", "discoveries", "*.tres"))))}
+ONCE_EVER = {v["id"] for v in map(_vals, glob.glob(os.path.join(REPO, "data", "discoveries", "*.tres"))) if float(v.get("respawn_seconds", "60")) <= 0}  # M05.3
 COLLECT = {v["discovery_id"]: v["id"] for v in map(_vals, glob.glob(os.path.join(REPO, "data", "items", "*.tres"))) if v.get("category") == "collectible"}
-DAILY = int(re.search(r"^const BONUS_POINTS := (\d+)", _src("scripts", "autoload", "daily_discovery_manager.gd"), re.M).group(1))
+DAILY = RULES["daily_discovery"][0]
 assert "if _reached_landmarks.has(landmark_id):" in EX["mark_landmark_reached"] and "if _found_secret_locations.has(location_id):" in EX["mark_secret_location_found"]
 assert "and not _all_secrets_bonus_awarded:" in EX["mark_secret_location_found"] and "if _curiosity_bonus_given:" in EX["_maybe_award_curiosity_bonus"]
 assert '"landmarks": Array(_reached_landmarks)' in EX["get_save_data"] and '"curiosity_bonus": _curiosity_bonus_given' in EX["get_save_data"]
@@ -55,6 +56,7 @@ class World:
         w.session_count, w.thresholds, w.paid = 0, [], []          # paid: log of (reward, id) this launch
     # DiscoveryManager.discover + listeners
     def collect(w, d, today="d1"):
+        if d in ONCE_EVER and d in w.discovered: return          # M05.3: a claimed once-ever find is gone for good
         first = d not in w.discovered
         if first: w.discovered.append(d)
         w.points += DISC[d]
@@ -140,7 +142,7 @@ for _ in range(1500):
     assert sorted(final.landmarks + final.secrets) == sorted({i for r, i in ever if r in ("landmark", "secret")}), "progress survives every relaunch"
     for r, _ in ever: totals[r] += 1
 # repeat collection unchanged (M04.3): points and a collectible every time, across relaunches
-w = World(); d = sorted(COLLECT)[0]
+w = World(); d = sorted(set(COLLECT) - ONCE_EVER)[0]
 for i in range(1, 6):
     w.collect(d); w = World.load(w.save())
     assert w.items[COLLECT[d]] == i and w.points >= DISC[d] * i, "repeatable collection still pays each time"

@@ -30,7 +30,7 @@ func _refresh() -> void:
 	if DailyDiscoveryManager.is_completed_today():
 		status_label.text = "✓ Daily Discovery Complete"
 		var name_text := definition.display_name if definition else "Unknown"
-		detail_label.text = "%s  •  +%d Wriksha Points" % [name_text, DailyDiscoveryManager.BONUS_POINTS]
+		detail_label.text = "%s  •  +%d Wriksha Points" % [name_text, DailyDiscoveryManager.get_bonus_points()]
 	else:
 		var rarity_text := "something new"
 		if definition:

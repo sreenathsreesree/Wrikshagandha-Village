@@ -104,14 +104,12 @@ const ALL_STARTER_CROPS := "all_starter_crops"
 const GARDEN_COMPLETE := "garden_complete"
 const CROP_GROWN_PREFIX := "grown:"
 
-const FIRST_HARVEST_BONUS := 10
-const ALL_STARTER_CROPS_BONUS := 40
-const GARDEN_COMPLETE_BONUS := 30
-const GARDEN_IN_BLOOM_BONUS := 50
 
 const NUMBER_WORDS := ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
 
 var _crops: Array[CropDefinition] = []
+## Milestone bonus amounts (M05.3): reward data named by the milestone id.
+var _rewards: RewardRules
 ## crop_id -> that crop's seed / produce item id (from data/items).
 var _seed_item_ids: Dictionary = {}
 var _produce_item_ids: Dictionary = {}
@@ -150,6 +148,7 @@ var _unloaded_plot_states: Dictionary = {}
 
 func _ready() -> void:
 	_load_crops()
+	_rewards = RewardRules.new()
 	var item_definitions := ItemStore.load_definitions()
 	_seed_item_ids = ItemStore.crop_item_ids(item_definitions, "seed")
 	_produce_item_ids = ItemStore.crop_item_ids(item_definitions, "produce")
@@ -415,7 +414,7 @@ func notify_crop_ready(crop_definition: CropDefinition) -> void:
 	_reach(CROP_GROWN_PREFIX + crop_definition.crop_id, grown_line, 0)
 	if _all_starter_crops_grown():
 		var count := _starter_crops().size()
-		_reach(ALL_STARTER_CROPS, "%s different crops have grown here." % _number_word(count), ALL_STARTER_CROPS_BONUS)
+		_reach(ALL_STARTER_CROPS, "%s different crops have grown here." % _number_word(count), _rewards.points(ALL_STARTER_CROPS))
 
 ## A harvest paid out: exactly one seed of that crop comes back, so the
 ## loop renews itself without an economy, and the produce goes into the
@@ -431,14 +430,14 @@ func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, poi
 	seeds_changed.emit()
 	produce_changed.emit()
 	crop_harvested.emit(crop_definition, points_awarded, quality, care)
-	_reach(FIRST_HARVEST, "Something you planted has finally come home.", FIRST_HARVEST_BONUS)
+	_reach(FIRST_HARVEST, "Something you planted has finally come home.", _rewards.points(FIRST_HARVEST))
 	if quality >= QUALITY_FINE:
 		_reach(FIRST_FINE, "A rotated bed and a careful hand — this one grew fine.", 0)
 	if _is_starter_garden_complete():
-		_reach(GARDEN_COMPLETE, "The starter garden feels complete.", GARDEN_COMPLETE_BONUS)
+		_reach(GARDEN_COMPLETE, "The starter garden feels complete.", _rewards.points(GARDEN_COMPLETE))
 	if _is_garden_in_bloom():
 		var garden_name := ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())
-		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The %s is in bloom." % garden_name, GARDEN_IN_BLOOM_BONUS):
+		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The %s is in bloom." % garden_name, _rewards.points(GARDEN_IN_BLOOM)):
 			_update_garden_interest()
 
 # --- Exploration --------------------------------------------------------------
