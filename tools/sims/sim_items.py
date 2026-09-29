@@ -77,12 +77,12 @@ for fn, lines in {"choose_seed": ["if crop == null or get_seed_count(crop.crop_i
 assert all(l in SM["_move_holdings_to_items"] for l in ('farm["starter_seeds"] = (seeds as Dictionary).keys()', "items[seed_items[crop_id]] = [seeds[crop_id]]",
                                                         "items[produce_items[crop_id]] = basket[crop_id]", 'farm.erase("seeds")', 'farm.erase("basket")'))
 SAVE_VERSION = int(re.search(r"^const SAVE_VERSION := (\d+)", _src("scripts", "autoload", "save_manager.gd"), re.M).group(1))
-assert SAVE_VERSION == 3
+assert SAVE_VERSION >= 3  # 3 -> 4 (M05.1) adds the wallet section only; items untouched
 ITEM_CATEGORIES_ = sorted({i['category'] for i in ITEMS.values()})
 INV = _funcs(_src("scripts", "autoload", "inventory.gd"))
 assert 'var item_id: String = _collectible_item_ids.get(definition.id, "")' in INV["_on_discovery_collected"] and "_store.add(item_id)" in INV["_on_discovery_collected"]
 assert "DiscoveryManager.discovery_repeated.connect(_on_discovery_collected)" in INV["_ready"] and "DiscoveryManager.discovery_made.connect(_on_discovery_collected)" in INV["_ready"]
-assert re.search(r"^\t\t\t2:\s*pass", SM["_migrate"], re.M)
+assert re.search(r"^\t\t\t2:\s*pass", SM["_migrate"], re.M) and re.search(r"^\t\t\t3:\s*pass", SM["_migrate"], re.M)
 SMS = _src("scripts", "autoload", "save_manager.gd")
 assert SMS.find('Inventory.apply_save_data(data.get("items", {}))') < SMS.find('FarmManager.apply_save_data(data.get("farm", {}))')
 
@@ -400,7 +400,7 @@ for _ in range(1000):   # collections interleaved with farming: nothing interfer
 f = Farm(); play(random.Random(9), [f], 40)
 v2 = json.loads(save(f, copy.deepcopy(OTHER))); v2["save_version"] = 2
 g, data = load(json.dumps(v2)); assert observe(g) == observe(f) and g.items.get_save_data() == f.items.get_save_data()
-assert json.loads(save(g, data))["save_version"] == 3
+assert json.loads(save(g, data))["save_version"] == SAVE_VERSION
 # an empty farm section with items: a fresh farm's seeds; produce and collectibles kept
 v3 = json.loads(save(f, copy.deepcopy(OTHER))); v3["farm"] = {}; v3["items"][COLLECTIBLE[sorted(COLLECTIBLE)[0]]] = [2]
 g, _ = load(json.dumps(v3))

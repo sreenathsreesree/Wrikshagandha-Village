@@ -449,6 +449,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - install over an M04.2 build with a save: everything loads as before and is stamped version 3; (optional) the M04.2 build refuses a version-3 save and leaves it untouched.
   - **M04.4 filtered views** (Android): the seed picker looks and behaves exactly as before — same cards in the same order, counts, "No seeds" disabled cards, soil notes; planting from it closes it cleanly with no error and the count drops next time; a found seed shows up; the Basket screen shows the same rows in the same order (Wild Carrot, Meadow Herb, Golden Sunflower, Elderbloom) with the same Plain/Good/Fine split, and updates after a harvest while open; collecting discoveries changes neither.
   - **M04.5 inventory screen** (Android + desktop): the 🎒 button (sixth in the column, all buttons reachable) opens "Inventory"; a fresh game shows only **Seeds** (starting seeds, crop order, with swatches); after harvests **Produce** rows match the Basket screen exactly (same totals and Plain/Good/Fine split); after collecting discoveries **Collectibles** list each with its count (collect one again → +1, visible without reopening if the screen is open); planting a seed lowers its row; nothing held in a category → no section; ✕ closes; the screen scrolls with many rows and is readable on the phone; relaunch shows the same inventory; the seed picker and Basket behave exactly as before.
+  - **M05.1 wallet** (desktop, `user://save.json`): the game starts with no autoload/script errors; after the next autosave the save has `"save_version":4` and `"wallet":{"ledger":[]}` (nothing earns coins yet); every M04 check above still holds (inventory, farm, relaunch); an M04.5 build refuses the v4 save and leaves it untouched (optional). (Coin credits/debits become testable with M05.3 / M06.2.)
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -873,12 +874,32 @@ Goal: an internal coin economy with repeat-reward protection.
 
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
-| M05.1 | Wallet + append-only transaction ledger (saved) | Every coin change has a ledger entry | — | `[ ]` |
+| M05.1 | Wallet + append-only transaction ledger (saved) — `Wallet` autoload, D-20 | Every coin change has a ledger entry | Relaunch: empty wallet, no errors | `[~]` |
 | M05.2 | Repeat-reward protection: persist exploration progress (P-02); one-time-ever rewards; caps/diminishing returns (A4) | Relaunch never re-awards; no unbounded faucet | Relaunch test | `[ ]` |
 | M05.3 | Reward architecture: earn rules as data | Rewards configurable without code | — | `[ ]` |
 | M05.4 | Economy configuration (incl. redemption reference as unused config) | No rate in gameplay code | — | `[ ]` |
 | M05.5 | Points ↔ coins relationship per O-02 | Decision implemented | — | `[!]` blocked on O-02 |
 | M05.6 | Economy simulation in `tools/sims/` | Earn/spend balances and abuse loops modelled | — | `[ ]` |
+
+
+**M05.1 — Wallet + ledger** `[~]` Implemented and verified in code — runtime check pending (M01.6 checklist, "M05.1 wallet")
+- **Objective:** the foundation of the coin economy — one owner of the coin balance and an append-only, saved ledger of every change — with no earning, spending, prices or UI yet.
+- **Audit:**
+  - **Score, not currency:** Wriksha Points (`PointsManager`, one int, saved as `points`, shown in the HUD as "✿ N"). Earned by: every discovery collection (`DiscoveryManager`, the discovery's `points_value`), harvests (`FarmPlot`, quality-scaled), farm milestone bonuses (`FarmManager._reach`), exploration bonuses (5 sites in `ExplorationManager`), the daily discovery bonus. Never spent; `add_points` accepts any amount, including negative (unused); `set_points` only from SaveManager. Points feed no progression gate — they are a score.
+  - **Currency:** none. No coin, wallet, balance or ledger anywhere; items have no value field (M04.1 deferred it to Phase 05); the Inventory holds items only.
+  - Plan/decisions: coins are internal (D-10; the 1000 coins = ₹10 reference is future config, M05.4); the points ↔ coins relationship is open (O-02 → M05.5, blocked); earn rules M05.3; selling M06.2; repeat-reward protection M05.2.
+  - So M05.1 must not turn PointsManager into the wallet or convert points: a separate owner, credited by nothing yet.
+- **Decision (D-20):** a `Wallet` autoload (after Inventory, before SaveManager/GameState); the append-only ledger is the truth — the balance is its sum, never negative; only the ledger is saved.
+- **Implementation:** `scripts/autoload/wallet.gd` — `get_balance()`, `can_afford(amount)`, `get_ledger()` (a copy, oldest first), `credit(amount, reason)` / `debit(amount, reason)` (refuse an amount below 1 or an empty reason with a warning; debit refuses more than the balance; a refused call records nothing), one private `_record()` that appends `{amount (signed), reason}`, moves the balance by exactly that and emits `balance_changed(balance)`; `get_save_data()` = `{"ledger": [...]}`; `apply_save_data()` replays the saved ledger from zero and keeps its longest valid prefix (whole, non-zero amounts with a reason, never below 0), warning about the rest. No caller credits or debits (M05.3 / M06.2 will).
+- **Persistence (D-17):** new section `"wallet"` → `SAVE_VERSION` 4; step 3 → 4 rewrites nothing (an M04 save has no wallet and loads an empty one); an M04.5 build refuses a v4 save rather than dropping the ledger. `SECTION_TYPES` + save/load updated; every other section untouched.
+- **Files:** new `scripts/autoload/wallet.gd`, `tools/sims/sim_wallet.py`; `project.godot` (one autoload line); `scripts/autoload/save_manager.gd` (pin updated deliberately); `tools/check_project.py`; `tools/sims/sim_items.py`, `tools/sims/sim_save_versioning.py` (v4); docs. PointsManager, every reward source, Inventory, FarmManager, UI, scenes untouched.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: the Wallet's exact API, state and signal; only `_record()` and a load write the balance/ledger and the ledger is only appended to; credit/debit guards and exact ±amount; `_record` = one entry + exact balance move + signal; load replays from zero, keeps the valid prefix, never negative; saved-entry validation; reads return copies; the save is the ledger only; no script credits/debits coins, reaches into the Wallet or saves/loads it (except SaveManager), or emits `balance_changed`; PointsManager/FarmManager know nothing of coins; the wallet section saved/loaded, step 3 → 4 a no-op; autoload order.
+  - `sim_wallet.py`: empty start; credits, debits, refusals (insufficient, zero, negative, empty reason) recording nothing; 2,000 repeated transactions; ledger order = call order; balance = ledger sum, never negative, at every step; `get_ledger()` a copy; relaunch identical and stable; 14 malformed ledgers keep exactly their valid prefix; a v3 save → empty wallet, other sections untouched; 5,000 random sequences (77,000+ operations) equal a reference, deterministic, one signal per recorded change. `sim_save_versioning.py` round-trips a wallet ledger in the current save; `sim_items.py` unchanged in behaviour under v4.
+  - Mutation-tested (SaveManager pin removed): 34 code/config mutations caught by `check_project.py`; 7 model mutations caught by `sim_wallet.py`.
+- **Runtime:** no Godot executable here — static and model only (M01.6 checklist, "M05.1 wallet").
+- **Commit:** §15.
 
 ### PHASE 06 — FARMING INTEGRATION
 Goal: connect the existing farming to inventory, economy, saving and progression, then freeze it.
@@ -1024,8 +1045,9 @@ No large world expansion before this gate passes.
 | M04.3 | `a4939ed` |
 | M04.4 | `3e03f0f` |
 | M04.5 | `cd06772` |
+| M05.1 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0–M04.5's runtime tests). Next in code: the Phase 04 table is complete — the next step is the developer's call (Phase 05 — Economy, M05.1), only on explicit instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 05: M05.1 (Wallet + ledger, save v4) implemented (`[~]`). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's, M04.0–M04.5's and M05.1's runtime tests). Next in code: **M05.2 — repeat-reward protection** (P-02, A4), only on the developer's explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

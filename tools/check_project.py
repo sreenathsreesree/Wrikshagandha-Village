@@ -922,8 +922,9 @@ if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D"
    or "NavigationAgent3D" not in open(SHELL["Player"], encoding="utf-8").read() or "_bake_navigation()" not in (func_body(scripts.get(MEADOW_GD, ""), "_ready") or ""):
     err("navigation: the Meadow keeps its NavigationRegion3D (settings unchanged, baked at load from the navigation_source group); the Player keeps its NavigationAgent3D")
 # M04.3 (O-14) added Inventory: after DiscoveryManager (it connects to it), before FarmManager and GameState.
+# M05.1 (D-20) added Wallet (coins + ledger), before SaveManager and GameState (which loads the save).
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager"]
+             "Inventory", "Wallet", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
     err(f"project.godot: autoloads changed {found_al} — adding one is a documented decision, never a side effect")
@@ -936,9 +937,10 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
-          #  and by M04.3: the store moves to the Inventory autoload, save v3.)
+          #  and by M04.3: the store moves to the Inventory autoload, save v3;
+          #  SaveManager by M05.1: the wallet section, save v4.)
           "scripts/autoload/farm_manager.gd": "5598302543a2bb18", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
-          "scripts/autoload/save_manager.gd": "76c2ed6ff6c4858a", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
+          "scripts/autoload/save_manager.gd": "314bdb4e391510c0", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
           "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
@@ -1616,6 +1618,69 @@ notes.append(f"items: {len(items)} from data/items ({sum(v['category'] == 'seed'
              f"{sum(v['category'] == 'produce' for v in items.values())} produce x{QUALITY_LEVELS} qualities); ItemStore API {len(STORE_API)} "
              f"functions; Inventory autoload owns the store; {sum(v['category'] == 'collectible' for v in items.values())} collectibles "
              f"from discoveries; save steps 1 -> 2 (holdings) and 2 -> 3 (no rewrite)")
+
+# ------------------------------------------------------------ wallet + ledger (M05.1, D-20)
+# Coins live in the Wallet autoload, apart from Wriksha Points (the score).
+# The append-only ledger is the truth: the balance is its sum and never
+# below 0; only credit()/debit() append (amount >= 1, a reason, debit within
+# the balance); a load replays the saved ledger and keeps its valid prefix.
+# Nothing credits or debits coins yet (earn rules M05.3, selling M06.2).
+WL = "scripts/autoload/wallet.gd"
+wl_src = scripts.get(WL, "")
+wl_code = code_only(wl_src)
+wlf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", wl_src, re.M | re.S)}
+WL_API = ["get_balance", "can_afford", "get_ledger", "credit", "debit", "get_save_data", "apply_save_data", "_record", "_parse_entry"]
+if not wl_src.startswith("extends Node\n") or re.search(r"^class_name", wl_src, re.M) or list(wlf) != WL_API \
+   or re.findall(r"^var (\w+)", wl_code, re.M) != ["_balance", "_ledger"] or "var _balance: int = 0" not in wl_code \
+   or "var _ledger: Array[Dictionary] = []" not in wl_code or not re.search(r"^signal balance_changed\(balance: int\)$", wl_src, re.M):
+    err(f"{WL}: the Wallet is a plain autoload Node with a balance, a ledger and the API {WL_API}")
+BAL_W = re.compile(r"\b_balance\s*(=[^=]|\+=|-=|\*=|/=)")
+LED_W = re.compile(r"\b_ledger\s*(=[^=]|\.(append|push_back|insert|erase|remove_at|clear|pop_back|pop_front|resize|sort|reverse|fill|assign)\b|\[[^\]]*\]\s*=[^=])")
+writes = {fn: (len(BAL_W.findall(b)), sorted(set(m.group(0).split(".")[-1].split("(")[0] for m in LED_W.finditer(b)))) for fn, b in wlf.items()}
+if {fn: w for fn, w in writes.items() if w != (0, [])} != {"_record": (1, ["append"]), "apply_save_data": (2, ["append", "clear"])}:
+    err(f"{WL}: only _record() (for credit/debit) and a load write the balance and the ledger, and the ledger is only appended to ({writes})")
+if not re.search(r'func credit\(amount: int, reason: String\) -> bool:\s*if amount < 1 or reason == "":\s*push_warning\(.*?\)\n\s*return false\s*'
+                 r"_record\(amount, reason\)\s*return true\s*$", wlf.get("credit", "")):
+    err(f"{WL}: credit() refuses an amount below 1 or an empty reason, otherwise records exactly +amount")
+if not re.search(r'func debit\(amount: int, reason: String\) -> bool:\s*if amount < 1 or reason == "":\s*push_warning\(.*?\)\n\s*return false\s*'
+                 r"if amount > _balance:\s*return false\s*_record\(-amount, reason\)\s*return true\s*$", wlf.get("debit", "")):
+    err(f"{WL}: debit() refuses an amount below 1, an empty reason or more than the balance, otherwise records exactly -amount")
+if not re.search(r'func _record\(amount: int, reason: String\) -> void:\s*_ledger\.append\(\{"amount": amount, "reason": reason\}\)\s*'
+                 r"_balance \+= amount\s*balance_changed\.emit\(_balance\)\s*$", wlf.get("_record", "")):
+    err(f"{WL}: every change is one appended ledger entry, the balance moves by exactly that amount, then balance_changed")
+ap_ = wlf.get("apply_save_data", "")
+if not re.search(r"_ledger\.clear\(\)\s*_balance = 0\s*var entries: Variant = data\.get\(\"ledger\", \[\]\)", ap_) \
+   or not re.search(r"for entry: Variant in entries:\s*var parsed := _parse_entry\(entry\)\s*if parsed\.is_empty\(\) or _balance \+ int\(parsed\.amount\) < 0:\s*"
+                    r"push_warning\(.*?\)\n\s*break\s*_ledger\.append\(parsed\)\s*_balance \+= int\(parsed\.amount\)", ap_) \
+   or "balance_changed.emit(_balance)" not in ap_:
+    err(f"{WL}: a load replays the saved ledger from zero and keeps only its valid prefix (never negative), with a warning")
+pe = wlf.get("_parse_entry", "")
+if not all(k in pe for k in ("if typeof(entry) != TYPE_DICTIONARY:", "typeof(reason) != TYPE_STRING",
+                             'if float(amount) != floorf(float(amount)) or int(amount) == 0 or reason == "":',
+                             'return {"amount": int(amount), "reason": String(reason)}')):
+    err(f"{WL}: a saved entry is a whole, non-zero amount with a reason")
+if "return _balance" not in wlf.get("get_balance", "") or "return amount >= 1 and amount <= _balance" not in wlf.get("can_afford", "") \
+   or "return _ledger.duplicate(true)" not in wlf.get("get_ledger", "") \
+   or 'return {"ledger": _ledger.duplicate(true)}' not in wlf.get("get_save_data", ""):
+    err(f"{WL}: reads return the balance and copies of the ledger; the save is the ledger only")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == WL: continue
+    code = code_only(s2)
+    if re.search(r"\bWallet\.(credit|debit)\(", code):
+        err(f"{f}: changes coins — nothing earns or spends coins before M05.3/M06.2 (a later milestone lists its callers here)")
+    if re.search(r"\bWallet\.(_\w+)|\bWallet\.(get_save_data|apply_save_data)\(", code) and f != "scripts/autoload/save_manager.gd":
+        err(f"{f}: reaches into the Wallet — only SaveManager saves/loads it; others read get_balance()/can_afford()/get_ledger()")
+    if f != WL and "balance_changed.emit" in code:
+        err(f"{f}: only the Wallet announces balance changes")
+sm_w = scripts.get("scripts/autoload/save_manager.gd", "")
+if '"wallet": Wallet.get_save_data(),' not in code_only(func_body(sm_w, "save_game") or "") \
+   or 'Wallet.apply_save_data(data.get("wallet", {}))' not in code_only(func_body(sm_w, "load_game") or "") \
+   or not re.search(r"^\t\t\t3:\s*pass\b", code_only(func_body(sm_w, "_migrate") or ""), re.M):
+    err("scripts/autoload/save_manager.gd: the wallet section is saved and loaded; step 3 -> 4 (M05.1) rewrites nothing (absent = an empty wallet)")
+pm = code_only(scripts.get("scripts/autoload/points_manager.gd", ""))
+if re.search(r"Wallet|coin", pm, re.I) or re.search(r"\bWallet\b", code_only(scripts.get("scripts/autoload/farm_manager.gd", ""))):
+    err("Wriksha Points and coins stay separate until O-02 (M05.5)")
+notes.append(f"wallet: ledger-derived balance, API {len(WL_API)} functions, no coin sources yet")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
