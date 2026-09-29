@@ -156,7 +156,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 9. Inventory (Phase 04)
 - **Current (M04.1–M04.3):** items are data — `ItemDefinition` (`id`, `display_name`, `category` seed/produce/collectible, `crop_id`, `quality_levels`, `discovery_id`) in `data/items/`: one seed item and one produce item per crop, one collectible per discovery (named as the discovery). `ItemStore` (a RefCounted class) counts items by id with **one count per quality level** — quality is an attribute of held produce, not a separate item (D-18). Only `add()`/`remove()`/`apply_save_data()` change counts; `add`/`remove` refuse unknown ids, levels and amounts below 1; `remove()` is all or nothing; counts never go negative; no stack limit; malformed saved entries are dropped with a warning.
-- **Ownership (M04.3, D-19):** the `Inventory` autoload holds the player's one store and forwards its methods; the store is never handed out. Who changes it: FarmManager's seed/basket rules (starting seeds, planting, harvest, found seeds, a fresh farm's seeds) and Inventory's discovery reward — every collection of a discovery, first or repeat, gives one of its collectible (data: the item's `discovery_id`; none = nothing). Anything may read it; only SaveManager saves/loads it. FarmManager keeps the rules and farm state (crops in the ground, plots, found-seed origins, `starter_seeds`, grown crops, milestones, counts); its getters (`get_seed_count`, `get_produce_count/total`, `get_basket`) read the Inventory, so the seed picker, HUD, Journal and Basket screen are unchanged. Screens read items through `Inventory.get_view(category)` (M04.4): the seed picker (seed view, one card per known crop) and the Basket screen (produce view, in crop order) keep no counts and still refresh on FarmManager's `seeds_changed` / `produce_changed`. Collectibles are not shown anywhere yet (M04.5).
+- **Ownership (M04.3, D-19):** the `Inventory` autoload holds the player's one store and forwards its methods; the store is never handed out. Who changes it: FarmManager's seed/basket rules (starting seeds, planting, harvest, found seeds, a fresh farm's seeds) and Inventory's discovery reward — every collection of a discovery, first or repeat, gives one of its collectible (data: the item's `discovery_id`; none = nothing). Anything may read it; only SaveManager saves/loads it. FarmManager keeps the rules and farm state (crops in the ground, plots, found-seed origins, `starter_seeds`, grown crops, milestones, counts); its getters (`get_seed_count`, `get_produce_count/total`, `get_basket`) read the Inventory, so the seed picker, HUD, Journal and Basket screen are unchanged. Screens read items through `Inventory.get_view(category)` (M04.4): the seed picker (seed view, one card per known crop) and the Basket screen (produce view, in crop order) keep no counts and still refresh on FarmManager's `seeds_changed` / `produce_changed`. The **Inventory screen** (M04.5) shows everything held — Seeds, Produce (quality split), Collectibles — from `get_view()` only, rebuilt on open and on `Inventory.items_changed` (emitted by the Inventory after every real change; only this screen listens).
 - **Planned:**
   - More item fields only with the item that needs them (glyph for crop-less items, element id, value).
   - One inventory screen; seed picker and basket become filtered views.
@@ -199,10 +199,10 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 - **Current:**
   - `HUD` (CanvasLayer) wires autoload signals to presentation. It holds no gameplay state.
   - **One notification card language** (`DiscoveryNotification`: full, compact, message) for every event.
-  - **Modal screens** (Collection, Journal, Daily, Basket) share one pattern: parchment theme, dim background, close button, rebuild on open.
-  - **Screen buttons:** Collection, Journal, Daily, Basket (appears after the first harvest), Movement toggle.
+  - **Modal screens** (Collection, Journal, Daily, Basket, Inventory) share one pattern: parchment theme, dim background, close button, rebuild on open.
+  - **Screen buttons:** Collection, Journal, Daily, Basket (appears after the first harvest), Inventory (🎒, M04.5), Movement toggle.
   - The SeedPicker is non-modal.
-- **Direction:** a settings screen (movement, later audio and accessibility) and an inventory screen. The pattern stays the same.
+- **Direction:** a settings screen (movement, later audio and accessibility). The pattern stays the same.
 
 ## 14. Data-driven definitions
 | Resource | Location | Loaded by |

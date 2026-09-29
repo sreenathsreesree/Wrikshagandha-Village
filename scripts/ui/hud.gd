@@ -1,7 +1,7 @@
 extends CanvasLayer
 
 ## Wires the on-screen HUD (points, discovery count, discovery popups, and
-## the Collection/Journal/Daily Discovery/Basket screens) to the autoload
+## the Collection/Journal/Daily Discovery/Basket/Inventory screens) to the autoload
 ## systems. Holds no gameplay state itself. There is no Interact button:
 ## the player taps the world (see InputManager).
 
@@ -18,6 +18,7 @@ const NEW_CROP_CARD_DELAY := 1.1
 @onready var journal_button: Button = $ScreenButtons/JournalButton
 @onready var daily_button: Button = $ScreenButtons/DailyButton
 @onready var basket_button: Button = $ScreenButtons/BasketButton
+@onready var inventory_button: Button = $ScreenButtons/InventoryButton
 @onready var movement_button: Button = $ScreenButtons/MovementButton
 @onready var mobile_controls: Control = $MobileControls
 
@@ -25,6 +26,7 @@ const NEW_CROP_CARD_DELAY := 1.1
 @onready var journal_screen: JournalScreen = $JournalScreen
 @onready var daily_screen: DailyDiscoveryScreen = $DailyDiscoveryScreen
 @onready var basket_screen: BasketScreen = $BasketScreen
+@onready var inventory_screen: InventoryScreen = $InventoryScreen
 
 func _ready() -> void:
 	PointsManager.points_changed.connect(_on_points_changed)
@@ -49,6 +51,7 @@ func _ready() -> void:
 	journal_button.pressed.connect(journal_screen.open)
 	daily_button.pressed.connect(daily_screen.open)
 	basket_button.pressed.connect(basket_screen.open)
+	inventory_button.pressed.connect(inventory_screen.open)
 	_update_basket_button()
 	movement_button.pressed.connect(_on_movement_button_pressed)
 	InputManager.movement_mode_changed.connect(_on_movement_mode_changed)

@@ -23,7 +23,13 @@ engine.
    basket built from it show exactly what FarmManager's getters (and so the
    pre-M04.4 screens) showed — cards, counts, crop order, quality splits —
    over random sessions with collectibles mixed in.
-7. Save: fresh game; M04.0 (v1) saves with seeds, basket, both, empty seeds,
+7. Inventory screen (M04.5): the three sections (Seeds, Produce with the
+   basket's quality split, Collectibles) show exactly what is held — no
+   zero rows, crop order for crop items, data order for collectibles —
+   agree with the picker and basket, refresh on every change (the
+   Inventory's items_changed: one emit per real change, none for a refused
+   one) and survive save/reload.
+8. Save: fresh game; M04.0 (v1) saves with seeds, basket, both, empty seeds,
    empty basket, all qualities, many crops, malformed data; repeated
    load/save; migration then autosave; unrelated sections kept exactly; and
    2,000 random v1 saves load to the same farm through the migration as the
@@ -438,6 +444,80 @@ for _ in range(2000):
     g, _ = load(save(f, copy.deepcopy(OTHER)))
     assert picker_new(g) == picker_new(f) and basket_new(g) == basket_new(f), "views survive save/load"
 assert get_view(ItemStore(), "produce") == [] and get_view(ItemStore(), "nope") == []
+
+# ---------------------------------------------------------------- 9. inventory screen (M04.5)
+ISF = _funcs(_src("scripts", "ui", "inventory_screen.gd"))
+assert 'const SECTIONS := [["seed", "Seeds"], ["produce", "Produce"], ["collectible", "Collectibles"]]' in _src("scripts", "ui", "inventory_screen.gd")
+assert "Inventory.get_view(category)" in ISF["_section_rows"] and "return rows + others" in ISF["_section_rows"]
+assert "Inventory.items_changed.connect(_on_items_changed)" in ISF["_ready"]
+QNAMES = [n.strip().strip('"') for n in re.search(r'^const QUALITY_NAMES := \[([^\]]*)\]', FMS, re.M).group(1).split(",")]
+FINE = int(re.search(r"^const QUALITY_FINE := (\d+)", FMS, re.M).group(1))
+SECTIONS = [("seed", "Seeds"), ("produce", "Produce"), ("collectible", "Collectibles")]
+def split_text(counts):  # InventoryScreen._quality_split == BasketScreen._quality_split
+    parts = []
+    for q, n in enumerate(counts):
+        if n <= 0: continue
+        parts.append(f"{'✦ ' if q == FINE else ''}{QNAMES[q]} {n}")
+    return " · ".join(parts)
+NAME = {v["id"]: v["display_name"] for v in map(_vals, glob.glob(os.path.join(REPO, "data", "items", "*.tres")))}
+def screen(inv):  # InventoryScreen._refresh -> [(heading, [(name, total, split or None)])]
+    out = []
+    for cat, title in SECTIONS:
+        rows = get_view(inv, cat)
+        crop_rows = {ITEMS[r["item"]]["crop"]: r for r in rows if ITEMS[r["item"]]["crop"]}
+        ordered = [crop_rows[c] for c in CROP_ORDER if c in crop_rows] + [r for r in rows if not ITEMS[r["item"]]["crop"]]
+        if ordered:
+            out.append((title, [(NAME[r["item"]], r["total"], split_text(r["counts"]) if ITEMS[r["item"]]["levels"] > 1 else None) for r in ordered]))
+    return out
+class EmittingInventory(ItemStore):  # Inventory: items_changed after each real change
+    def __init__(s): super().__init__(); s.emits = 0
+    def add(s, *a):
+        ok = super().add(*a); s.emits += ok; return ok
+    def remove(s, *a):
+        ok = super().remove(*a); s.emits += ok; return ok
+    def apply_save_data(s, d): super().apply_save_data(d); s.emits += 1
+EXPECTED_SECTIONS = [("seed", "Seeds"), ("produce", "Produce"), ("collectible", "Collectibles")]   # the spec, kept apart from the port
+assert {c for c, _ in EXPECTED_SECTIONS} == {i["category"] for i in ITEMS.values()}, "every item category has a section"
+def expected(inv):  # straight from the store, independent of the view and the port's section list
+    out = []
+    for cat, title in EXPECTED_SECTIONS:
+        ids = [i for i in ITEM_ORDER if ITEMS[i]["category"] == cat and inv.get_quantity(i) > 0]
+        ids.sort(key=lambda i: (0, CROP_ORDER.index(ITEMS[i]["crop"])) if ITEMS[i]["crop"] else (1, ITEM_ORDER.index(i)))
+        if ids: out.append((title, [(NAME[i], inv.get_quantity(i), split_text([inv.get_quantity(i, q) for q in range(ITEMS[i]["levels"])])
+                                     if ITEMS[i]["levels"] > 1 else None) for i in ids]))
+    return out
+assert screen(ItemStore()) == [], "an empty inventory shows no sections"
+e = EmittingInventory(); sid, pid, cid = SEED_ITEM[C[0]], PRODUCE_ITEM[C[0]], sorted(COLLECTIBLE.values())[0]
+for call, ok in ((lambda: e.remove(sid), False), (lambda: e.add("nope"), False), (lambda: e.add(sid, 0), False), (lambda: e.add(pid, 1, 5), False),
+                 (lambda: e.add(sid, 2), True), (lambda: e.remove(sid, 3), False), (lambda: e.remove(sid, 2), True), (lambda: e.add(cid), True)):
+    n = e.emits; assert call() == ok and e.emits == n + ok, "items_changed only for a real change"
+collect(e, "unknown_thing"); assert e.emits == 3
+assert [t for t, _ in screen(e)] == ["Collectibles"] and screen(e) == expected(e)
+f0 = Farm(); assert [t for t, _ in screen(f0.items)] == ["Seeds"] and all(n > 0 for _, rows in screen(f0.items) for _, n, _ in rows)
+assert split_text([0, 0, 0]) == ""
+assert split_text([0, 3, 1]) == f"{QNAMES[1]} 3 · ✦ {QNAMES[2]} 1" and split_text([2, 0, 0]) == f"{QNAMES[0]} 2"
+rnd = random.Random(55); screens = 0
+for _ in range(1500):
+    inv = EmittingInventory(); f = Farm(inv); last = [None]
+    def step():
+        global screens
+        now = (inv.emits, json.dumps(inv.get_save_data(), sort_keys=True))
+        if last[0] is not None:  # the farm operation since the last step (plant / harvest / found seed / nothing)
+            assert (now[0] > last[0][0]) == (now[1] != last[0][1]), "items_changed fires exactly when a farm operation changed the items"
+        before = now
+        if rnd.random() < 0.3: collect(inv, rnd.choice(DISCOVERIES + ["unknown_thing"]))
+        changed = json.dumps(inv.get_save_data(), sort_keys=True) != before[1]
+        assert (inv.emits > before[0]) == changed, "items_changed fires exactly when the items changed"
+        last[0] = (inv.emits, json.dumps(inv.get_save_data(), sort_keys=True))
+        view = screen(inv); screens += 1
+        assert view == expected(inv), "the screen shows exactly what is held"
+        sec = dict(view)
+        assert [(c, n) for c, n in picker_new(f) if n > 0] == [(c, n) for c, n in picker_old(f) if n > 0]
+        assert [(NAME[PRODUCE_ITEM[c]], t, split_text(k)) for c, t, k in basket_new(f)] == sec.get("Produce", []), "produce section = the basket"
+        assert [(NAME[SEED_ITEM[c]], n) for c, n in picker_new(f) if n > 0] == [(a, b) for a, b, _ in sec.get("Seeds", [])], "seeds section = the picker's counts"
+    play(random.Random(rnd.random()), [f], rnd.randint(1, 40), step)
+    g, _ = load(save(f, copy.deepcopy(OTHER)))
+    assert screen(g.items) == screen(inv), "save/reload shows the same inventory"
 print(f"items: {len(ITEMS)} ({len(SEED_ITEM)} seed, {len(PRODUCE_ITEM)} produce x{Q} qualities); store rules + 20000 random ops; "
-      f"old/new farm parity over 3000 sessions; {len(COLLECTIBLE)} collectibles, one per collection; save cases 1-12; seed picker + basket views identical to the old getters over 2000 sessions ({views} checks); 2000 random v1 saves migrate to the same farm and stay stable")
+      f"old/new farm parity over 3000 sessions; {len(COLLECTIBLE)} collectibles, one per collection; save cases 1-12; seed picker + basket views identical to the old getters over 2000 sessions ({views} checks); inventory screen = the store over 1500 sessions ({screens} renders), items_changed exact; 2000 random v1 saves migrate to the same farm and stay stable")
 print("ALL ITEM SIMULATIONS PASSED")

@@ -448,6 +448,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - relaunch: the collectible count is still there; collecting a discovery never changes seed counts or the basket;
     - install over an M04.2 build with a save: everything loads as before and is stamped version 3; (optional) the M04.2 build refuses a version-3 save and leaves it untouched.
   - **M04.4 filtered views** (Android): the seed picker looks and behaves exactly as before — same cards in the same order, counts, "No seeds" disabled cards, soil notes; planting from it closes it cleanly with no error and the count drops next time; a found seed shows up; the Basket screen shows the same rows in the same order (Wild Carrot, Meadow Herb, Golden Sunflower, Elderbloom) with the same Plain/Good/Fine split, and updates after a harvest while open; collecting discoveries changes neither.
+  - **M04.5 inventory screen** (Android + desktop): the 🎒 button (sixth in the column, all buttons reachable) opens "Inventory"; a fresh game shows only **Seeds** (starting seeds, crop order, with swatches); after harvests **Produce** rows match the Basket screen exactly (same totals and Plain/Good/Fine split); after collecting discoveries **Collectibles** list each with its count (collect one again → +1, visible without reopening if the screen is open); planting a seed lowers its row; nothing held in a category → no section; ✕ closes; the screen scrolls with many rows and is readable on the phone; relaunch shows the same inventory; the seed picker and Basket behave exactly as before.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -748,7 +749,7 @@ Goal: one universal item model.
 | M04.2 | Seeds and harvests become items; migrate from FarmManager (A3); the store's save section + migration 1 → 2 (D-17); O-13 → D-18 (quality is an attribute) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[~]` |
 | M04.3 | Inventory autoload (O-14 → D-19); discoveries grant collectible items | Collect → item | Tap a collectible | `[~]` |
 | M04.4 | Seed picker and basket become filtered views of the Inventory (`Inventory.get_view`) | Screens keep no counts; display unchanged | Android: picker + basket as before | `[~]` |
-| M04.5 | Inventory screen: one screen listing all held items by category (collectibles visible); the basket becomes its produce filter | One inventory screen | Android: readability | `[ ]` |
+| M04.5 | Inventory screen: one read-only screen listing all held items by category — Seeds, Produce (quality split), Collectibles; picker and basket unchanged | One inventory screen | Android: readability | `[~]` |
 
 **M04.0 — Save versioning (P-01)** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.0 save versioning")
 - **Objective:** an explicit save schema version, deterministic validation, safe handling of newer saves and a migration path, before M04.2 changes save keys; M03.3 farm persistence unchanged.
@@ -844,6 +845,27 @@ Goal: one universal item model.
   - `sim_items.py`: picker cards/counts and basket rows/order/splits built from the view equal the old getters at every step of 2,000 random sessions with collectibles mixed in (41,748 comparisons), and after save/load.
   - Mutation-tested: 20 code mutations caught by `check_project.py`; 4 model mutations caught by the simulation.
 - **Runtime:** no Godot executable here — static and model only (M01.6 checklist, "M04.4 filtered views").
+- **Commit:** §15.
+
+
+**M04.5 — Inventory screen** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.5 inventory screen")
+- **Objective:** one screen showing everything the player holds, across categories, as a read-only view of the `Inventory` autoload — no second store, no counts in the UI; the seed picker, basket, farming rules and save untouched.
+- **Audit:**
+  - Categories in data: seed (4, one per crop), produce (4, three quality levels), collectible (9, one per discovery). `Inventory.get_view(category)` already gives held rows (data order, `{item, total, counts}`).
+  - HUD screen pattern: a scene instanced in `HUD.tscn`, opened by a `ScreenButtons` button wired in `hud.gd` (`button.pressed.connect(screen.open)`); the parchment modal (dim, panel, header + ✕, scroll list), hidden by default, rebuilt in `open()`, ✕ hides. Seed picker and basket refresh on FarmManager's `seeds_changed` / `produce_changed` (after a planting finished — tap safety).
+  - **Gap:** collectibles change (discovery reward, load) with no signal at all — a screen showing them could not refresh while open. The fix belongs in the one owner: `Inventory.items_changed`.
+- **Architecture changes:**
+  - `Inventory.items_changed` — emitted by the Inventory only, exactly after a real change: `add`/`remove` when they succeed, `apply_save_data`, a discovery reward that added. Only the Inventory screen listens; the picker and basket keep FarmManager's signals (unchanged).
+  - `InventoryScreen` (`scenes/ui/InventoryScreen.tscn` = the Basket's modal with the title "Inventory"; `scripts/ui/inventory_screen.gd`): sections Seeds, Produce, Collectibles, in that order, each only if something is held; rows from `Inventory.get_view()` only — crop items in FarmManager's crop order with the crop's swatch, collectibles in data order; name `×total`; items with quality levels show the basket's split ("Good 3 · ✦ Fine 1"); "Nothing carried yet." when empty. No member state. Rebuilt on open and on `items_changed` while open.
+  - HUD: an "🎒" Inventory button (always shown) between Basket and Movement opens it; `ScreenButtons` made taller for the sixth button (`HUD.tscn` pin updated deliberately).
+- **Unchanged:** FarmManager, SaveManager (`SAVE_VERSION` 3, same `items`), ItemStore, item data, SeedPicker, BasketScreen, Journal, all other screens, Player, InputManager, camera, Main, `project.godot`.
+- **Files:** `scripts/autoload/inventory.gd`, new `scripts/ui/inventory_screen.gd`, new `scenes/ui/InventoryScreen.tscn`, `scenes/ui/HUD.tscn`, `scripts/ui/hud.gd`, `tools/check_project.py`, `tools/sims/sim_items.py`, docs.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: `items_changed` declared by the Inventory and emitted exactly four times (add/remove after success, load, reward that added) and nowhere else; only the Inventory screen listens; the screen has no state, one section per item category (the section list = the categories in data), reads items only through `get_view()` (no FarmManager getters, no other Inventory reads), skips empty sections, crop order then data order, name/total rows, a quality split identical line-for-line to the basket's covering every level, refresh on open and on `items_changed` while open; the HUD button opens the one screen, which is instanced. Existing picker/basket contracts (FarmManager refresh signals, filtered views) still hold.
+  - `sim_items.py`: the screen equals an independent render straight from the store at every step of 1,500 random sessions with collections (30,000+ renders) — all three categories, no zero rows, quality splits, collectible counts; its produce section = the basket, its seeds = the picker's counts; `items_changed` fires exactly when the items changed (farm operations, rewards, refused calls); save/reload shows the same screen; an empty inventory shows nothing.
+  - Mutation-tested (FarmManager, SaveManager **and HUD.tscn** pins removed): 26 code/scene mutations caught by `check_project.py`; 7 model mutations caught by the simulation (two initially survived — the expected render shared the port's section list, and refused removes were never exercised — fixed by an independent expectation and direct emit checks).
+- **Runtime:** no Godot executable here — static and model only (M01.6 checklist, "M04.5 inventory screen").
 - **Commit:** §15.
 
 ### PHASE 05 — ECONOMY
@@ -1001,8 +1023,9 @@ No large world expansion before this gate passes.
 | M04.2 | `b14b77a` |
 | M04.3 | `a4939ed` |
 | M04.4 | `3e03f0f` |
+| M04.5 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) and M04.4 (seed picker and basket as filtered views) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0–M04.4's runtime tests). Next in code: **M04.5 — inventory screen (all categories, collectibles visible)**, only on the developer's explicit instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0–M04.5's runtime tests). Next in code: the Phase 04 table is complete — the next step is the developer's call (Phase 05 — Economy, M05.1), only on explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

@@ -932,8 +932,9 @@ if found_al != AUTOLOADS:
 # say why in the plan.
 PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
           "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
-          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
+          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "e58d6f3099f3e9f4",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
+          # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3.)
           "scripts/autoload/farm_manager.gd": "5598302543a2bb18", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
@@ -1415,8 +1416,16 @@ if re.search(r"\b_store\b(?!\.|: ItemStore| = ItemStore\.new\()", inv_code) or i
     err(f"{INV}: the store is created once in _ready() and never handed out")
 FORWARD = {"is_valid_item": "return _store.is_valid_item(item_id)", "get_definition": "return _store.get_definition(item_id)",
            "get_quantity": "return _store.get_quantity(item_id, quality)", "has": "return _store.has(item_id, amount, quality)",
-           "add": "return _store.add(item_id, amount, quality)", "remove": "return _store.remove(item_id, amount, quality)",
-           "get_save_data": "return _store.get_save_data()", "apply_save_data": "_store.apply_save_data(data)"}
+           "get_save_data": "return _store.get_save_data()"}
+# The three writers forward, then announce the change (M04.5) — only after it happened.
+for fn in ("add", "remove"):
+    if not re.search(rf"if not _store\.{fn}\(item_id, amount, quality\):\s*return false\s*items_changed\.emit\(\)\s*return true\s*$", inv_funcs.get(fn, "")):
+        err(f"{INV}: {fn}() forwards to the store and emits items_changed only when something changed")
+if not re.search(r"func apply_save_data\(data: Dictionary\) -> void:\s*_store\.apply_save_data\(data\)\s*items_changed\.emit\(\)\s*$", inv_funcs.get("apply_save_data", "")):
+    err(f"{INV}: apply_save_data() forwards to the store, then emits items_changed")
+if not re.search(r"^signal items_changed$", inv_src, re.M) or len(re.findall(r"items_changed\.emit\(\)", inv_code)) != 4 \
+   or [f for f, s2 in scripts.items() if "items_changed.emit" in code_only(s2)] != [INV]:
+    err(f"{INV}: items_changed is the Inventory's, emitted exactly after each change (add, remove, load, reward) and nowhere else")
 for fn, line in FORWARD.items():
     body = inv_funcs.get(fn, "")
     if line not in body or len([l for l in body.splitlines()[1:] if l.strip()]) != 1:
@@ -1434,7 +1443,7 @@ if not re.search(r'if definition\.category == "collectible" and definition\.disc
    or "DiscoveryManager.discovery_repeated.connect(_on_discovery_collected)" not in ir \
    or len(re.findall(r"\b_collectible_item_ids\s*(\[[^\]]*\]\s*=[^=]|=[^=])", inv_code)) != 1:
     err(f"{INV}: every collection of a discovery (first or repeat) is heard; the reward comes from the collectible items' discovery_id")
-if not re.search(r'var item_id: String = _collectible_item_ids\.get\(definition\.id, ""\)\s*if item_id != "":\s*_store\.add\(item_id\)\s*$',
+if not re.search(r'var item_id: String = _collectible_item_ids\.get\(definition\.id, ""\)\s*if item_id != "" and _store\.add\(item_id\):\s*items_changed\.emit\(\)\s*$',
                  inv_funcs.get("_on_discovery_collected", "")):
     err(f"{INV}: collecting a discovery gives exactly one of its collectible, or nothing if it has none")
 if not (0 <= found_al.index("DiscoveryManager") < found_al.index("Inventory") < found_al.index("FarmManager") < found_al.index("GameState")
@@ -1472,6 +1481,53 @@ if not re.search(r'var held := \{\}\s*for row: Dictionary in Inventory\.get_view
    or "var count := int(row.counts[quality])" not in code_only(func_body(bs_src, "_quality_split") or "") \
    or "FarmManager.produce_changed.connect(_on_produce_changed)" not in (func_body(bs_src, "_ready") or ""):
     err(f"{BS}: the basket is the Inventory's produce view in crop order, split by quality; refreshed on FarmManager.produce_changed")
+# Inventory screen (M04.5): one modal, read-only view of every held item —
+# Seeds, Produce (quality split), Collectibles — through get_view() only;
+# refreshed on open and on items_changed while open; opened from the HUD.
+IS = "scripts/ui/inventory_screen.gd"
+is_src = scripts.get(IS, "")
+is_code = code_only(is_src)
+is_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", is_src, re.M | re.S)}
+if not re.search(r"^extends Control\s*\nclass_name InventoryScreen", is_src, re.M) or re.search(r"^var ", is_code, re.M) \
+   or 'const SECTIONS := [["seed", "Seeds"], ["produce", "Produce"], ["collectible", "Collectibles"]]' not in is_code \
+   or {c for c in ITEM_CATEGORIES} != set(re.findall(r'\["(\w+)", "\w+"\]', re.search(r"const SECTIONS := (.*)", is_code).group(1) if "const SECTIONS" in is_code else "")):
+    err(f"{IS}: an InventoryScreen with no state of its own and one section per item category ({ITEM_CATEGORIES})")
+if re.search(r"FarmManager\.(get_seed_count|get_basket|get_produce_count|get_produce_total|get_known_crops)\(|Inventory\.(?!get_view\(|items_changed\b)\w+", is_code) \
+   or is_code.count("Inventory.get_view(") != 1:
+    err(f"{IS}: reads the player's items only through Inventory.get_view() — never FarmManager's getters or other Inventory methods")
+if not re.search(r"for section: Array in SECTIONS:\s*var rows := _section_rows\(section\[0\]\)\s*if rows\.is_empty\(\):\s*continue", is_funcs.get("_refresh", "")) \
+   or "for child in list_container.get_children():" not in is_funcs.get("_refresh", ""):
+    err(f"{IS}: rebuilt from scratch each time; a category with nothing held shows no section")
+sr = is_funcs.get("_section_rows", "")
+if not re.search(r"for row: Dictionary in Inventory\.get_view\(category\):\s*var crop_id := \(row\.item as ItemDefinition\)\.crop_id\s*"
+                 r'if crop_id == "":\s*row\["crop"\] = null\s*others\.append\(row\)\s*else:\s*by_crop\[crop_id\] = row', sr) \
+   or not re.search(r"for crop in FarmManager\.get_crops\(\):\s*if by_crop\.has\(crop\.crop_id\):", sr) or "return rows + others" not in sr:
+    err(f"{IS}: crop items in FarmManager's crop order (as the picker and basket), others in data order")
+br_ = is_funcs.get("_build_row", "")
+if '"%s  ×%d" % [item.display_name, int(row.total)]' not in br_ or "if item.quality_levels > 1:" not in br_ or "_quality_split(row.counts)" not in br_:
+    err(f"{IS}: each row shows the item's name and total, and a quality split for items with quality levels")
+qs = is_funcs.get("_quality_split", "")
+bqs = code_only(func_body(scripts.get(BS, ""), "_quality_split") or "")
+for line in ("if count <= 0:", "var label := FarmManager.get_quality_name(quality)", "if quality == FarmManager.QUALITY_FINE:",
+             'label = "✦ " + label', 'parts.append("%s %d" % [label, count])', 'return " · ".join(parts)'):
+    if line not in qs or line not in bqs:
+        err(f"{IS}: the quality split reads exactly as the basket's ({line})")
+if "for quality in counts.size():" not in qs or "var count := int(counts[quality])" not in qs:
+    err(f"{IS}: the quality split covers every quality level held")
+if "Inventory.items_changed.connect(_on_items_changed)" not in is_funcs.get("_ready", "") \
+   or not re.search(r"if visible:\s*_refresh\(\)", is_funcs.get("_on_items_changed", "")) \
+   or not re.search(r"_refresh\(\)\s*visible = true", is_funcs.get("open", "")):
+    err(f"{IS}: rebuilt on open and on Inventory.items_changed while open")
+hud_src = scripts.get("scripts/ui/hud.gd", "")
+hud_tscn = open("scenes/ui/HUD.tscn", encoding="utf-8").read()
+if "inventory_button.pressed.connect(inventory_screen.open)" not in (func_body(hud_src, "_ready") or "") \
+   or not re.search(r'\[node name="InventoryButton" type="Button" parent="ScreenButtons"\]', hud_tscn) \
+   or not re.search(r'\[node name="InventoryScreen" parent="\." instance=ExtResource\("\w+"\)\]', hud_tscn) \
+   or 'path="res://scenes/ui/InventoryScreen.tscn"' not in hud_tscn:
+    err("HUD: an Inventory button opens the one InventoryScreen")
+for f in scripts:
+    if f not in (IS, INV) and "items_changed" in code_only(scripts[f]):
+        err(f"{f}: listens to items_changed — only the Inventory screen does (the picker and basket keep FarmManager's post-planting signals)")
 fm_code = code_only(fm_src)
 fm_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", fm_src, re.M | re.S)}
 HOLDING_VARS = {"_seed_item_ids", "_produce_item_ids", "_starter_seeds_given", "_found_seed_crop_ids", "_found_seed_origins"}

@@ -21,6 +21,13 @@ extends Node
 ## before FarmManager (gives starting seeds from its _ready) and GameState
 ## (so a first discovery's item is in before that discovery's autosave).
 
+## Emitted after every change to the player's items — whoever made it
+## (FarmManager's rules, a discovery reward, a load). The Inventory screen
+## refreshes on it (M04.5); the seed picker and basket keep FarmManager's
+## seeds_changed / produce_changed, which fire only after a planting has
+## finished.
+signal items_changed
+
 var _store: ItemStore
 ## discovery_id -> the collectible item it gives.
 var _collectible_item_ids: Dictionary = {}
@@ -52,10 +59,16 @@ func has(item_id: String, amount: int = 1, quality: int = -1) -> bool:
 	return _store.has(item_id, amount, quality)
 
 func add(item_id: String, amount: int = 1, quality: int = 0) -> bool:
-	return _store.add(item_id, amount, quality)
+	if not _store.add(item_id, amount, quality):
+		return false
+	items_changed.emit()
+	return true
 
 func remove(item_id: String, amount: int = 1, quality: int = 0) -> bool:
-	return _store.remove(item_id, amount, quality)
+	if not _store.remove(item_id, amount, quality):
+		return false
+	items_changed.emit()
+	return true
 
 ## A filtered view for the screens (M04.4): one row per item of this
 ## category the player holds, in data order —
@@ -82,8 +95,9 @@ func get_save_data() -> Dictionary:
 ## For SaveManager, before FarmManager.apply_save_data().
 func apply_save_data(data: Dictionary) -> void:
 	_store.apply_save_data(data)
+	items_changed.emit()
 
 func _on_discovery_collected(definition: DiscoveryDefinition) -> void:
 	var item_id: String = _collectible_item_ids.get(definition.id, "")
-	if item_id != "":
-		_store.add(item_id)
+	if item_id != "" and _store.add(item_id):
+		items_changed.emit()
