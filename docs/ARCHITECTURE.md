@@ -208,9 +208,11 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 |---|---|---|
 | `DiscoveryDefinition` | `data/discoveries/*.tres` | DiscoveryDatabase via `ResourceDirectory` (handles `.tres.remap` in exports) |
 | `CropDefinition` | `data/crops/*.tres` | FarmManager via `ResourceDirectory` |
+| `PlaceDefinition` (M03.6) | `data/places/*.tres` | ExplorationManager via `ResourceDirectory`, ordered by `order` |
 
 - Adding a crop or discovery is a new `.tres` (plus a visual scene for crops), with no code change.
-- **Direction:** `ItemDefinition` (Phase 04), place definitions (Phase 03/10), NPC definitions (Phase 08), element definitions (Phase 11), Rishi definitions (Phase 12, **blocked on design**).
+- **Places (M03.6, A5):** a `PlaceDefinition` holds `id`, `display_name`, `arrival_text`, `order` (the Journal's list order), `secret`, `garden` (exactly one) and `curiosity_discovery_id`. ExplorationManager derives the "Places" list, names/arrival text, the curiosity pairing, the "every secret found" count and `get_garden_place_id()` (used by FarmManager, HUD and Journal) from them. Adding a place = a `.tres` plus an `ExplorationLandmark` with the same `location_id` in its area (the toolkit checks the one-to-one match, secret flags against landmark kinds, curiosity discoveries and crops' found-seed places). No place id or name may appear in a script. (UI copy that mentions the Meadow as an area — "The Meadow is waking up." — is not place data and is unchanged; area names become data if/when areas get definitions.)
+- **Direction:** `ItemDefinition` (Phase 04), NPC definitions (Phase 08), element definitions (Phase 11), Rishi definitions (Phase 12, **blocked on design**).
 
 ## 15. Living world
 - **Current:**

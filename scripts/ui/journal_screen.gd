@@ -81,7 +81,7 @@ func _build_garden_section() -> Control:
 	var box := VBoxContainer.new()
 
 	var header := Label.new()
-	header.text = ExplorationManager.get_place_display_name(FarmManager.GARDEN_PLACE_ID)
+	header.text = ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())
 	header.add_theme_font_size_override("font_size", 18)
 	header.modulate.a = 0.8
 	box.add_child(header)

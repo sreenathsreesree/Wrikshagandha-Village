@@ -933,7 +933,7 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "bdeb7885881ba053",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
-          "scripts/autoload/farm_manager.gd": "5593d2e984680ab2", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          "scripts/autoload/farm_manager.gd": "369f295b54e5a083", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
           "scripts/autoload/save_manager.gd": "2da42b4bc60ce76a", "scripts/autoload/game_state.gd": "e0f2dcfc7f642d83",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           "scripts/interactables/discovery_spawn_point.gd": "89302119363dae44",
@@ -1178,6 +1178,87 @@ if FARM_FIELDS - cap_keys:
 if not cap_keys or cap_keys - read_keys:
     err(f"{FP}: restore() must read back every field capture() saves (missing {sorted(cap_keys - read_keys)})")
 notes.append(f"area loader: entries {entry_scenes}")
+
+# ------------------------------------------------------------ place data (M03.6, A5)
+# Places are PlaceDefinition resources in data/places/ (like discoveries and
+# crops); ExplorationManager loads them; no place id, name or pairing lives
+# in a script, and the data agrees with the areas' landmarks and the crops.
+PLACE_GD, EXPLO = "scripts/world_simulation/place_definition.gd", "scripts/autoload/exploration_manager.gd"
+pd = scripts.get(PLACE_GD, "")
+PLACE_FIELDS = {"id": "String", "display_name": "String", "arrival_text": "String", "order": "int", "secret": "bool",
+                "garden": "bool", "curiosity_discovery_id": "String"}
+if not re.search(r"^extends Resource\s*\nclass_name PlaceDefinition", pd, re.M) or \
+   dict(re.findall(r"^@export var (\w+): (\w+)", pd, re.M)) != PLACE_FIELDS:
+    err(f"{PLACE_GD}: PlaceDefinition is a Resource with exactly {sorted(PLACE_FIELDS)}")
+places = {}
+for f in sorted(glob.glob("data/places/*.tres")):
+    txt = open(f, encoding="utf-8").read()
+    if 'path="res://scripts/world_simulation/place_definition.gd"' not in txt or 'script_class="PlaceDefinition"' not in txt:
+        err(f"{f}: not a PlaceDefinition resource"); continue
+    vals = dict(re.findall(r'^(\w+) = (.+)$', txt.split("[resource]", 1)[1], re.M))
+    pid = vals.get("id", '""').strip('"')
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", pid) or os.path.basename(f) != pid + ".tres":
+        err(f"{f}: place id '{pid}' must be lower_snake_case and match the file name")
+    if pid in places:
+        err(f"{f}: duplicate place id '{pid}'")
+    places[pid] = {"name": vals.get("display_name", '""').strip('"'), "arrival": vals.get("arrival_text", '""').strip('"'),
+                   "order": int(vals.get("order", "0")), "secret": vals.get("secret") == "true", "garden": vals.get("garden") == "true",
+                   "curiosity": vals.get("curiosity_discovery_id", '""').strip('"')}
+    if not places[pid]["name"]:
+        err(f"{f}: a place needs a display_name")
+if not places:
+    err("data/places: no place definitions")
+orders = [p["order"] for p in places.values()]
+if len(set(orders)) != len(orders):
+    err(f"data/places: order values must be unique ({sorted(orders)})")
+if sum(p["garden"] for p in places.values()) != 1:
+    err("data/places: exactly one place is the garden")
+disc_ids = {re.search(r'^id = "([^"]+)"', open(f, encoding="utf-8").read(), re.M).group(1) for f in glob.glob("data/discoveries/*.tres")}
+for pid, p in places.items():
+    if p["curiosity"] and p["curiosity"] not in disc_ids:
+        err(f"data/places/{pid}.tres: curiosity discovery '{p['curiosity']}' does not exist")
+landmarks = {}
+for path in glob.glob("scenes/**/*.tscn", recursive=True):
+    for lid, kind in re.findall(r'location_id = "(\w+)"\nkind = (\d)', open(path, encoding="utf-8").read()):
+        if lid in landmarks:
+            err(f"{path}: two landmarks for place '{lid}'")
+        landmarks[lid] = kind == "1"
+if set(landmarks) != set(places):
+    err(f"places and landmarks must match one to one (no landmark: {sorted(set(places) - set(landmarks))}, no place: {sorted(set(landmarks) - set(places))})")
+for pid in set(landmarks) & set(places):
+    if landmarks[pid] != places[pid]["secret"]:
+        err(f"data/places/{pid}.tres: secret = {places[pid]['secret']} but its landmark kind says {landmarks[pid]}")
+for f in glob.glob("data/crops/*.tres"):
+    txt = open(f, encoding="utf-8").read()
+    if 'found_seed_source = "place"' in txt:
+        src = re.search(r'found_seed_source_id = "([^"]+)"', txt)
+        if not src or src.group(1) not in places:
+            err(f"{f}: found-seed place '{src.group(1) if src else ''}' is not a place in data/places")
+ex = scripts.get(EXPLO, "")
+lp = code_only(func_body(ex, "_load_places") or "")
+if 'const PLACES_PATH := "res://data/places/"' not in ex or "ResourceDirectory.list_tres_paths(PLACES_PATH)" not in lp \
+   or "return a.order < b.order" not in lp or "_load_places()" not in (func_body(ex, "_ready") or ""):
+    err(f"{EXPLO}: places come from data/places/ (ResourceDirectory), ordered by PlaceDefinition.order, loaded at startup")
+if not re.search(r"_secret_place_count > 0 and _found_secret_locations\.size\(\) >= _secret_place_count", ex):
+    err(f"{EXPLO}: 'every secret found' counts the secret places in the data")
+if "var paired_discovery_id := place.curiosity_discovery_id if place else \"\"" not in (func_body(ex, "_maybe_award_curiosity_bonus") or ""):
+    err(f"{EXPLO}: the curiosity pairing comes from the place's data")
+if not re.search(r'if place_id != "" and place_id == ExplorationManager\.get_garden_place_id\(\):', func_body(scripts.get(FM, ""), "notify_place_reached") or ""):
+    err(f"{FM}: the garden is recognised by the place data's garden flag")
+place_literals = {p for pid, v in places.items() for p in (pid, v["name"], v["arrival"]) if p}
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    for lit in re.findall(r'"([^"]+)"', code):
+        if lit in place_literals:
+            err(f"{f}: place data '{lit}' hard-coded in a script — it belongs in data/places/")
+    for m in re.finditer(r"\b(const PLACES\b|CURIOSITY_PAIRS|GARDEN_PLACE_ID)|_found_secret_locations\.size\(\) >= \d", code):
+        err(f"{f}: '{m.group(0)}' — the old hard-coded place data must not return")
+    for name in {v["name"] for v in places.values()}:
+        if re.search(r'"[^"]*\b' + re.escape(name) + r'\b[^"]*"', code):
+            err(f"{f}: place name '{name}' inside a script string — use ExplorationManager.get_place_display_name()")
+notes.append(f"places: {len(places)} from data/places ({sum(p['secret'] for p in places.values())} secret, garden "
+             f"{[k for k, v in places.items() if v['garden']]}), all matched to landmarks")
 
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from

@@ -170,7 +170,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 | A2 | `Interactable` base is discovery-specific | M02.1 (in code; runtime test pending) |
 | A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
-| A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | Phases 01, 03 |
+| A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | **Resolved in code:** physics layers M01.1; place list, garden place id, curiosity pairs and secret count M03.6 (`data/places/`) |
 | A6 | Unused interaction path (`interact_requested`) | **Resolved in M02.5** (removed; guarded by the toolkit) |
 | A7 | No top-level save versioning before inventory changes save keys | Phase 04 (P-01, proposed) → Phase 15 |
 | A8 | ~50 per-frame scripts; runtime navmesh bake cost unknown on device | Phase 01 test, Phase 16 |
@@ -428,7 +428,8 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - single taps still walk and interact exactly as before; the joystick with a second finger on the world doesn't zoom;
     - desktop: the mouse wheel zooms (up = closer); clicking still walks/interacts; the wheel over a scrolling screen (journal) scrolls it, not the camera;
     - zoom survives a `load_area(...)` reload; zooming at a camera-bounds edge doesn't move the focus;
-    - note whether 7–15 m feels right at both ends and the wheel step feels right (proposal P-03).
+    - note whether 7–15 m feels right at both ends and the wheel step feels right (proposal P-03);
+  - **M03.6 place data (quick regression — behaviour should be identical):** the Journal's "Places" list shows the same 8 places in the same order ("???" until visited); reaching the Overlook and the garden shows the same arrival cards ("A quiet place to grow." for the garden); finding a secret spot shows its name; finding all four secret spots still gives the "Every Secret Found" bonus; the curiosity bonus still fires for the pond nook / mystery tree before their discoveries; the garden's Journal heading and "in bloom" milestone still say "Quiet Garden"; found-seed places still grant their seeds.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -597,7 +598,7 @@ Goal: persistent Player/Camera/HUD with swappable areas.
 | M03.3 | Area-safe world state: registration by stable id survives unload (farm plots first) | Farm state intact after area reload | Plant → reload → state kept | `[~]` |
 | M03.4 | Camera bounds per area | Camera never shows beyond the area | Walk the edges | `[~]` |
 | M03.5 | Clamped pinch zoom (+ mouse wheel) | Zoom comfortable, no conflict with taps/joystick | Android: pinch vs tap | `[~]` |
-| M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[ ]` |
+| M03.6 | Place data out of code (place definitions replace the hard-coded list) (A5) | No place names/ids in scripts | — | `[~]` |
 
 **M03.1 — Persistent Main scene (shell)** `[~]` Implemented — runtime testing pending (M01.6 checklist)
 - **Objective:** Main owns the persistent Player, Camera and HUD; the Meadow is world content only.
@@ -700,6 +701,23 @@ Goal: persistent Player/Camera/HUD with swappable areas.
   - `sim_camera_zoom.py`: limits/between; repeated and limit-crossing pinch and wheel; hammering a limit; pinch → single finger; third finger; tap-to-move without zoom; joystick + world finger; wheel release; invalid factors; zoom after area reload; zoom at each M03.4 edge; 2,000 random input sequences (limits always held; taps only when the last finger lifts; a finger that was part of a pinch never taps; only two fingers zoom).
   - Mutation-tested: 29 GDScript/scene/config mutations caught by `check_project.py` (run with the InputManager and camera pins disabled, so the content rules alone catch them) and 7 model mutations.
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M03.5 pinch zoom + mouse wheel").
+- **Commit:** §15.
+
+**M03.6 — Place data out of code (A5)** `[~]` Implemented and verified in code — runtime regression pending (M01.6 checklist; behaviour should be identical)
+- **Objective:** place-specific values move from scripts into the existing data layer; runtime behaviour identical.
+- **Audit:**
+  - Data layer: `DiscoveryDefinition` (`data/discoveries/`, DiscoveryDatabase) and `CropDefinition` (`data/crops/`, FarmManager), both `.tres` resources loaded through `ResourceDirectory` (export-safe). Reused as the pattern — no new architecture.
+  - Hard-coded place data found: `ExplorationManager.PLACES` (8 ids, display names, one arrival text — the Journal's ordered list and arrival names); `ExplorationManager.CURIOSITY_PAIRS` (place → discovery); the secret-location count `>= 4` (equal to the 4 SECRET_LOCATION landmarks in `Meadow.tscn`); `FarmManager.GARDEN_PLACE_ID = "quiet_farm"` (garden found; read by HUD and Journal); the garden's name "Quiet Garden" inside FarmManager's "in bloom" milestone text.
+  - Already data: the landmarks' `location_id`s (scene), crops' found-seed places (`data/crops`).
+  - Not place data (left unchanged): UI copy naming the Meadow as an area; exploration thresholds/bonuses.
+- **Files:** new `scripts/world_simulation/place_definition.gd`; new `data/places/*.tres` (8, written from the old constants); `scripts/autoload/exploration_manager.gd`; `scripts/autoload/farm_manager.gd` (garden id and name only — pin updated deliberately; M03.3 persistence untouched); `scripts/ui/hud.gd`, `scripts/ui/journal_screen.gd` (one call each); `tools/check_project.py`; new `tools/sims/sim_places.py`; docs.
+- **Implementation:** `PlaceDefinition` (`id`, `display_name`, `arrival_text`, `order`, `secret`, `garden`, `curiosity_discovery_id`); ExplorationManager `_load_places()` at startup (ordered by `order`), all place lookups from it, the "every secret found" threshold = the number of secret places, `get_garden_place_id()`; FarmManager/HUD/Journal ask ExplorationManager for the garden id; the milestone text uses the garden's display name ("The Quiet Garden is in bloom." — unchanged).
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: PlaceDefinition's exact fields; every place file valid (script, lower_snake id = file name, display name), unique orders, exactly one garden, curiosity discoveries exist; places ↔ area landmarks one to one with secret flags matching landmark kinds; crops' found-seed places exist; ExplorationManager loads `data/places/` via ResourceDirectory, sorted, at startup; the secret threshold and curiosity come from data; FarmManager recognises the garden by the data flag; **no place id, display name or arrival text as a string in any script, and `PLACES`/`CURIOSITY_PAIRS`/`GARDEN_PLACE_ID`/a numeric secret threshold can't return.**
+  - `sim_places.py`: the data-driven port reproduces the pre-M03.6 constants exactly — list and order, names, arrival texts, unknown-id fallback, garden, secret count — and 3,000 random sessions give identical events and points (landmarks, secrets, curiosity bonus, every-secret bonus, garden found).
+  - Mutation-tested: 25 code/data/scene mutations caught by `check_project.py` (the three FarmManager ones also with the farm pin disabled) and 5 parity/model mutations caught by the simulation.
+- **Runtime:** no Godot executable here — static and model only; the quick regression is in the M01.6 checklist ("M03.6 place data").
 - **Commit:** §15.
 
 ### PHASE 04 — INVENTORY
@@ -862,8 +880,9 @@ No large world expansion before this gate passes.
 | M03.3 | `5cd8692` |
 | M03.4 | `32c98b8` |
 | M03.5 | `44e3bb5` |
+| M03.6 | *(recorded after commit)* |
 
 ## 16. Current position
-- **Current phase:** 03 — Camera / world shell. M03.1–M03.5 implemented (`[~]`, runtime test pending; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's and M03.5's runtime tests). The next development milestone is **M03.6 — place data out of code (A5)**. Either starts only on the developer's instruction.
+- **Current phase:** 03 — Camera / world shell. M03.1–M03.6 implemented (`[~]`, runtime test pending; Phase 03 is complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's and M03.6's runtime tests). Phase 03's table is complete; the next phase is **Phase 04 — Inventory**, starting with **M04.0** (proposed P-01, awaiting approval) or **M04.1 — item definitions + item store**. Either starts only on the developer's instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

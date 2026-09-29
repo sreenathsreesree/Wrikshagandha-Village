@@ -147,7 +147,7 @@ func _show_new_crop_card(crop_definition: CropDefinition) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	var note := crop_definition.found_seed_note if crop_definition.found_seed_note != "" else "A seed you've never seen before."
-	var garden := ExplorationManager.get_place_display_name(FarmManager.GARDEN_PLACE_ID)
+	var garden := ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())
 	notification.show_message("%s A New Crop %s" % [crop_definition.icon_glyph, crop_definition.icon_glyph], "%s\n%s" % [crop_definition.display_name, note], "Plant it in the %s" % garden)
 
 ## The one movement setting: Joystick ↔ Tap to Move. The joystick is only

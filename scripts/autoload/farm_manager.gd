@@ -67,8 +67,6 @@ const MAX_GARDEN_INTEREST := 0.7
 ## ripe — butterflies drift by more often. The lasting part of the bloom's
 ## world change, through the same interest relay (no new system).
 const BLOOM_GARDEN_INTEREST := 0.15
-## The ExplorationManager place id that is this garden.
-const GARDEN_PLACE_ID := "quiet_farm"
 
 const QUALITY_PLAIN := 0
 const QUALITY_GOOD := 1
@@ -433,7 +431,8 @@ func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, poi
 	if _is_starter_garden_complete():
 		_reach(GARDEN_COMPLETE, "The starter garden feels complete.", GARDEN_COMPLETE_BONUS)
 	if _is_garden_in_bloom():
-		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The Quiet Garden is in bloom.", GARDEN_IN_BLOOM_BONUS):
+		var garden_name := ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())
+		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The %s is in bloom." % garden_name, GARDEN_IN_BLOOM_BONUS):
 			_update_garden_interest()
 
 # --- Exploration --------------------------------------------------------------
@@ -441,7 +440,7 @@ func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, poi
 ## Called by ExplorationManager the first time a place is reached this
 ## session. Never touches plots.
 func notify_place_reached(place_id: String) -> void:
-	if place_id == GARDEN_PLACE_ID:
+	if place_id != "" and place_id == ExplorationManager.get_garden_place_id():
 		_garden_found = true
 	_grant_found_seeds("place", place_id)
 

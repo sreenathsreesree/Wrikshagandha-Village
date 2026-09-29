@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="PlaceDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/place_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "secluded_pond_nook"
+display_name = "Secluded Pond Nook"
+order = 50
+secret = true
+curiosity_discovery_id = "river_stone"
