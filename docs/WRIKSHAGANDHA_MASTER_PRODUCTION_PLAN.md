@@ -447,6 +447,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - collect a discovery (first time) and the same kind again after it respawns: points and cards as before; desktop: `user://save.json` `items` holds that collectible with a count of 2 after the next autosave/pause (e.g. `"river_stone":[2]`) and `"save_version":3`;
     - relaunch: the collectible count is still there; collecting a discovery never changes seed counts or the basket;
     - install over an M04.2 build with a save: everything loads as before and is stamped version 3; (optional) the M04.2 build refuses a version-3 save and leaves it untouched.
+  - **M04.4 filtered views** (Android): the seed picker looks and behaves exactly as before — same cards in the same order, counts, "No seeds" disabled cards, soil notes; planting from it closes it cleanly with no error and the count drops next time; a found seed shows up; the Basket screen shows the same rows in the same order (Wild Carrot, Meadow Herb, Golden Sunflower, Elderbloom) with the same Plain/Good/Fine split, and updates after a harvest while open; collecting discoveries changes neither.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -746,7 +747,8 @@ Goal: one universal item model.
 | M04.1 | Item definitions + item store (fields limited to what today's items need; saving moves to M04.2, when the store first holds items) | Items defined as data; store rules verified | Project opens; farm loop unchanged | `[~]` |
 | M04.2 | Seeds and harvests become items; migrate from FarmManager (A3); the store's save section + migration 1 → 2 (D-17); O-13 → D-18 (quality is an attribute) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[~]` |
 | M04.3 | Inventory autoload (O-14 → D-19); discoveries grant collectible items | Collect → item | Tap a collectible | `[~]` |
-| M04.4 | Inventory UI; seed picker and basket become filtered views | One inventory screen | Android: readability | `[ ]` |
+| M04.4 | Seed picker and basket become filtered views of the Inventory (`Inventory.get_view`) | Screens keep no counts; display unchanged | Android: picker + basket as before | `[~]` |
+| M04.5 | Inventory screen: one screen listing all held items by category (collectibles visible); the basket becomes its produce filter | One inventory screen | Android: readability | `[ ]` |
 
 **M04.0 — Save versioning (P-01)** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.0 save versioning")
 - **Objective:** an explicit save schema version, deterministic validation, safe handling of newer saves and a migration path, before M04.2 changes save keys; M03.3 farm persistence unchanged.
@@ -823,6 +825,25 @@ Goal: one universal item model.
   - `sim_items.py`: collectibles one per collection (first/repeat), none for a discovery without one, never touching seeds/basket, 1,000 random sessions interleaving collections and farming round-trip exactly; a v2 save loads identically through 2 → 3; empty-farm-with-items case; everything from M04.2 (store, old/new farm parity, save cases 1–12, 2,000 random v1 saves) still passes with the Inventory owner and v3. `sim_save_versioning.py` covers v3's steps.
   - Mutation-tested with the FarmManager and SaveManager pins **removed**: 40 code/data/config mutations (autoload missing or misordered, a second store or copy, the store handed out/recreated, forwards altered, outside writers/loaders, rewards on one signal only, two per collection, not data-driven, wrong category, map overwrite, extra side effects, collectible data invalid, FarmManager rewarding discoveries or mishandling a fresh farm, no bump, step 2 rewriting, wrong load order, items not saved/loaded) — all caught by `check_project.py`; 6 model mutations caught by `sim_items.py`.
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M04.3 inventory + collectibles").
+- **Commit:** §15.
+
+
+**M04.4 — Seed picker and basket as filtered views** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.4 filtered views")
+- **Objective:** the seed picker and the Basket screen read the player's items as filtered views of the `Inventory` autoload — no item state of their own, nothing else changed.
+- **Audit:**
+  - SeedPicker: one card per *known* crop (`FarmManager.get_known_crops()`, farm progression — including crops with 0 seeds, shown disabled), count from `FarmManager.get_seed_count()`, soil note from FarmManager; refreshes on `FarmManager.seeds_changed`; plants through `FarmManager.choose_seed()`.
+  - BasketScreen: rows from `FarmManager.get_basket()` (crop order = points then id: Wild Carrot, Meadow Herb, Golden Sunflower, Elderbloom — the reverse of the item files' order), quality split via `row.plain/good/fine`; refreshes on `FarmManager.produce_changed`.
+  - Both already read the one store since M04.2 (FarmManager's getters forward to it) — no duplicated state existed; what was missing is a generic, category-filtered read of the Inventory. HUD (basket button, "seeds left") and Journal also use FarmManager's getters — out of this milestone's scope, unchanged.
+  - Refresh timing: `seeds_changed` fires after a planting finished and the picker closed. Refreshing on every Inventory change instead would rebuild the picker (freeing the pressed card) inside that card's own `pressed` handler — kept on FarmManager's signals, which cover every seed/produce change (plant, harvest, found seed, load); a collectible never changes either screen.
+  - Collectibles are still shown nowhere; the plan's "one inventory screen" is split out as M04.5.
+- **Implementation:** `Inventory.get_view(category)` — one row per held item of that category, in data order, `{item, total, counts}` (a count per quality level), built fresh from the store on each call; Inventory keeps the item definitions list for it. SeedPicker: counts from `get_view("seed")` by crop (0 if none held). BasketScreen: `_basket_rows()` from `get_view("produce")` in `FarmManager.get_crops()` order; the split reads `row.counts`. FarmManager, HUD, Journal, scenes untouched.
+- **Files:** `scripts/autoload/inventory.gd`, `scripts/ui/seed_picker.gd`, `scripts/ui/basket_screen.gd`, `tools/check_project.py`, `tools/sims/sim_items.py`, docs.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: `get_view()` exact and read-only (category filter, held only, every quality level, rows built fresh; the store changed only by the existing forwards/reward); the definitions list set once; SeedPicker and BasketScreen have no member state, read items only through `get_view()` (no FarmManager seed/basket getters, no `Inventory.get_quantity`), picker = known crops with seed-view counts, basket = produce view in crop order with the quality split; both keep their FarmManager refresh signals.
+  - `sim_items.py`: picker cards/counts and basket rows/order/splits built from the view equal the old getters at every step of 2,000 random sessions with collectibles mixed in (41,748 comparisons), and after save/load.
+  - Mutation-tested: 20 code mutations caught by `check_project.py`; 4 model mutations caught by the simulation.
+- **Runtime:** no Godot executable here — static and model only (M01.6 checklist, "M04.4 filtered views").
 - **Commit:** §15.
 
 ### PHASE 05 — ECONOMY
@@ -979,8 +1000,9 @@ No large world expansion before this gate passes.
 | M04.1 | `3532b14` |
 | M04.2 | `b14b77a` |
 | M04.3 | `a4939ed` |
+| M04.4 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) and M04.3 (Inventory autoload, collectibles from discoveries; save v3) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0–M04.3's runtime tests). Next in code: **M04.4 — inventory UI; seed picker and basket become filtered views**, only on the developer's explicit instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) and M04.4 (seed picker and basket as filtered views) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0–M04.4's runtime tests). Next in code: **M04.5 — inventory screen (all categories, collectibles visible)**, only on the developer's explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

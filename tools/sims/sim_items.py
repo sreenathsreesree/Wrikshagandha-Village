@@ -19,7 +19,11 @@ engine.
    repeat — gives one of its collectible; a discovery without one gives
    nothing; collectibles survive save/load; a v2 (M04.2) save loads the same
    through the 2 -> 3 step.
-6. Save: fresh game; M04.0 (v1) saves with seeds, basket, both, empty seeds,
+6. Filtered views (M04.4): Inventory.get_view() and the seed picker /
+   basket built from it show exactly what FarmManager's getters (and so the
+   pre-M04.4 screens) showed — cards, counts, crop order, quality splits —
+   over random sessions with collectibles mixed in.
+7. Save: fresh game; M04.0 (v1) saves with seeds, basket, both, empty seeds,
    empty basket, all qualities, many crops, malformed data; repeated
    load/save; migration then autosave; unrelated sections kept exactly; and
    2,000 random v1 saves load to the same farm through the migration as the
@@ -68,6 +72,7 @@ assert all(l in SM["_move_holdings_to_items"] for l in ('farm["starter_seeds"] =
                                                         "items[produce_items[crop_id]] = basket[crop_id]", 'farm.erase("seeds")', 'farm.erase("basket")'))
 SAVE_VERSION = int(re.search(r"^const SAVE_VERSION := (\d+)", _src("scripts", "autoload", "save_manager.gd"), re.M).group(1))
 assert SAVE_VERSION == 3
+ITEM_CATEGORIES_ = sorted({i['category'] for i in ITEMS.values()})
 INV = _funcs(_src("scripts", "autoload", "inventory.gd"))
 assert 'var item_id: String = _collectible_item_ids.get(definition.id, "")' in INV["_on_discovery_collected"] and "_store.add(item_id)" in INV["_on_discovery_collected"]
 assert "DiscoveryManager.discovery_repeated.connect(_on_discovery_collected)" in INV["_ready"] and "DiscoveryManager.discovery_made.connect(_on_discovery_collected)" in INV["_ready"]
@@ -394,6 +399,45 @@ assert json.loads(save(g, data))["save_version"] == 3
 v3 = json.loads(save(f, copy.deepcopy(OTHER))); v3["farm"] = {}; v3["items"][COLLECTIBLE[sorted(COLLECTIBLE)[0]]] = [2]
 g, _ = load(json.dumps(v3))
 assert all(g.seed_count(c) == CROPS[c]["starting"] for c in CROPS) and g.items.get_quantity(COLLECTIBLE[sorted(COLLECTIBLE)[0]]) == 2
+
+# ---------------------------------------------------------------- 8. filtered views (M04.4)
+INVF = _funcs(_src("scripts", "autoload", "inventory.gd"))
+assert 'rows.append({"item": definition, "total": total, "counts": counts})' in INVF["get_view"] and "if total <= 0:" in INVF["get_view"]
+SPF, BSF = _funcs(_src("scripts", "ui", "seed_picker.gd")), _funcs(_src("scripts", "ui", "basket_screen.gd"))
+assert 'Inventory.get_view("seed")' in SPF["_rebuild"] and "held.get(crop.crop_id, 0)" in SPF["_rebuild"]
+assert 'Inventory.get_view("produce")' in BSF["_basket_rows"] and "for crop in FarmManager.get_crops():" in BSF["_basket_rows"]
+POINTS = {v["crop_id"]: int(v.get("points_value", "10")) for v in map(_vals, glob.glob(os.path.join(REPO, "data", "crops", "*.tres")))}
+CROP_ORDER = sorted(CROPS, key=lambda c: (POINTS[c], c))                     # FarmManager._sort_crops
+ITEM_ORDER = sorted(ITEMS)                                                   # ResourceDirectory: sorted file names
+def get_view(inv, category):  # Inventory.get_view
+    rows = []
+    for i in ITEM_ORDER:
+        if ITEMS[i]["category"] != category or inv.get_quantity(i) <= 0: continue
+        rows.append({"item": i, "total": inv.get_quantity(i), "counts": [inv.get_quantity(i, q) for q in range(ITEMS[i]["levels"])]})
+    return rows
+def known(f): return [c for c in CROP_ORDER if CROPS[c]["starting"] > 0 or c in f.found or f.seed_count(c) > 0]
+def picker_new(f):   # SeedPicker._rebuild: known crops, counts from the seed view
+    held = {ITEMS[r["item"]]["crop"]: r["total"] for r in get_view(f.items, "seed")}
+    return [(c, held.get(c, 0)) for c in known(f)]
+def picker_old(f): return [(c, f.seed_count(c)) for c in known(f)]           # before: FarmManager.get_seed_count
+def basket_new(f):   # BasketScreen._basket_rows
+    held = {ITEMS[r["item"]]["crop"]: r for r in get_view(f.items, "produce")}
+    return [(c, held[c]["total"], held[c]["counts"]) for c in CROP_ORDER if c in held]
+def basket_old(f):   # before: FarmManager.get_basket (crop order, only crops with produce)
+    return [(c, f.produce(c), [f.produce(c, q) for q in range(Q)]) for c in CROP_ORDER if f.produce(c) > 0]
+assert CROP_ORDER != sorted(CROPS) or len(CROPS) < 2, "crop order differs from item order — the basket must re-order"
+rnd = random.Random(44); views = 0
+for _ in range(2000):
+    inv = ItemStore(); f = Farm(inv)
+    def check_views():
+        global views
+        if rnd.random() < 0.3: collect(inv, rnd.choice(DISCOVERIES))
+        assert picker_new(f) == picker_old(f) and basket_new(f) == basket_old(f); views += 1
+        assert all(r["total"] == sum(r["counts"]) > 0 for c in ITEM_CATEGORIES_ for r in get_view(inv, c))
+    play(random.Random(rnd.random()), [f], rnd.randint(1, 40), check_views)
+    g, _ = load(save(f, copy.deepcopy(OTHER)))
+    assert picker_new(g) == picker_new(f) and basket_new(g) == basket_new(f), "views survive save/load"
+assert get_view(ItemStore(), "produce") == [] and get_view(ItemStore(), "nope") == []
 print(f"items: {len(ITEMS)} ({len(SEED_ITEM)} seed, {len(PRODUCE_ITEM)} produce x{Q} qualities); store rules + 20000 random ops; "
-      f"old/new farm parity over 3000 sessions; {len(COLLECTIBLE)} collectibles, one per collection; save cases 1-12; 2000 random v1 saves migrate to the same farm and stay stable")
+      f"old/new farm parity over 3000 sessions; {len(COLLECTIBLE)} collectibles, one per collection; save cases 1-12; seed picker + basket views identical to the old getters over 2000 sessions ({views} checks); 2000 random v1 saves migrate to the same farm and stay stable")
 print("ALL ITEM SIMULATIONS PASSED")

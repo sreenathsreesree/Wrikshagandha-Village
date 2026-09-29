@@ -1405,10 +1405,10 @@ for f, s2 in scripts.items():
 inv_src = scripts.get(INV, "")
 inv_code = code_only(inv_src)
 inv_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", inv_src, re.M | re.S)}
-INV_API = ["_ready", "is_valid_item", "get_definition", "get_quantity", "has", "add", "remove", "get_save_data", "apply_save_data",
-           "_on_discovery_collected"]
+INV_API = ["_ready", "is_valid_item", "get_definition", "get_quantity", "has", "add", "remove", "get_view", "get_save_data",
+           "apply_save_data", "_on_discovery_collected"]
 if not inv_src.startswith("extends Node\n") or re.search(r"^class_name", inv_src, re.M) or list(inv_funcs) != INV_API \
-   or re.findall(r"^var (\w+)", inv_code, re.M) != ["_store", "_collectible_item_ids"] or "var _store: ItemStore" not in inv_code:
+   or re.findall(r"^var (\w+)", inv_code, re.M) != ["_store", "_collectible_item_ids", "_definitions"] or "var _store: ItemStore" not in inv_code:
     err(f"{INV}: the Inventory is a plain autoload Node holding one ItemStore (API {INV_API})")
 if re.search(r"\b_store\b(?!\.|: ItemStore| = ItemStore\.new\()", inv_code) or inv_code.count("ItemStore.new(") != 1 \
    or "_store = ItemStore.new(definitions)" not in inv_funcs.get("_ready", ""):
@@ -1440,6 +1440,38 @@ if not re.search(r'var item_id: String = _collectible_item_ids\.get\(definition\
 if not (0 <= found_al.index("DiscoveryManager") < found_al.index("Inventory") < found_al.index("FarmManager") < found_al.index("GameState")
         if all(n in found_al for n in ("DiscoveryManager", "Inventory", "FarmManager", "GameState")) else False):
     err("project.godot: Inventory loads after DiscoveryManager and before FarmManager and GameState")
+# Filtered views (M04.4): the screens read the Inventory by category through
+# get_view(), a read-only view built fresh from the store; they keep no counts.
+gv = inv_funcs.get("get_view", "")
+if len(re.findall(r"\b_definitions\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(append|erase|clear|sort|push_back|insert)\b)", inv_code)) != 1 \
+   or "_definitions = definitions" not in ir \
+   or not re.search(r"func get_view\(category: String\) -> Array:\s*var rows: Array = \[\]\s*for definition in _definitions:\s*"
+                    r"if definition\.category != category:\s*continue\s*var total := _store\.get_quantity\(definition\.id\)\s*"
+                    r"if total <= 0:\s*continue\s*var counts: Array = \[\]\s*for quality in definition\.quality_levels:\s*"
+                    r"counts\.append\(_store\.get_quantity\(definition\.id, quality\)\)\s*"
+                    r'rows\.append\(\{"item": definition, "total": total, "counts": counts\}\)\s*return rows\s*$', gv):
+    err(f"{INV}: get_view() is a read-only view — one row per held item of the category, every quality level, built fresh from the store")
+SP, BS = "scripts/ui/seed_picker.gd", "scripts/ui/basket_screen.gd"
+for f in (SP, BS):
+    code = code_only(scripts.get(f, ""))
+    if re.search(r"^var ", code, re.M):
+        err(f"{f}: a filtered view keeps no state of its own (member vars)")
+    if re.search(r"FarmManager\.(get_seed_count|get_basket|get_produce_count|get_produce_total)\(|Inventory\.(get_quantity|has|get_save_data)\(", code):
+        err(f"{f}: reads the player's items only through Inventory.get_view()")
+sp_rb = code_only(func_body(scripts.get(SP, ""), "_rebuild") or "")
+if not re.search(r'var held := \{\}\s*for row: Dictionary in Inventory\.get_view\("seed"\):\s*held\[\(row\.item as ItemDefinition\)\.crop_id\] = int\(row\.total\)', sp_rb) \
+   or "var crops := FarmManager.get_known_crops()" not in sp_rb or "var count: int = held.get(crop.crop_id, 0)" not in sp_rb \
+   or "FarmManager.seeds_changed.connect(_on_seeds_changed)" not in (func_body(scripts.get(SP, ""), "_ready") or ""):
+    err(f"{SP}: one card per known crop, its count from the Inventory's seed view; refreshed on FarmManager.seeds_changed (after a planting, never mid-press)")
+bs_src = scripts.get(BS, "")
+br = code_only(func_body(bs_src, "_basket_rows") or "")
+if not re.search(r'var held := \{\}\s*for row: Dictionary in Inventory\.get_view\("produce"\):\s*held\[\(row\.item as ItemDefinition\)\.crop_id\] = row\s*'
+                 r"var rows: Array = \[\]\s*for crop in FarmManager\.get_crops\(\):\s*if held\.has\(crop\.crop_id\):\s*"
+                 r'rows\.append\(\{"crop": crop, "total": held\[crop\.crop_id\]\.total, "counts": held\[crop\.crop_id\]\.counts\}\)\s*return rows\s*$', br) \
+   or "var rows := _basket_rows()" not in code_only(func_body(bs_src, "_refresh") or "") \
+   or "var count := int(row.counts[quality])" not in code_only(func_body(bs_src, "_quality_split") or "") \
+   or "FarmManager.produce_changed.connect(_on_produce_changed)" not in (func_body(bs_src, "_ready") or ""):
+    err(f"{BS}: the basket is the Inventory's produce view in crop order, split by quality; refreshed on FarmManager.produce_changed")
 fm_code = code_only(fm_src)
 fm_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", fm_src, re.M | re.S)}
 HOLDING_VARS = {"_seed_item_ids", "_produce_item_ids", "_starter_seeds_given", "_found_seed_crop_ids", "_found_seed_origins"}

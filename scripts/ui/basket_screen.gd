@@ -2,8 +2,9 @@ extends Control
 class_name BasketScreen
 
 ## The harvest basket: one compact row per crop harvested this session —
-## its identity swatch, how many, and the Plain / Good / Fine split. Read
-## straight from FarmManager.get_basket(); displays only, decides nothing.
+## its identity swatch, how many, and the Plain / Good / Fine split. A
+## filtered view of the Inventory (its produce, M04.4) in FarmManager's crop
+## order; keeps no counts, displays only, decides nothing.
 ## Same modal shape and parchment theme as the Collection screen.
 
 const SWATCH_SIZE := 56.0
@@ -31,7 +32,7 @@ func _refresh() -> void:
 	for child in list_container.get_children():
 		list_container.remove_child(child)
 		child.queue_free()
-	var rows := FarmManager.get_basket()
+	var rows := _basket_rows()
 	if rows.is_empty():
 		var empty := Label.new()
 		empty.text = "Nothing harvested yet."
@@ -61,12 +62,23 @@ func _build_row(row: Dictionary) -> Control:
 	line.add_child(text)
 	return line
 
+## The produce the player holds, one row per crop in crop order:
+## [{crop, total, counts}] (counts: one per quality, Plain / Good / Fine).
+func _basket_rows() -> Array:
+	var held := {}
+	for row: Dictionary in Inventory.get_view("produce"):
+		held[(row.item as ItemDefinition).crop_id] = row
+	var rows: Array = []
+	for crop in FarmManager.get_crops():
+		if held.has(crop.crop_id):
+			rows.append({"crop": crop, "total": held[crop.crop_id].total, "counts": held[crop.crop_id].counts})
+	return rows
+
 ## "Good 3 · ✦ Fine 1" — only the qualities actually in the basket.
 func _quality_split(row: Dictionary) -> String:
 	var parts: PackedStringArray = []
 	for quality in [FarmManager.QUALITY_PLAIN, FarmManager.QUALITY_GOOD, FarmManager.QUALITY_FINE]:
-		var key: String = ["plain", "good", "fine"][quality]
-		var count := int(row[key])
+		var count := int(row.counts[quality])
 		if count <= 0:
 			continue
 		var label := FarmManager.get_quality_name(quality)

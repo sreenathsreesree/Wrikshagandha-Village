@@ -11,7 +11,10 @@ class_name SeedPicker
 ## signals, and closes on its own when the player walks away from the plot
 ## (FarmPlot cancels the choice when it leaves interaction range). Built
 ## from FarmManager.get_known_crops(), so a new crop appears here
-## automatically once the player knows it. Each card also shows what the
+## automatically once the player knows it; each card's count is the
+## Inventory's seed view (M04.4) — the picker keeps no count of its own.
+## It refreshes on FarmManager.seeds_changed, which fires once a planting
+## has finished and the picker has closed (never mid-press). Each card also shows what the
 ## soil would grow for that crop (FarmManager's rating), so the rotation
 ## rule is visible right where the choice is made.
 
@@ -69,10 +72,13 @@ func _rebuild() -> void:
 		choices.remove_child(child)
 		child.queue_free()
 	var any_seeds := false
+	var held := {}
+	for row: Dictionary in Inventory.get_view("seed"):
+		held[(row.item as ItemDefinition).crop_id] = int(row.total)
 	var crops := FarmManager.get_known_crops()
 	var width := _choice_width(crops.size())
 	for crop in crops:
-		var count := FarmManager.get_seed_count(crop.crop_id)
+		var count: int = held.get(crop.crop_id, 0)
 		any_seeds = any_seeds or count > 0
 		choices.add_child(_build_choice(crop, count, width))
 	hint_label.visible = not any_seeds
