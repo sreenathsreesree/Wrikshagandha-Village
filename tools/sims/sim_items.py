@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Model checks for items (M04.1) and seeds/harvests as items (M04.2) — a
-Python port, not the engine.
+"""Model checks for items (M04.1), seeds/harvests as items (M04.2) and the
+Inventory autoload + discovery rewards (M04.3) — a Python port, not the
+engine.
 1. Read from the project: data/items/, data/crops/, the quality scale, and
    the rule lines of ItemStore, FarmManager and SaveManager's 1 -> 2 step.
 2. Ports: ItemStore (counts per quality level); FarmManager's seed/basket
@@ -14,7 +15,11 @@ Python port, not the engine.
 4. Parity: 3,000 random farm sessions (starting seeds, planting, harvests at
    every quality, found seeds) give the same seed counts, basket rows and
    produce counts before and after M04.2, and the seed invariant holds.
-5. Save: fresh game; M04.0 (v1) saves with seeds, basket, both, empty seeds,
+5. Discovery rewards (M04.3): each collection of a discovery — first or
+   repeat — gives one of its collectible; a discovery without one gives
+   nothing; collectibles survive save/load; a v2 (M04.2) save loads the same
+   through the 2 -> 3 step.
+6. Save: fresh game; M04.0 (v1) saves with seeds, basket, both, empty seeds,
    empty basket, all qualities, many crops, malformed data; repeated
    load/save; migration then autosave; unrelated sections kept exactly; and
    2,000 random v1 saves load to the same farm through the migration as the
@@ -30,10 +35,14 @@ def _vals(path):
     return {k: v.strip('"') for k, v in re.findall(r'^(\w+) = (.+)$', txt, re.M)}
 
 # ---------------------------------------------------------------- 1. read from the project
-ITEMS = {v["id"]: {"category": v.get("category", "seed"), "crop": v["crop_id"], "levels": int(v.get("quality_levels", "1"))}
+ITEMS = {v["id"]: {"category": v.get("category", "seed"), "crop": v.get("crop_id", ""), "levels": int(v.get("quality_levels", "1")),
+                   "discovery": v.get("discovery_id", "")}
          for v in map(_vals, sorted(glob.glob(os.path.join(REPO, "data", "items", "*.tres"))))}
 CROPS = {v["crop_id"]: {"starting": max(int(v.get("starting_seeds", "1")), 0), "found": v.get("found_seed_source", "none")}
          for v in map(_vals, sorted(glob.glob(os.path.join(REPO, "data", "crops", "*.tres"))))}
+DISCOVERIES = sorted(_vals(f)["id"] for f in glob.glob(os.path.join(REPO, "data", "discoveries", "*.tres")))
+COLLECTIBLE = {i["discovery"]: iid for iid, i in ITEMS.items() if i["category"] == "collectible"}
+assert set(COLLECTIBLE) <= set(DISCOVERIES) and all(ITEMS[i]["levels"] == 1 for i in COLLECTIBLE.values())
 SEED_ITEM = {i["crop"]: iid for iid, i in ITEMS.items() if i["category"] == "seed"}
 PRODUCE_ITEM = {i["crop"]: iid for iid, i in ITEMS.items() if i["category"] == "produce"}
 FMS = _src("scripts", "autoload", "farm_manager.gd")
@@ -47,17 +56,24 @@ for fn, lines in {"add": ["if not _accepts(item_id, quality) or amount < 1:", "c
                   "_whole_counts": ["entry.size() != get_definition(item_id).quality_levels", "counts.append(maxi(int(count), 0))"],
                   "_accepts": ["quality >= 0 and quality < get_definition(item_id).quality_levels"]}.items():
     assert all(l in ST[fn] for l in lines), fn
-for fn, lines in {"choose_seed": ["if crop == null or get_seed_count(crop.crop_id) <= 0:", '_items.remove(_seed_item_ids.get(crop.crop_id, ""))'],
-                  "notify_crop_harvested": ['_items.add(_seed_item_ids.get(crop_definition.crop_id, ""))',
-                                            '_items.add(_produce_item_ids.get(crop_definition.crop_id, ""), 1, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))'],
-                  "_grant_found_seeds": ["if _found_seed_crop_ids.has(crop.crop_id):", '_items.add(_seed_item_ids.get(crop.crop_id, ""))'],
+for fn, lines in {"choose_seed": ["if crop == null or get_seed_count(crop.crop_id) <= 0:", 'Inventory.remove(_seed_item_ids.get(crop.crop_id, ""))'],
+                  "notify_crop_harvested": ['Inventory.add(_seed_item_ids.get(crop_definition.crop_id, ""))',
+                                            'Inventory.add(_produce_item_ids.get(crop_definition.crop_id, ""), 1, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))'],
+                  "_grant_found_seeds": ["if _found_seed_crop_ids.has(crop.crop_id):", 'Inventory.add(_seed_item_ids.get(crop.crop_id, ""))'],
                   "_give_starting_seeds": ["if _starter_seeds_given.has(crop.crop_id):", "if crop.starting_seeds > 0:"],
-                  "apply_save_data": ["if data.is_empty():", "_items.apply_save_data(items)", "_give_starting_seeds()"]}.items():
+                  "apply_save_data": ["if data.is_empty():", "_start_fresh_seeds()", "_give_starting_seeds()"],
+                  "_start_fresh_seeds": ['Inventory.remove(_seed_item_ids.get(crop.crop_id, ""), held)', "_give_starting_seeds()"]}.items():
     assert all(l in FM[fn] for l in lines), fn
 assert all(l in SM["_move_holdings_to_items"] for l in ('farm["starter_seeds"] = (seeds as Dictionary).keys()', "items[seed_items[crop_id]] = [seeds[crop_id]]",
                                                         "items[produce_items[crop_id]] = basket[crop_id]", 'farm.erase("seeds")', 'farm.erase("basket")'))
 SAVE_VERSION = int(re.search(r"^const SAVE_VERSION := (\d+)", _src("scripts", "autoload", "save_manager.gd"), re.M).group(1))
-assert SAVE_VERSION == 2
+assert SAVE_VERSION == 3
+INV = _funcs(_src("scripts", "autoload", "inventory.gd"))
+assert 'var item_id: String = _collectible_item_ids.get(definition.id, "")' in INV["_on_discovery_collected"] and "_store.add(item_id)" in INV["_on_discovery_collected"]
+assert "DiscoveryManager.discovery_repeated.connect(_on_discovery_collected)" in INV["_ready"] and "DiscoveryManager.discovery_made.connect(_on_discovery_collected)" in INV["_ready"]
+assert re.search(r"^\t\t\t2:\s*pass", SM["_migrate"], re.M)
+SMS = _src("scripts", "autoload", "save_manager.gd")
+assert SMS.find('Inventory.apply_save_data(data.get("items", {}))') < SMS.find('FarmManager.apply_save_data(data.get("farm", {}))')
 
 def godot_json(text):
     def conv(x):
@@ -127,9 +143,9 @@ class OldFarm:  # FarmManager's seeds and basket before M04.2 (commit 3532b14)
             f.seeds[c] = max(gd_int(sv), 0) if sv is not None else CROPS[c]["starting"]
         f.found = [c for c in d.get("found_seeds", {}) if c in CROPS]
         f.basket = {c: [max(gd_int(x), 0) for x in k] for c, k in d.get("basket", {}).items() if c in CROPS and len(k) == 3}
-class Farm:  # after M04.2: the ItemStore holds seeds and the basket
-    def __init__(f):
-        f.items, f.given, f.found, f.rest = ItemStore(), [], [], {}
+class Farm:  # after M04.2/M04.3: the Inventory's ItemStore holds seeds and the basket
+    def __init__(f, inventory=None):
+        f.items, f.given, f.found, f.rest = inventory if inventory is not None else ItemStore(), [], [], {}
         f.give_starting()
     def give_starting(f):
         for c in CROPS:
@@ -150,9 +166,11 @@ class Farm:  # after M04.2: the ItemStore holds seeds and the basket
     def save_farm(f):
         return {"version": 1, "starter_seeds": list(f.given), "found_seeds": {c: {"source": "place", "source_id": "x"} for c in f.found},
                 **copy.deepcopy(f.rest)}
-    def apply(f, d, items):
-        if not d: return
-        f.items.apply_save_data(items)
+    def apply(f, d):  # after the Inventory loaded the items section
+        if not d:  # a fresh farm: seeds in hand are exactly the starting seeds
+            for c in CROPS:
+                if f.seed_count(c) > 0: f.items.remove(SEED_ITEM[c], f.seed_count(c))
+            f.given = []; f.give_starting(); return
         f.given = []
         for c in d.get("starter_seeds", []):
             if str(c) in CROPS and str(c) not in f.given: f.given.append(str(c))
@@ -192,11 +210,15 @@ def load(text):
     if v < 0 or v > SAVE_VERSION: return farm, None
     data = copy.deepcopy(parsed)
     while v < SAVE_VERSION:
-        if v == 1: migrate_1_to_2(data)
+        if v == 1: migrate_1_to_2(data)                      # 2 -> 3: nothing to rewrite
         v += 1; data["save_version"] = float(v)
     data = {k: data[k] for k in SECTION_TYPES if k in data and type(data[k]) in SECTION_TYPES[k] and not isinstance(data[k], bool)}
-    farm.apply(data.get("farm", {}), data.get("items", {}))
+    farm.items.apply_save_data(data.get("items", {}))      # Inventory first,
+    farm.apply(data.get("farm", {}))                          # then the farm
     return farm, data
+def collect(inv, discovery_id):  # Inventory._on_discovery_collected (discovery_made and discovery_repeated)
+    item = COLLECTIBLE.get(discovery_id, "")
+    if item: inv.add(item)
 def same(a, b): return godot_json(a) == godot_json(b)
 def save(farm, data):
     out = {k: copy.deepcopy(v) for k, v in data.items() if k not in ("farm", "items")}
@@ -246,9 +268,10 @@ for _ in range(20000):
 
 # ---------------------------------------------------------------- 4. parity with the pre-M04.2 farm
 FINDABLE = [c for c in CROPS if CROPS[c]["found"] != "none"]
-def play(rnd, farms, steps):
+def play(rnd, farms, steps, each=None):
     ground = {c: 0 for c in CROPS}
     for _ in range(steps):
+        if each: each()
         c, r = rnd.choice(sorted(CROPS)), rnd.random()
         if r < 0.4:
             got = {f.plant(c) for f in farms}; assert len(got) == 1
@@ -286,7 +309,7 @@ C = sorted(CROPS)
 # 1. fresh game: starting seeds, an empty basket; the first save is v2 and reloads identically
 f = Farm(); assert observe(f) == observe(OldFarm())
 first = save(f, copy.deepcopy(OTHER)); d1 = json.loads(first)
-assert d1["save_version"] == 2 and "seeds" not in d1["farm"] and "basket" not in d1["farm"] and d1["farm"]["starter_seeds"] == list(CROPS)
+assert d1["save_version"] == SAVE_VERSION and "seeds" not in d1["farm"] and "basket" not in d1["farm"] and d1["farm"]["starter_seeds"] == list(CROPS)
 assert d1["items"] == {SEED_ITEM[c]: [CROPS[c]["starting"]] for c in CROPS if CROPS[c]["starting"]}
 g, data = load(first); assert observe(g) == observe(f) and same(save(g, data), first)
 CASES = {
@@ -311,7 +334,7 @@ for name, (seeds, basket) in CASES.items():
             for c, k in basket.items(): assert [new.produce(c, q) for q in range(Q)] == k, name
     # 11. migration then autosave: a v2 file, no farm.seeds/basket, the same farm on the next launch
     out = save(new, data); o = json.loads(out)
-    assert o["save_version"] == 2 and "seeds" not in o["farm"] and "basket" not in o["farm"] and "items" in o
+    assert o["save_version"] == SAVE_VERSION and "seeds" not in o["farm"] and "basket" not in o["farm"] and "items" in o
     again, data2 = load(out); assert observe(again) == observe(new), name
     # 10. repeated load/save is a fixpoint
     assert same(save(again, data2), out), f"{name}: load -> save stable"
@@ -340,6 +363,37 @@ for _ in range(2000):
     assert observe(new) == observe(old_load(text))
     out = save(new, data); again, data2 = load(out)
     assert observe(again) == observe(new) and same(save(again, data2), out)
+
+# ---------------------------------------------------------------- 7. discovery rewards (M04.3)
+inv = ItemStore(); f = Farm(inv); ref = {}
+for d in DISCOVERIES + ["unknown_thing"]:
+    for _ in range(3):
+        collect(inv, d)
+        if d in COLLECTIBLE: ref[COLLECTIBLE[d]] = ref.get(COLLECTIBLE[d], 0) + 1
+assert all(inv.get_quantity(i) == n == 3 for i, n in ref.items()) and len(ref) == len(COLLECTIBLE), "one per collection, first or repeat"
+assert observe(f) == observe(OldFarm()), "collecting never touches seeds or the basket"
+out = save(f, copy.deepcopy(OTHER)); g, data = load(out)
+assert all(g.items.get_quantity(i) == n for i, n in ref.items()) and same(save(g, data), out), "collectibles survive save/load"
+rnd = random.Random(5)
+for _ in range(1000):   # collections interleaved with farming: nothing interferes, and it all round-trips
+    inv = ItemStore(); f = Farm(inv); counts = {}
+    def maybe_collect():
+        if rnd.random() < 0.5:
+            d = rnd.choice(DISCOVERIES); collect(inv, d)
+            if d in COLLECTIBLE: counts[COLLECTIBLE[d]] = counts.get(COLLECTIBLE[d], 0) + 1
+    play(random.Random(rnd.random()), [f], rnd.randint(1, 40), maybe_collect)
+    assert all(inv.get_quantity(i) == counts.get(i, 0) for i in COLLECTIBLE.values())
+    out = save(f, copy.deepcopy(OTHER)); g, data = load(out)
+    assert observe(g) == observe(f) and g.items.get_save_data() == inv.get_save_data() and same(save(g, data), out)
+# a v2 (M04.2) save: the 2 -> 3 step rewrites nothing; it loads to the same farm and items
+f = Farm(); play(random.Random(9), [f], 40)
+v2 = json.loads(save(f, copy.deepcopy(OTHER))); v2["save_version"] = 2
+g, data = load(json.dumps(v2)); assert observe(g) == observe(f) and g.items.get_save_data() == f.items.get_save_data()
+assert json.loads(save(g, data))["save_version"] == 3
+# an empty farm section with items: a fresh farm's seeds; produce and collectibles kept
+v3 = json.loads(save(f, copy.deepcopy(OTHER))); v3["farm"] = {}; v3["items"][COLLECTIBLE[sorted(COLLECTIBLE)[0]]] = [2]
+g, _ = load(json.dumps(v3))
+assert all(g.seed_count(c) == CROPS[c]["starting"] for c in CROPS) and g.items.get_quantity(COLLECTIBLE[sorted(COLLECTIBLE)[0]]) == 2
 print(f"items: {len(ITEMS)} ({len(SEED_ITEM)} seed, {len(PRODUCE_ITEM)} produce x{Q} qualities); store rules + 20000 random ops; "
-      f"old/new farm parity over 3000 sessions; save cases 1-12; 2000 random v1 saves migrate to the same farm and stay stable")
+      f"old/new farm parity over 3000 sessions; {len(COLLECTIBLE)} collectibles, one per collection; save cases 1-12; 2000 random v1 saves migrate to the same farm and stay stable")
 print("ALL ITEM SIMULATIONS PASSED")

@@ -35,7 +35,7 @@ STEPS = [int(x) for x in re.findall(r"^\t\t\t(\d+):", _body("_migrate"), re.M)]
 assert SECTIONS and STEPS == list(range(SAVE_VERSION)), (SECTIONS, STEPS)
 import glob as _glob
 def _item_vals(f): return dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(f, encoding="utf-8").read(), re.M))
-ITEM_OF = {(v["crop_id"], v.get("category", "seed")): v["id"] for v in map(_item_vals, sorted(_glob.glob(os.path.join(REPO, "data", "items", "*.tres"))))}
+ITEM_OF = {(v.get("crop_id", ""), v.get("category", "seed")): v["id"] for v in map(_item_vals, sorted(_glob.glob(os.path.join(REPO, "data", "items", "*.tres"))))}
 MV = _body("_move_holdings_to_items")
 assert re.search(r"^\t\t\t1:\s*_move_holdings_to_items\(data\)", _body("_migrate"), re.M) and 'farm.erase("seeds")' in MV and 'farm.erase("basket")' in MV
 def step_1(data):  # SaveManager._move_holdings_to_items (M04.2)
@@ -49,7 +49,8 @@ def step_1(data):  # SaveManager._move_holdings_to_items (M04.2)
             if (c, "produce") in ITEM_OF: items[ITEM_OF[(c, "produce")]] = k
         farm.pop("seeds", None); farm.pop("basket", None)
     data["items"] = items
-STEP_PORTS = {0: lambda data: None, 1: step_1}
+assert re.search(r"^\t\t\t2:\s*pass", _body("_migrate"), re.M)
+STEP_PORTS = {0: lambda data: None, 1: step_1, 2: lambda data: None}  # 2 -> 3 (M04.3): nothing to rewrite
 LG = _body("load_game")
 assert LG.find("read_version(parsed)") < LG.find("if version > SAVE_VERSION:") < LG.find("_migrate(parsed, version)") \
     < LG.find("_valid_sections(data)") < LG.find("PointsManager.set_points(")

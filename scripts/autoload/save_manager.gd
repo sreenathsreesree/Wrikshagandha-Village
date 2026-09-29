@@ -22,9 +22,12 @@ extends Node
 ## player's seeds and basket moved from farm.seeds / farm.basket into
 ## "items" (ItemStore save data, a count per quality level); the farm keeps
 ## "starter_seeds", the crops whose starting seeds were given.
+## 3 = M04.3: "items" is the Inventory's and may hold collectibles (one per
+## discovery collected) — an older build would drop those, so the bump;
+## nothing to rewrite.
 
 const SAVE_PATH := "user://save.json"
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 const VERSION_KEY := "save_version"
 ## Every section and the JSON types it may have; anything else is ignored.
 const SECTION_TYPES := {
@@ -53,7 +56,7 @@ func save_game() -> void:
 		"daily_discovery": DailyDiscoveryManager.get_save_data(),
 		"farm": FarmManager.get_save_data(),
 		"settings": InputManager.get_settings_data(),
-		"items": FarmManager.get_item_save_data(),
+		"items": Inventory.get_save_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -91,7 +94,8 @@ func load_game() -> bool:
 	DiscoveryManager.set_discovered_ids(data.get("discovered_ids", []))
 	JournalManager.apply_save_data(data.get("journal_entries", {}))
 	DailyDiscoveryManager.apply_save_data(data.get("daily_discovery", {}))
-	FarmManager.apply_save_data(data.get("farm", {}), data.get("items", {}))
+	Inventory.apply_save_data(data.get("items", {}))
+	FarmManager.apply_save_data(data.get("farm", {}))
 	InputManager.apply_settings_data(data.get("settings", {}))
 	return true
 
@@ -123,6 +127,8 @@ func _migrate(save: Dictionary, from_version: int) -> Dictionary:
 				pass  # before M04.0: the same sections, only save_version was missing
 			1:
 				_move_holdings_to_items(data)  # M04.2
+			2:
+				pass  # M04.3: items may now hold collectibles; same shape
 			_:
 				push_warning("SaveManager: no migration from save_version %d" % version)
 				return {}

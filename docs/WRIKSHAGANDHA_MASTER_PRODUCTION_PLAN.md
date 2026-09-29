@@ -168,7 +168,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 |---|---|---|
 | A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Resolved in code: ownership M03.1, area loading M03.2, plot unloading M03.3 (runtime test pending) |
 | A2 | `Interactable` base is discovery-specific | M02.1 (in code; runtime test pending) |
-| A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 (M04.2: seeds/basket counts live in the ItemStore; FarmManager still holds the store instance, O-14; rewards Phase 05) |
+| A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 (M04.2–M04.3: seeds/basket counts live in the `Inventory` autoload; FarmManager keeps only the rules; point rewards Phase 05) |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
 | A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | **Resolved in code:** physics layers M01.1; place list, garden place id, curiosity pairs and secret count M03.6 (`data/places/`) |
 | A6 | Unused interaction path (`interact_requested`) | **Resolved in M02.5** (removed; guarded by the toolkit) |
@@ -442,6 +442,11 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - full farm loop: plant (the seed count drops, planting is refused at 0), water, harvest at different qualities (one seed back, the basket row and split update, the Basket button appears after the first harvest), find an exploration seed once; relaunch — everything identical, no seed gained or lost (seeds in hand + crops in the ground unchanged);
     - fresh install: starting seeds on the picker, empty basket;
     - desktop: a v1 save with an unknown crop in `farm.seeds` loads with a "dropped" warning and nothing else lost.
+  - **M04.3 inventory + collectibles** (Android + desktop):
+    - the game starts with no autoload/script errors; the M04.2 farm checks above all still hold (seed counts, basket, relaunch);
+    - collect a discovery (first time) and the same kind again after it respawns: points and cards as before; desktop: `user://save.json` `items` holds that collectible with a count of 2 after the next autosave/pause (e.g. `"river_stone":[2]`) and `"save_version":3`;
+    - relaunch: the collectible count is still there; collecting a discovery never changes seed counts or the basket;
+    - install over an M04.2 build with a save: everything loads as before and is stamped version 3; (optional) the M04.2 build refuses a version-3 save and leaves it untouched.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -740,7 +745,7 @@ Goal: one universal item model.
 | M04.0 | Top-level save version + migration hook (P-01 → D-17) | Old saves load; version recorded | Relaunch with an old save | `[~]` |
 | M04.1 | Item definitions + item store (fields limited to what today's items need; saving moves to M04.2, when the store first holds items) | Items defined as data; store rules verified | Project opens; farm loop unchanged | `[~]` |
 | M04.2 | Seeds and harvests become items; migrate from FarmManager (A3); the store's save section + migration 1 → 2 (D-17); O-13 → D-18 (quality is an attribute) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[~]` |
-| M04.3 | Discoveries and collectibles can grant items | Collect → item | Tap a collectible | `[ ]` |
+| M04.3 | Inventory autoload (O-14 → D-19); discoveries grant collectible items | Collect → item | Tap a collectible | `[~]` |
 | M04.4 | Inventory UI; seed picker and basket become filtered views | One inventory screen | Android: readability | `[ ]` |
 
 **M04.0 — Save versioning (P-01)** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.0 save versioning")
@@ -798,6 +803,26 @@ Goal: one universal item model.
   - `sim_items.py`: store rules per quality + 20,000 random operations; old (pre-M04.2) vs new farm parity over 3,000 random sessions (seed counts, per-quality produce, basket rows, found seeds, invariant); save cases 1–12 (fresh, v1 with seeds / basket / both / empty seeds / empty basket / all qualities / many crops / malformed, repeated load–save, migration then autosave, unrelated sections and farm fields incl. plots unchanged), v0 and farm-less saves, a crop added later, malformed v2 items; 2,000 random v1 saves load to the same farm as the old code loaded them and stay stable. `sim_save_versioning.py` and `sim_persistence.py` updated to the v2 layout.
   - Mutation-tested with the FarmManager and SaveManager content pins **removed**: 62 code/data/config mutations (duplicate seed/basket state, the store handed out or recreated, counts not read from the store, every seed rule, quality dropped/unclamped/collapsed, quality rules and constants, farm save still holding seeds or missing `starter_seeds`, no or wrong 1 → 2 step, seeds/basket not moved or kept twice, silent drops, other sections or farm fields touched, items not saved/loaded/type-checked, store validation and copies, outside access) — all caught by `check_project.py`'s contracts; 13 model mutations caught by the simulations (one gap found and closed: the quality constants, and `sim_persistence` now checks the basket survives a relaunch).
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M04.2 seeds and basket as items").
+- **Commit:** §15.
+
+
+**M04.3 — Inventory autoload + discovery item rewards** `[~]` Implemented and verified in code — runtime testing pending (M01.6 checklist, "M04.3 inventory + collectibles")
+- **Objective:** resolve O-14 (one owner for the player's items), then let collecting discoveries grant items — data-driven, smallest change, farming behaviour unchanged.
+- **Audit:**
+  - Collection: `DiscoveryInteractable` → `DiscoveryManager.discover(id)` (its only caller) → points, then `discovery_made` (first time ever) or `discovery_repeated`. All 9 discoveries are picked up (harvestable, respawning except the Ancient Seed). Listeners: Journal, Collection, Daily, Exploration, FarmManager (found seeds, both signals), HUD cards, GameState (autosave on `discovery_made` only).
+  - Items: only crop seeds/produce, in FarmManager's store (M04.2). `ItemDefinition` had no link to a discovery. Nothing shows items yet (M04.4).
+  - Autoload order: an Inventory must connect to DiscoveryManager (so after it), serve FarmManager's starting seeds in its `_ready` (so before it) and be filled before GameState's autosave for a first discovery (before GameState; signal handlers run in connection order).
+  - Save: M04.2's `items` shape fits collectibles unchanged; but an M04.2 build loading a save with collectibles would drop them and overwrite — D-17 → bump.
+- **Design:** new autoload `Inventory` (a Node holding the one `ItemStore`, forwarding its methods, never handing it out) between DailyDiscoveryManager and FarmManager — `project.godot` changed for this, deliberately (D-19). `ItemDefinition` gains `discovery_id` and the category `collectible`; 9 collectible items, one per discovery, named as the discovery (checked). Inventory connects `discovery_made` and `discovery_repeated` and adds one collectible per collection (none if the discovery has no collectible). FarmManager: no store of its own; its rules call `Inventory.add/remove/get_quantity` (same call sites); `apply_save_data(farm)` only — for an empty farm section, seeds in hand are reset to the starting seeds (`_start_fresh_seeds`), as a fresh farm always had. No UI change; no new autosave point (a repeat collection's item is saved by the next autosave or app pause, like its points).
+- **Save:** `SAVE_VERSION` 3; step 2 → 3 rewrites nothing. `items` is written from and loaded into `Inventory`, before `FarmManager.apply_save_data(farm)`.
+- **Known differences:** a hand-edited/corrupted save with an empty farm but items now keeps its produce and collectibles (seeds still reset to the starting seeds); M04.2 ignored its items entirely.
+- **Files:** new `scripts/autoload/inventory.gd`, `data/items/<discovery>.tres` (9); `project.godot` (autoload line only); `scripts/items/item_definition.gd`; `scripts/autoload/farm_manager.gd`, `scripts/autoload/save_manager.gd` (pins updated deliberately); `tools/check_project.py`; `tools/sims/sim_items.py`, `tools/sims/sim_save_versioning.py`; docs. DiscoveryManager, DiscoveryInteractable, UI, FarmPlot, GameState, Player, InputManager, camera, Main, scenes, export settings untouched.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: the autoload list with Inventory between DiscoveryManager and FarmManager/GameState; Inventory is a plain Node with a fixed API, one store created in `_ready`, never handed out, every method a one-line forward, the store changed only by those forwards and the reward; the reward map from `collectible` items' `discovery_id`, both collection signals connected, exactly one item per collection; collectible items: existing discovery, no crop, the discovery's name, one level, at most one per discovery; seed/produce items name no discovery; no other script creates a store, changes the Inventory (only FarmManager's rules and the reward), or saves/loads items; FarmManager holds no store or copy, calls the Inventory only at the rule sites (exact map), fresh-farm seeds exactly the starting seeds; SaveManager step 2 → 3 rewrites nothing, items loaded before the farm.
+  - `sim_items.py`: collectibles one per collection (first/repeat), none for a discovery without one, never touching seeds/basket, 1,000 random sessions interleaving collections and farming round-trip exactly; a v2 save loads identically through 2 → 3; empty-farm-with-items case; everything from M04.2 (store, old/new farm parity, save cases 1–12, 2,000 random v1 saves) still passes with the Inventory owner and v3. `sim_save_versioning.py` covers v3's steps.
+  - Mutation-tested with the FarmManager and SaveManager pins **removed**: 40 code/data/config mutations (autoload missing or misordered, a second store or copy, the store handed out/recreated, forwards altered, outside writers/loaders, rewards on one signal only, two per collection, not data-driven, wrong category, map overwrite, extra side effects, collectible data invalid, FarmManager rewarding discoveries or mishandling a fresh farm, no bump, step 2 rewriting, wrong load order, items not saved/loaded) — all caught by `check_project.py`; 6 model mutations caught by `sim_items.py`.
+- **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M04.3 inventory + collectibles").
 - **Commit:** §15.
 
 ### PHASE 05 — ECONOMY
@@ -953,8 +978,9 @@ No large world expansion before this gate passes.
 | M04.0 | `c8bca2a` |
 | M04.1 | `3532b14` |
 | M04.2 | `b14b77a` |
+| M04.3 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store) and M04.2 (seeds and basket held as items; save v2) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's, M04.0's, M04.1's and M04.2's runtime tests). Next in code: **M04.3 — discoveries and collectibles can grant items** (needs O-14: who owns the player's store once a second system adds items), only on the developer's explicit instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) and M04.3 (Inventory autoload, collectibles from discoveries; save v3) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0–M04.3's runtime tests). Next in code: **M04.4 — inventory UI; seed picker and basket become filtered views**, only on the developer's explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

@@ -13,8 +13,8 @@ extends Node
 ##   reward per crop. Invariant (across sessions): seeds in hand + crops in
 ##   the ground = starting seeds + exploration seeds found (ever). Never
 ##   negative. The seeds in hand are the crops' seed items in the player's
-##   ItemStore (M04.2) — FarmManager decides the rules, the store holds
-##   the counts; there is no second copy here.
+##   Inventory (M04.2, M04.3) — FarmManager decides the rules, the
+##   Inventory holds the counts; there is no second copy here.
 ## - Exploration seed rewards (CropDefinition.found_seed_source/_id):
 ##   granted once per session when ExplorationManager reports a place
 ##   reached, or DiscoveryManager reports that discovery found.
@@ -34,8 +34,8 @@ extends Node
 ##   a rotated bed and careful watering; either factor alone can't carry a
 ##   crop, and neither alone ruins one.
 ## - The basket: harvested produce, one produce item per crop in the
-##   ItemStore with a count per quality level (D-18; nothing consumes it
-##   yet). The store is saved as its own "items" section.
+##   Inventory with a count per quality level (D-18; nothing consumes it
+##   yet), saved with the rest of the Inventory as "items".
 ## - Farm progression: which crops have grown, and a small fixed set of
 ##   quiet milestones, announced via milestone_reached.
 ## - Plots: every FarmPlot registers under its stable plot_id; plots that
@@ -112,10 +112,6 @@ const GARDEN_IN_BLOOM_BONUS := 50
 const NUMBER_WORDS := ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
 
 var _crops: Array[CropDefinition] = []
-## The player's held seeds and produce: the one source of truth for both.
-## FarmManager is the only system holding items so far, so it keeps the
-## store (O-14); nothing outside reaches it except through the getters.
-var _items: ItemStore
 ## crop_id -> that crop's seed / produce item id (from data/items).
 var _seed_item_ids: Dictionary = {}
 var _produce_item_ids: Dictionary = {}
@@ -155,7 +151,6 @@ var _unloaded_plot_states: Dictionary = {}
 func _ready() -> void:
 	_load_crops()
 	var item_definitions := ItemStore.load_definitions()
-	_items = ItemStore.new(item_definitions)
 	_seed_item_ids = ItemStore.crop_item_ids(item_definitions, "seed")
 	_produce_item_ids = ItemStore.crop_item_ids(item_definitions, "produce")
 	_give_starting_seeds()
@@ -172,7 +167,7 @@ func get_crops() -> Array[CropDefinition]:
 	return _crops.duplicate()
 
 func get_seed_count(crop_id: String) -> int:
-	return _items.get_quantity(_seed_item_ids.get(crop_id, ""))
+	return Inventory.get_quantity(_seed_item_ids.get(crop_id, ""))
 
 ## Crops the player knows about: starter crops, plus any crop whose seed
 ## has been found. An exploration-only crop stays a secret (absent from the
@@ -244,8 +239,8 @@ func get_harvest_points(crop: CropDefinition, quality: int) -> int:
 func get_produce_count(crop_id: String, quality: int = -1) -> int:
 	var item_id: String = _produce_item_ids.get(crop_id, "")
 	if quality < 0:
-		return _items.get_quantity(item_id)
-	return _items.get_quantity(item_id, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))
+		return Inventory.get_quantity(item_id)
+	return Inventory.get_quantity(item_id, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))
 
 func get_produce_total(quality: int = -1) -> int:
 	var total := 0
@@ -394,7 +389,7 @@ func choose_seed(crop: CropDefinition) -> bool:
 	var soil := rate_soil(_pending_plot.get_recent_crop_ids(), crop.crop_id)
 	if not _pending_plot.plant(crop, soil):
 		return false
-	_items.remove(_seed_item_ids.get(crop.crop_id, ""))
+	Inventory.remove(_seed_item_ids.get(crop.crop_id, ""))
 	_pending_plot = null
 	_planted_count += 1
 	seed_choice_closed.emit()
@@ -426,10 +421,10 @@ func notify_crop_ready(crop_definition: CropDefinition) -> void:
 ## loop renews itself without an economy, and the produce goes into the
 ## basket at the quality it grew.
 func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, points_awarded: int, quality: int, care: int) -> void:
-	_items.add(_seed_item_ids.get(crop_definition.crop_id, ""))
+	Inventory.add(_seed_item_ids.get(crop_definition.crop_id, ""))
 	_ready_by_crop[crop_definition.crop_id] = maxi(int(_ready_by_crop.get(crop_definition.crop_id, 0)) - 1, 0)
 	_update_garden_interest()
-	_items.add(_produce_item_ids.get(crop_definition.crop_id, ""), 1, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))
+	Inventory.add(_produce_item_ids.get(crop_definition.crop_id, ""), 1, clampi(quality, QUALITY_PLAIN, QUALITY_FINE))
 	_harvested_count += 1
 	if plot_id != "" and not _harvested_plot_ids.has(plot_id):
 		_harvested_plot_ids.append(plot_id)
@@ -470,7 +465,7 @@ func _grant_found_seeds(source: String, source_id: String) -> void:
 		var new_crop := not _is_known(crop)
 		_found_seed_crop_ids.append(crop.crop_id)
 		_found_seed_origins[crop.crop_id] = {"source": source, "source_id": source_id}
-		_items.add(_seed_item_ids.get(crop.crop_id, ""))
+		Inventory.add(_seed_item_ids.get(crop.crop_id, ""))
 		granted = true
 		seed_found.emit(crop, new_crop)
 	if granted:
@@ -525,19 +520,16 @@ func get_save_data() -> Dictionary:
 		"plots": plots,
 	}
 
-## The player's held items for the save's "items" section (M04.2).
-func get_item_save_data() -> Dictionary:
-	return _items.get_save_data()
-
 ## Called by SaveManager.load_game() at boot, before any FarmPlot exists,
-## with the farm section and the items section. An empty farm (no farm in
-## the save yet) keeps the fresh farm and its starting seeds. Unknown crop
-## ids (crop removed from data) are dropped; a crop whose starting seeds
-## were never given (added to the game later) gets them now.
-func apply_save_data(data: Dictionary, items: Dictionary) -> void:
+## after the Inventory has loaded the save's items. An empty farm (no farm
+## in the save yet) is a fresh farm: seeds in hand go back to the starting
+## seeds, as they always did. Unknown crop ids (crop removed from data) are
+## dropped; a crop whose starting seeds were never given (added to the game
+## later) gets them now.
+func apply_save_data(data: Dictionary) -> void:
 	if data.is_empty():
+		_start_fresh_seeds()
 		return
-	_items.apply_save_data(items)
 	_starter_seeds_given.clear()
 	for crop_id: Variant in data.get("starter_seeds", []):
 		if _find_crop(String(crop_id)) and not _starter_seeds_given.has(String(crop_id)):
@@ -580,7 +572,17 @@ func _give_starting_seeds() -> void:
 			continue
 		_starter_seeds_given.append(crop.crop_id)
 		if crop.starting_seeds > 0:
-			_items.add(_seed_item_ids.get(crop.crop_id, ""), crop.starting_seeds)
+			Inventory.add(_seed_item_ids.get(crop.crop_id, ""), crop.starting_seeds)
+
+## A fresh farm's seeds: whatever seed items the save held go, and every
+## crop's starting seeds are given again.
+func _start_fresh_seeds() -> void:
+	for crop in _crops:
+		var held := get_seed_count(crop.crop_id)
+		if held > 0:
+			Inventory.remove(_seed_item_ids.get(crop.crop_id, ""), held)
+	_starter_seeds_given.clear()
+	_give_starting_seeds()
 
 func _find_crop(crop_id: String) -> CropDefinition:
 	for crop in _crops:

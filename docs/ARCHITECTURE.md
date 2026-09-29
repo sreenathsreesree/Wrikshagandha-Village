@@ -55,7 +55,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - Each area owns its NavigationRegion3D.
   - World state is restored by stable id when an area registers, as FarmPlot already does.
 
-## 3. Autoloads (12 — do not add more without a documented reason)
+## 3. Autoloads (13 — do not add more without a documented reason; Inventory added by M04.3, D-19)
 | Autoload | Role |
 |---|---|
 | PointsManager | "Wriksha Points" score (one int); `add_points` / `points_changed` |
@@ -64,6 +64,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | JournalManager | Discovery journal entries (saved) |
 | CollectionManager | Read-only grouping of discoveries for the Collection screen |
 | DailyDiscoveryManager | One target discovery per calendar day (saved) |
+| Inventory | The player's items (M04.3, D-19): one `ItemStore` — seeds, produce (a count per quality), collectibles; saved as `items`; gives a collectible per discovery collected. After DiscoveryManager, before FarmManager and GameState |
 | FarmManager | Farming authority (see §7) |
 | ExplorationManager | Places, landmarks, secret spots, exploration bonuses (**not saved**) |
 | AmbientAudioManager | Audio hooks: 10 `AudioStream` slots, all empty (no audio files yet) |
@@ -145,17 +146,17 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 8. Farming — FarmManager (frozen, decision D-11)
 - **Current:**
-  - `FarmManager` owns: crops loaded from `data/crops/`; the seed and basket *rules* (the counts are items in the player's `ItemStore`, which FarmManager holds — M04.2, O-14); quality rules (soil rotation + care → Plain/Good/Fine); farm milestones and plot unlocks; garden interest for wildlife; seed choice; persistence (`get_save_data`/`apply_save_data`, plot states restored in `register_plot`).
+  - `FarmManager` owns: crops loaded from `data/crops/`; the seed and basket *rules* (the counts are items in the `Inventory` autoload — M04.2, M04.3); quality rules (soil rotation + care → Plain/Good/Fine); farm milestones and plot unlocks; garden interest for wildlife; seed choice; persistence (`get_save_data`/`apply_save_data`, plot states restored in `register_plot`).
   - `FarmPlot` holds one plot's state and memory; `CropDefinition` holds the data; `CropVisual` the presentation.
   - **Seed invariant:** seeds in hand + crops in the ground = starting seeds + exploration seeds found (ever).
 - **Direction:**
-  - Seeds and basket are items since M04.2; the store gets its own owner when a second system holds items (O-14).
+  - Seeds and basket are items since M04.2, held by the `Inventory` autoload since M04.3.
   - Rewards move to the economy (Phase 05).
   - Farming is integrated, then frozen again (Phase 06). Rules, plots and crops stay in FarmManager.
 
 ## 9. Inventory (Phase 04)
-- **Current (M04.1–M04.2):** items are data — `ItemDefinition` (`id`, `display_name`, `category` seed/produce, `crop_id`, `quality_levels`) in `data/items/`, one seed item and one produce item per crop. `ItemStore` (a RefCounted class, not an autoload) counts items by id with **one count per quality level** — quality is an attribute of held produce, not a separate item (D-18). Only `add()`/`remove()`/`apply_save_data()` change counts; `add`/`remove` refuse unknown ids, levels and amounts below 1; `remove()` is all or nothing; counts never go negative; no stack limit; malformed saved entries are dropped with a warning.
-- **Ownership (M04.2):** the player's store is the one source of truth for seeds in hand and the basket. FarmManager holds it (the only system holding items; O-14) and keeps the rules and farm state: crops in the ground, plot states, found-seed origins, `starter_seeds`, grown crops, milestones, counts. Its getters (`get_seed_count`, `get_produce_count/total`, `get_basket`) read the store, so the seed picker, HUD, Journal and Basket screen are unchanged. Discoveries are still *knowledge* (ids), not items.
+- **Current (M04.1–M04.3):** items are data — `ItemDefinition` (`id`, `display_name`, `category` seed/produce/collectible, `crop_id`, `quality_levels`, `discovery_id`) in `data/items/`: one seed item and one produce item per crop, one collectible per discovery (named as the discovery). `ItemStore` (a RefCounted class) counts items by id with **one count per quality level** — quality is an attribute of held produce, not a separate item (D-18). Only `add()`/`remove()`/`apply_save_data()` change counts; `add`/`remove` refuse unknown ids, levels and amounts below 1; `remove()` is all or nothing; counts never go negative; no stack limit; malformed saved entries are dropped with a warning.
+- **Ownership (M04.3, D-19):** the `Inventory` autoload holds the player's one store and forwards its methods; the store is never handed out. Who changes it: FarmManager's seed/basket rules (starting seeds, planting, harvest, found seeds, a fresh farm's seeds) and Inventory's discovery reward — every collection of a discovery, first or repeat, gives one of its collectible (data: the item's `discovery_id`; none = nothing). Anything may read it; only SaveManager saves/loads it. FarmManager keeps the rules and farm state (crops in the ground, plots, found-seed origins, `starter_seeds`, grown crops, milestones, counts); its getters (`get_seed_count`, `get_produce_count/total`, `get_basket`) read the Inventory, so the seed picker, HUD, Journal and Basket screen are unchanged. Collectibles are not shown anywhere yet (M04.4).
 - **Planned:**
   - More item fields only with the item that needs them (glyph for crop-less items, element id, value).
   - One inventory screen; seed picker and basket become filtered views.
@@ -174,8 +175,8 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 
 ## 11. Saving
 - **Current:**
-  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`, `items` (M04.2: `{item_id: [count per quality level]}`, applied by FarmManager together with `farm`).
-  - **Versioning (M04.0, D-17):** `save_version` (currently 2 — M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`.
+  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`, `items` (M04.2: `{item_id: [count per quality level]}`; since M04.3 the `Inventory`'s, loaded before `farm`).
+  - **Versioning (M04.0, D-17):** `save_version` (currently 3 — M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; M04.3 lets `items` hold collectibles; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`; 2 → 3 nothing to rewrite (the bump stops an M04.2 build dropping collectibles).
   - Every section is read with a default, so older saves load and a wrongly typed section only resets itself.
   - Autosave on: new discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed.
   - **Not saved:** exploration progress, time of day, player position.
@@ -209,7 +210,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | `DiscoveryDefinition` | `data/discoveries/*.tres` | DiscoveryDatabase via `ResourceDirectory` (handles `.tres.remap` in exports) |
 | `CropDefinition` | `data/crops/*.tres` | FarmManager via `ResourceDirectory` |
 | `PlaceDefinition` (M03.6) | `data/places/*.tres` | ExplorationManager via `ResourceDirectory`, ordered by `order` |
-| `ItemDefinition` (M04.1) | `data/items/*.tres` | `ItemStore.load_definitions()` via `ResourceDirectory` (FarmManager's store; SaveManager's 1 → 2 step) |
+| `ItemDefinition` (M04.1) | `data/items/*.tres` | `ItemStore.load_definitions()` via `ResourceDirectory` (Inventory, FarmManager's crop→item maps, SaveManager's 1 → 2 step) |
 
 - Adding a crop or discovery is a new `.tres` (plus a visual scene for crops), with no code change.
 - **Places (M03.6, A5):** a `PlaceDefinition` holds `id`, `display_name`, `arrival_text`, `order` (the Journal's list order), `secret`, `garden` (exactly one) and `curiosity_discovery_id`. ExplorationManager derives the "Places" list, names/arrival text, the curiosity pairing, the "every secret found" count and `get_garden_place_id()` (used by FarmManager, HUD and Journal) from them. Adding a place = a `.tres` plus an `ExplorationLandmark` with the same `location_id` in its area (the toolkit checks the one-to-one match, secret flags against landmark kinds, curiosity discoveries and crops' found-seed places). No place id or name may appear in a script. (UI copy that mentions the Meadow as an area — "The Meadow is waking up." — is not place data and is unchanged; area names become data if/when areas get definitions.)
