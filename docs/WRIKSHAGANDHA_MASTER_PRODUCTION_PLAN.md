@@ -1023,7 +1023,7 @@ No large world expansion before this gate passes.
 | M04.2 | `b14b77a` |
 | M04.3 | `a4939ed` |
 | M04.4 | `3e03f0f` |
-| M04.5 | *(pending)* |
+| M04.5 | `cd06772` |
 
 ## 16. Current position
 - **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
