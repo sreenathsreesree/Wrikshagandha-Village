@@ -1260,6 +1260,97 @@ for f, s2 in scripts.items():
 notes.append(f"places: {len(places)} from data/places ({sum(p['secret'] for p in places.values())} secret, garden "
              f"{[k for k, v in places.items() if v['garden']]}), all matched to landmarks")
 
+# ------------------------------------------------------------ items (M04.1)
+# Items are ItemDefinition resources in data/items/ (like crops, discoveries
+# and places), loaded through ResourceDirectory. An ItemStore counts them by
+# id: only add()/remove() change a count, both refuse unknown ids and
+# amounts below 1, remove() is all-or-nothing, so no count goes negative.
+# Nothing holds items yet: seeds and the basket stay in FarmManager (pinned)
+# until M04.2, which also adds the save section (D-17).
+ITEM_GD, STORE = "scripts/items/item_definition.gd", "scripts/items/item_store.gd"
+idf = scripts.get(ITEM_GD, "")
+ITEM_FIELDS = {"id": "String", "display_name": "String", "category": "String", "crop_id": "String"}
+ITEM_CATEGORIES = ["seed", "produce"]
+item_fields = dict((m.group(1), m.group(2)) for m in re.finditer(r"^@export(?:_enum\([^)]*\))? var (\w+): (\w+)", idf, re.M))
+cat_enum = re.search(r"^@export_enum\(([^)]*)\) var category: String = \"seed\"", idf, re.M)
+if not re.search(r"^extends Resource\s*\nclass_name ItemDefinition", idf, re.M) or item_fields != ITEM_FIELDS \
+   or not cat_enum or [c.strip().strip('"') for c in cat_enum.group(1).split(",")] != ITEM_CATEGORIES:
+    err(f"{ITEM_GD}: ItemDefinition is a Resource with exactly {sorted(ITEM_FIELDS)}, category one of {ITEM_CATEGORIES}")
+items = {}
+for f in sorted(glob.glob("data/items/*.tres")):
+    txt = open(f, encoding="utf-8").read()
+    if f'path="res://{ITEM_GD}"' not in txt or 'script_class="ItemDefinition"' not in txt:
+        err(f"{f}: not an ItemDefinition resource"); continue
+    vals = dict(re.findall(r'^(\w+) = (.+)$', txt.split("[resource]", 1)[1], re.M))
+    iid = vals.get("id", '""').strip('"')
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", iid) or os.path.basename(f) != iid + ".tres":
+        err(f"{f}: item id '{iid}' must be lower_snake_case and match the file name")
+    if iid in items:
+        err(f"{f}: duplicate item id '{iid}'")
+    items[iid] = {"name": vals.get("display_name", '""').strip('"'), "category": vals.get("category", '"seed"').strip('"'),
+                  "crop": vals.get("crop_id", '""').strip('"')}
+    if not items[iid]["name"]:
+        err(f"{f}: an item needs a display_name")
+    if items[iid]["category"] not in ITEM_CATEGORIES:
+        err(f"{f}: category '{items[iid]['category']}' is not one of {ITEM_CATEGORIES}")
+    if items[iid]["crop"] not in crop_ids:
+        err(f"{f}: crop_id '{items[iid]['crop']}' is not a crop in data/crops")
+if not items:
+    err("data/items: no item definitions")
+for cid in sorted(crop_ids):
+    for cat in ITEM_CATEGORIES:
+        n = sum(1 for v in items.values() if v["crop"] == cid and v["category"] == cat)
+        if n != 1:
+            err(f"data/items: crop '{cid}' needs exactly one {cat} item (found {n})")
+st = scripts.get(STORE, "")
+st_funcs = {m.group(2): code_only(m.group(0)) for m in
+            re.finditer(r"^(static )?func (\w+)\(.*?(?=^func |^static func |\Z)", st, re.M | re.S)}
+ld = st_funcs.get("load_definitions", "")
+if not re.search(r"^extends RefCounted\s*\nclass_name ItemStore", st, re.M) or 'const ITEMS_PATH := "res://data/items/"' not in st \
+   or not st.count("static func load_definitions(") == 1 or "ResourceDirectory.list_tres_paths(ITEMS_PATH)" not in ld \
+   or "as ItemDefinition" not in ld or 'definition.id == ""' not in ld:
+    err(f"{STORE}: ItemStore (a RefCounted) loads data/items/ through ResourceDirectory, skipping unusable files")
+STORE_API = ["load_definitions", "_init", "is_valid_item", "get_definition", "get_quantity", "has", "add", "remove", "get_quantities"]
+if list(st_funcs) != STORE_API:
+    err(f"{STORE}: the store's API is exactly {STORE_API} (found {list(st_funcs)})")
+QTY_WRITE = re.compile(r"\b_quantities\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(erase|clear|merge|assign|make_read_only|sort)\b)")
+DEF_WRITE = re.compile(r"\b_definitions\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(erase|clear|merge|assign)\b)")
+for fn, body in st_funcs.items():
+    if QTY_WRITE.search(body) and fn not in ("add", "remove"):
+        err(f"{STORE}: {fn}() changes a count — only add() and remove() may")
+    if DEF_WRITE.search(body) and fn != "_init":
+        err(f"{STORE}: {fn}() changes the known items — only _init() may")
+fields_code = code_only(st.split("static func", 1)[0])
+if re.findall(r"^var (\w+)", fields_code, re.M) != ["_definitions", "_quantities"]:
+    err(f"{STORE}: the store's state is exactly _definitions and _quantities")
+add_b, rem_b = st_funcs.get("add", ""), st_funcs.get("remove", "")
+if not re.search(r"if not is_valid_item\(item_id\) or amount < 1:\s*push_warning\([^)]*\)\s*return false\s*"
+                 r"_quantities\[item_id\] = get_quantity\(item_id\) \+ amount\s*return true\s*$", add_b):
+    err(f"{STORE}: add() refuses an unknown id or an amount below 1, otherwise adds exactly that amount (no cap drops items)")
+if not re.search(r"if not is_valid_item\(item_id\) or amount < 1:\s*push_warning\([^)]*\)\s*return false\s*"
+                 r"if get_quantity\(item_id\) < amount:\s*return false\s*var left := get_quantity\(item_id\) - amount\s*"
+                 r"if left == 0:\s*_quantities\.erase\(item_id\)\s*else:\s*_quantities\[item_id\] = left\s*return true\s*$", rem_b):
+    err(f"{STORE}: remove() refuses an unknown id, an amount below 1 or more than is held (all or nothing), never going below 0")
+if "return int(_quantities.get(item_id, 0))" not in st_funcs.get("get_quantity", "") \
+   or "return amount >= 1 and get_quantity(item_id) >= amount" not in st_funcs.get("has", "") \
+   or "return _definitions.has(item_id)" not in st_funcs.get("is_valid_item", "") \
+   or "return _quantities.duplicate()" not in st_funcs.get("get_quantities", ""):
+    err(f"{STORE}: counts are read through get_quantity()/has(); is_valid_item() = a known definition; get_quantities() returns a copy")
+if not re.search(r"_definitions\.has\(definition\.id\)", st_funcs.get("_init", "")):
+    err(f"{STORE}: _init() ignores a duplicate item id")
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    if f != STORE and re.search(r"\._quantities\b|\._definitions\b|\"_quantities\"|\"_definitions\"", code):
+        err(f"{f}: reaches into an ItemStore's internals — use its methods")
+    if f != STORE and "res://data/items" in code:
+        err(f"{f}: loads item data directly — ItemStore.load_definitions() is the one loader")
+    for lit in re.findall(r'"([^"]+)"', code):
+        if lit in items or lit in {v["name"] for v in items.values()}:
+            err(f"{f}: item data '{lit}' hard-coded in a script — it belongs in data/items/")
+notes.append(f"items: {len(items)} from data/items ({sum(v['category'] == 'seed' for v in items.values())} seed, "
+             f"{sum(v['category'] == 'produce' for v in items.values())} produce, one each per crop); ItemStore API {len(STORE_API)} functions")
+
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
 # carries save_version; a load validates it (absent = 0, malformed rejected,

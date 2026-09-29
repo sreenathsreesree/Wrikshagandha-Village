@@ -168,7 +168,7 @@ When a milestone reaches a state that needs Godot or Android testing, implementa
 |---|---|---|
 | A1 | Player/camera live inside `Meadow.tscn`; interiors and area loading impossible; FarmManager assumes plots never unload | Resolved in code: ownership M03.1, area loading M03.2, plot unloading M03.3 (runtime test pending) |
 | A2 | `Interactable` base is discovery-specific | M02.1 (in code; runtime test pending) |
-| A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 |
+| A3 | FarmManager (663 lines) holds inventory-like and reward responsibilities | Phases 04–06 (M04.1: item data + store exist; M04.2 moves seeds/basket) |
 | A4 | Repeat-award problems: exploration bonuses re-award each launch (progress unsaved); repeat discoveries pay full points without limit | Phase 05 (P-02) |
 | A5 | Hard-coded world data: place list, garden place id, numeric physics masks (layers are now named) | **Resolved in code:** physics layers M01.1; place list, garden place id, curiosity pairs and secret count M03.6 (`data/places/`) |
 | A6 | Unused interaction path (`interact_requested`) | **Resolved in M02.5** (removed; guarded by the toolkit) |
@@ -436,6 +436,7 @@ Goal: comfortable, reliable movement in both modes on a real phone.
     - (c) set `save_version` to `99`: launch → a fresh game, a warning "newer than this build" in the output; play, plant, pause and quit → the file is byte-for-byte unchanged (still 99);
     - (d) set `save_version` to `"abc"`, `-1` or `1.5`: launch → a fresh game and a "malformed save_version" warning (the file is replaced on the next autosave, as a corrupted file is today);
     - (e) set `"farm": []` (or `"points": "x"`): launch → everything else loads; that section starts empty; a "wrong type" warning; no script error.
+  - **M04.1 items** (editor / any device): the project opens in Godot 4.7.2 with no errors for `scripts/items/*.gd` or `data/items/*.tres`; each of the 8 item files opens in the Inspector showing its id, name, category and crop; the farm loop is unchanged (seed counts on the picker, one seed back per harvest, basket rows and totals, found seeds, the save/relaunch of M04.0 (a)) — nothing uses items yet.
 - **Done when:** the developer reports results; the default mode is recorded in `DESIGN_DECISIONS.md`.
 
 ---
@@ -732,8 +733,8 @@ Goal: one universal item model.
 | Milestone | Objective | Done when | Runtime test | Status |
 |---|---|---|---|---|
 | M04.0 | Top-level save version + migration hook (P-01 → D-17) | Old saves load; version recorded | Relaunch with an old save | `[~]` |
-| M04.1 | Item definitions (id, name, category, stackable, glyph, element id, value) + item store | Items stored and saved | — | `[ ]` |
-| M04.2 | Seeds and harvests become items; migrate from FarmManager (A3) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[ ]` |
+| M04.1 | Item definitions + item store (fields limited to what today's items need; saving moves to M04.2, when the store first holds items) | Items defined as data; store rules verified | Project opens; farm loop unchanged | `[~]` |
+| M04.2 | Seeds and harvests become items; migrate from FarmManager (A3); the store's save section + migration 1 → 2 (D-17); decide O-13 (basket quality) | Farming loop unchanged; seed invariant holds; old farm saves migrate | Full farm loop | `[ ]` |
 | M04.3 | Discoveries and collectibles can grant items | Collect → item | Tap a collectible | `[ ]` |
 | M04.4 | Inventory UI; seed picker and basket become filtered views | One inventory screen | Android: readability | `[ ]` |
 
@@ -752,6 +753,25 @@ Goal: one universal item model.
   - `sim_save_versioning.py` (a port using Godot's float-only JSON numbers and typed system applies): current save round-trips identically (farm plots included); a pre-M04.0 save loads identically and is stamped on its next save; newer saves are neither loaded nor overwritten; malformed versions/files ignored; wrongly typed sections defaulted without affecting the others; migration dispatch in order, a missing step rejects; 3,000 random/garbage saves never reach a system with a wrong type, and loading is deterministic.
   - Mutation-tested: 42 GDScript mutations (missing/wrong version, newer save accepted/applied/overwritten, malformed version/file accepted, migration skipped/missing/unknown/unstamped/dropping `farm`, validation removed or bypassed, M03.3 `farm` section dropped or retyped, second file writers, reaching into SaveManager) all caught by `check_project.py` with the SaveManager pin removed; 7 model mutations caught by the simulation; one allowed control (another script calling `save_game()`) correctly passes.
 - **Runtime:** no Godot executable here — static and model only. PLAYTEST REQUIRED (M01.6 checklist, "M04.0 save versioning").
+- **Commit:** §15.
+
+**M04.1 — Item definitions + item store** `[~]` Implemented and verified in code — runtime check pending (M01.6 checklist, "M04.1 items")
+- **Objective:** the data/runtime foundation of the inventory: items as data, one small store with safe counts. No UI, no gameplay change, no save change.
+- **Audit:**
+  - Data layer: `CropDefinition`, `DiscoveryDefinition`, `PlaceDefinition` — `.tres` in `data/<kind>/`, loaded through `ResourceDirectory` (export-safe); reused as the pattern.
+  - Item-like state today lives only in FarmManager: `_seeds` (crop id → count: starting seeds, −1 per planting — refused at 0, +1 per harvest, +1 per found seed once ever), `_produce` (the basket: crop id → [plain, good, fine]), saved as `farm.seeds` / `farm.basket`; `found_seeds` / `grown` are farm *progress*, not holdings. Read by HUD (seed left after planting, basket button), SeedPicker (counts), BasketScreen and Journal (seed and basket summaries) — all through FarmManager getters; no script writes these counts but FarmManager.
+  - Discoveries are knowledge (ids, Journal), not items; PointsManager is a score, not an item. No inventory, no item ids in any script, no item dictionaries elsewhere.
+  - Farm state vs player holdings: seeds in hand and the basket are the player's holdings (move to the store in M04.2); crops in the ground, plot states, found-seed origins, grown crops, milestones and counts stay farm state in FarmManager.
+- **Design (fields justified by today's items only):** `ItemDefinition` = `id` (lower_snake = file name), `display_name`, `category` (`seed` / `produce` — the two kinds of item that exist), `crop_id` (M04.2 maps crops to their seed and produce items). Not added: glyph, colour and value (a crop's items read them from the `CropDefinition`), element id (no element system yet, Phase 11), coin value (Phase 05), stackable / max stack (no current design caps anything; the seed invariant already bounds seeds). 8 files: one seed and one produce item per crop (`<crop>_seed`, `<crop>`).
+- **Item Store:** `ItemStore` (RefCounted, not an autoload — no `project.godot` change): `load_definitions()` (data/items via ResourceDirectory), `_init(definitions)`, `is_valid_item`, `get_definition`, `get_quantity`, `has(id, amount)`, `add(id, amount)`, `remove(id, amount)` (all or nothing), `get_quantities()` (a copy). Only `add`/`remove` change counts; both refuse unknown ids and amounts below 1; counts never go negative; an emptied item is removed.
+- **Not changed:** FarmManager (still owns seeds and basket), SaveManager (no new section, `SAVE_VERSION` stays 1 — nothing holds items yet, so there is nothing to save; M04.2 adds the section, the bump and the 1 → 2 migration together), all UI, scenes, Player, InputManager, camera, Main, FarmPlot, DiscoveryManager, GameState, `project.godot`, export settings.
+- **Files:** new `scripts/items/item_definition.gd`, `scripts/items/item_store.gd`, `data/items/*.tres` (8), `tools/sims/sim_items.py`; `tools/check_project.py`; docs.
+- **Verification (in code):**
+  - `tools/run_all.sh` passes.
+  - New checks: ItemDefinition's exact fields and categories; every item file valid (ItemDefinition, lower_snake id = file name, display name, known category, existing crop), exactly one seed and one produce item per crop; the store loads data/items through ResourceDirectory and skips unusable files; its API and state are exactly as above; only `add`/`remove` write counts and only `_init` writes definitions; the guard and write lines of `add`/`remove` (no cap, all or nothing, no negatives); reads and the copy; no other script reaches into a store, loads item data or spells an item id or name. Existing: FarmManager / SaveManager / GameState / FarmPlot pins, the autoload list, the save-section contracts.
+  - `sim_items.py`: add, remove, insufficient (nothing taken), zero/negative amounts, unknown ids, no stack limit, copies, 1,000 repeated pairs, 20,000 random operations against a reference ledger; parity: FarmManager's seed rules replayed through the crops' seed items give the same counts and keep the seed invariant over 3,000 random farm sessions, and basket totals match the produce items.
+  - Mutation-tested: 44 code/data/config mutations caught by `check_project.py` (two with the FarmManager/SaveManager pins removed, so the item rules alone catch them) and 6 model mutations caught by the simulation.
+- **Runtime:** no Godot executable here — static and model only (M01.6 checklist, "M04.1 items").
 - **Commit:** §15.
 
 ### PHASE 05 — ECONOMY
@@ -905,8 +925,9 @@ No large world expansion before this gate passes.
 | M03.5 | `44e3bb5` |
 | M03.6 | `b76e49c` |
 | M04.0 | `c8bca2a` |
+| M04.1 | *(pending)* |
 
 ## 16. Current position
-- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
-- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's and M04.0's runtime tests). Next in code: **M04.1 — item definitions + item store**, only on the developer's explicit instruction.
+- **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) and M04.1 (item definitions + item store, not yet used by gameplay) implemented (`[~]`, runtime test pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
+- **Next milestone:** **M01.6 — Android movement playtest** (PLAYTEST REQUIRED; include M02.1's, M02.3's, M02.4's, M03.1's, M03.2/M03.3's, M03.4's, M03.5's, M03.6's, M04.0's and M04.1's runtime tests). Next in code: **M04.2 — seeds and harvests become items** (FarmManager → ItemStore, save section + migration 1 → 2, O-13), only on the developer's explicit instruction.
 - **First runtime gate:** M01.6 — Android movement playtest.

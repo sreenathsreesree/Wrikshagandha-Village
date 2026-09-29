@@ -153,11 +153,12 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - Rewards move to the economy (Phase 05).
   - Farming is integrated, then frozen again (Phase 06). Rules, plots and crops stay in FarmManager.
 
-## 9. Inventory (direction only — Phase 04)
-- There is **no inventory** today. Seeds and basket are FarmManager dictionaries; discoveries are *knowledge* (ids), not items.
+## 9. Inventory (Phase 04)
+- **Current (M04.1):** items are data — `ItemDefinition` (`id`, `display_name`, `category` seed/produce, `crop_id`) in `data/items/`, one seed and one produce item per crop. `ItemStore` (a RefCounted class, not an autoload) counts items by id: only `add()`/`remove()` change a count, both refuse unknown ids and amounts below 1, `remove()` is all or nothing, counts never go negative, no stack limit. **Nothing holds items yet:** seeds and the basket are still FarmManager dictionaries (saved as `farm.seeds` / `farm.basket`); discoveries are *knowledge* (ids), not items.
+- **Farm state vs holdings:** seeds in hand and the basket are holdings (→ store, M04.2); crops in the ground, plot states, found-seed origins, grown crops, milestones and counts are farm state (stay in FarmManager).
 - **Planned:**
-  - `ItemDefinition` resources (id, name, category, stackable, glyph, element id, value).
-  - One item store with stacks and metadata (e.g. quality).
+  - M04.2: FarmManager's seeds/basket move into a store; its save section, `SAVE_VERSION` 2 and the 1 → 2 migration (D-17); basket quality (O-13).
+  - More item fields only with the item that needs them (glyph for crop-less items, element id, value).
   - One inventory screen; seed picker and basket become filtered views.
   - Save migration for the old `farm.seeds` / `farm.basket` keys.
 
@@ -209,10 +210,11 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | `DiscoveryDefinition` | `data/discoveries/*.tres` | DiscoveryDatabase via `ResourceDirectory` (handles `.tres.remap` in exports) |
 | `CropDefinition` | `data/crops/*.tres` | FarmManager via `ResourceDirectory` |
 | `PlaceDefinition` (M03.6) | `data/places/*.tres` | ExplorationManager via `ResourceDirectory`, ordered by `order` |
+| `ItemDefinition` (M04.1) | `data/items/*.tres` | `ItemStore.load_definitions()` via `ResourceDirectory` (not used by gameplay until M04.2) |
 
 - Adding a crop or discovery is a new `.tres` (plus a visual scene for crops), with no code change.
 - **Places (M03.6, A5):** a `PlaceDefinition` holds `id`, `display_name`, `arrival_text`, `order` (the Journal's list order), `secret`, `garden` (exactly one) and `curiosity_discovery_id`. ExplorationManager derives the "Places" list, names/arrival text, the curiosity pairing, the "every secret found" count and `get_garden_place_id()` (used by FarmManager, HUD and Journal) from them. Adding a place = a `.tres` plus an `ExplorationLandmark` with the same `location_id` in its area (the toolkit checks the one-to-one match, secret flags against landmark kinds, curiosity discoveries and crops' found-seed places). No place id or name may appear in a script. (UI copy that mentions the Meadow as an area — "The Meadow is waking up." — is not place data and is unchanged; area names become data if/when areas get definitions.)
-- **Direction:** `ItemDefinition` (Phase 04), NPC definitions (Phase 08), element definitions (Phase 11), Rishi definitions (Phase 12, **blocked on design**).
+- **Direction:** NPC definitions (Phase 08), element definitions (Phase 11), Rishi definitions (Phase 12, **blocked on design**).
 
 ## 15. Living world
 - **Current:**
