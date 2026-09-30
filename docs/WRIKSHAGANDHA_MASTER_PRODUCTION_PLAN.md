@@ -1185,7 +1185,7 @@ No large world expansion before this gate passes.
 | M05.5 | `c57411a` |
 | M05.6 | `59194be` |
 | M06.2 | `cd8a767` |
-| M06.3 | (pending) |
+| M06.3 | `0a8ef72` |
 
 ## 16. Current position
 - **Current phase:** 04 — Inventory. M04.0 (save versioning, P-01 → D-17) M04.1 (item definitions + item store), M04.2 (seeds and basket held as items; save v2) M04.3 (Inventory autoload, collectibles from discoveries; save v3) M04.4 (seed picker and basket as filtered views) and M04.5 (Inventory screen) implemented (`[~]`, runtime test pending); Phase 04 is complete in code. Phase 05: M05.1 (Wallet + ledger, save v4) M05.2 (repeat-reward protection, save v5) M05.3 (reward rules as data, once-ever discoveries) M05.4 (economy configuration) M05.5 (points and coins independent, D-24) and M05.6 (economy simulation, model only) implemented (`[~]`); Phase 05 is complete in code. Phase 06: M06.2 (selling produce for coins, O-01 → D-25; `Market` autoload) implemented (`[~]`; desktop runtime verified on Godot 4.7.2, Android pending); M06.3 (UI surfaces and HUD, D-26) implemented and verified statically (`[~]`, runtime layout check pending). Phase 03: M03.1–M03.6 implemented (`[~]`; complete in code; the area loader is still infrastructure only — no player-facing transition until M08.1). Phase 02: M02.1–M02.6 implemented (`[~]`; M02.6 is an architecture proof). Phase 01: M01.1–M01.5 implemented (`[~]`; all await the M01.6 playtest). Phase 00's M00.5 still awaits the Godot 4.7.2 open check.
