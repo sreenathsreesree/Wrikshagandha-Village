@@ -29,7 +29,17 @@ ONCE_EVER = {d for d, r, _ in DISC if r <= 0}
 assert ONCE_EVER == {"ancient_seed"}, f"the once-ever discoveries are exactly the Ancient Seed today ({ONCE_EVER})"
 EX, FM, DD = _src("scripts", "autoload", "exploration_manager.gd"), _src("scripts", "autoload", "farm_manager.gd"), _src("scripts", "autoload", "daily_discovery_manager.gd")
 PAID = set(re.findall(r'_rewards\.points\("(\w+)"\)', EX)) | set(re.findall(r'RewardRules\.new\(\)\.points\("(\w+)"\)', DD))
-PAID |= {re.search(rf'^const {c} := "(\w+)"', FM, re.M).group(1) for c in re.findall(r"_rewards\.points\(([A-Z_]+)\)", FM)}
+def _farm_milestones(fm):  # M06.4: get_milestones()'s registered ids (constants + "grown:<starter crop>")
+    gm = re.search(r"^func get_milestones\(.*?(?=^func )", fm, re.M | re.S).group(0)
+    ids = {re.search(rf'^const {c} := "(\w+)"', fm, re.M).group(1) for c in re.findall(r"_milestone_row\(([A-Z_]+),", gm)}
+    if "_milestone_row(CROP_GROWN_PREFIX + crop.crop_id," in gm:
+        prefix = re.search(r'^const CROP_GROWN_PREFIX := "([^"]*)"', fm, re.M).group(1)
+        for f in glob.glob(os.path.join(REPO, "data", "crops", "*.tres")):
+            t = open(f, encoding="utf-8").read(); st = re.search(r"^starting_seeds = (\d+)", t, re.M)
+            if int(st.group(1) if st else 1) > 0: ids.add(prefix + re.search(r'crop_id = "([^"]+)"', t).group(1))
+    assert "var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0" in fm, "farm milestones pay by id in _reach()"
+    return ids
+PAID |= _farm_milestones(FM) & {os.path.basename(f)[:-5] for f in glob.glob(os.path.join(REPO, "data", "rewards", "*.tres"))}
 DM, SP = _funcs(_src("scripts", "autoload", "discovery_manager.gd")), _funcs(_src("scripts", "interactables", "discovery_spawn_point.gd"))
 assert "definition.respawn_seconds <= 0.0 and discovered_ids.has(id)" in DM["is_claimed"] and "if is_claimed(id):" in DM["discover"]
 assert "if DiscoveryManager.is_claimed(instance.discovery_id):" in SP["_spawn"]

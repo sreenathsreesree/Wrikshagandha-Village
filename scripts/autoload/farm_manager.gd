@@ -108,7 +108,8 @@ const CROP_GROWN_PREFIX := "grown:"
 const NUMBER_WORDS := ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
 
 var _crops: Array[CropDefinition] = []
-## Milestone bonus amounts (M05.3): reward data named by the milestone id.
+## Milestone rewards (M05.3, M06.4): reward data named by the milestone id,
+## read only by _reach().
 var _rewards: RewardRules
 ## crop_id -> that crop's seed / produce item id (from data/items).
 var _seed_item_ids: Dictionary = {}
@@ -393,7 +394,7 @@ func choose_seed(crop: CropDefinition) -> bool:
 	_planted_count += 1
 	seed_choice_closed.emit()
 	seeds_changed.emit()
-	var announced := _reach(FIRST_SEED, "The garden has its first seed.", 0)
+	var announced := _reach(FIRST_SEED, "The garden has its first seed.")
 	crop_planted.emit(crop, announced, soil)
 	return true
 
@@ -411,10 +412,10 @@ func notify_crop_ready(crop_definition: CropDefinition) -> void:
 	var grown_line := crop_definition.grown_note
 	if grown_line == "":
 		grown_line = "%s has grown in the garden." % crop_definition.display_name
-	_reach(CROP_GROWN_PREFIX + crop_definition.crop_id, grown_line, 0)
+	_reach(CROP_GROWN_PREFIX + crop_definition.crop_id, grown_line)
 	if _all_starter_crops_grown():
 		var count := _starter_crops().size()
-		_reach(ALL_STARTER_CROPS, "%s different crops have grown here." % _number_word(count), _rewards.points(ALL_STARTER_CROPS))
+		_reach(ALL_STARTER_CROPS, "%s different crops have grown here." % _number_word(count))
 
 ## A harvest paid out: exactly one seed of that crop comes back, so the
 ## loop renews itself without an economy, and the produce goes into the
@@ -430,14 +431,14 @@ func notify_crop_harvested(plot_id: String, crop_definition: CropDefinition, poi
 	seeds_changed.emit()
 	produce_changed.emit()
 	crop_harvested.emit(crop_definition, points_awarded, quality, care)
-	_reach(FIRST_HARVEST, "Something you planted has finally come home.", _rewards.points(FIRST_HARVEST))
+	_reach(FIRST_HARVEST, "Something you planted has finally come home.")
 	if quality >= QUALITY_FINE:
-		_reach(FIRST_FINE, "A rotated bed and a careful hand — this one grew fine.", 0)
+		_reach(FIRST_FINE, "A rotated bed and a careful hand — this one grew fine.")
 	if _is_starter_garden_complete():
-		_reach(GARDEN_COMPLETE, "The starter garden feels complete.", _rewards.points(GARDEN_COMPLETE))
+		_reach(GARDEN_COMPLETE, "The starter garden feels complete.")
 	if _is_garden_in_bloom():
 		var garden_name := ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())
-		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The %s is in bloom." % garden_name, _rewards.points(GARDEN_IN_BLOOM)):
+		if _reach(GARDEN_IN_BLOOM, "Every bed has given something back. The %s is in bloom." % garden_name):
 			_update_garden_interest()
 
 # --- Exploration --------------------------------------------------------------
@@ -591,12 +592,19 @@ func _find_crop(crop_id: String) -> CropDefinition:
 
 # --- Internals ----------------------------------------------------------------
 
-## Records a milestone once and announces it. Returns whether it was newly
-## reached (so callers can avoid a second card for the same moment).
-func _reach(milestone_id: String, message: String, bonus_points: int) -> bool:
+## The one path every farm milestone goes through (M06.4, D-27): records it
+## once ever, pays its reward, opens what waits on it, announces it.
+## Returns whether it was newly reached (so callers can avoid a second card
+## for the same moment). The reward is looked up here, by the milestone's
+## id, in the reward data (data/rewards/<id>.tres) — a milestone with no
+## rule pays nothing, and no caller ever chooses an amount. The id is the
+## hook: plots (unlock_on_milestone), MilestoneReveals (milestone_id), the
+## reward data and the Journal (get_milestones) all name the same ids.
+func _reach(milestone_id: String, message: String) -> bool:
 	if _milestones_reached.has(milestone_id):
 		return false
 	_milestones_reached.append(milestone_id)
+	var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0
 	if bonus_points > 0:
 		PointsManager.add_points(bonus_points)
 	if _unlock_plots_for(milestone_id) > 0:

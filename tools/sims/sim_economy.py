@@ -56,8 +56,18 @@ PRODUCE = {v["crop_id"]: i for i, v in ITEMS.items() if v.get("category") == "pr
 SELL = {i: int(v.get("sell_value", "0")) for i, v in ITEMS.items()}
 PERCENTS = [int(x) for x in re.search(r"^quality_percents = Array\[int\]\(\[([^\]]*)\]\)", _src("data", "market", "sell_rules.tres"), re.M).group(1).split(",")]
 def unit_price(item, q): return (SELL[item] * PERCENTS[q] + 50) // 100 if ITEMS[item].get("category") == "produce" and SELL[item] >= 1 else 0
-MILESTONE_RULES = {re.search(rf'^const {c} := "(\w+)"', _src("scripts", "autoload", "farm_manager.gd"), re.M).group(1)
-                   for c in re.findall(r"_rewards\.points\(([A-Z_]+)\)", SCRIPTS[FM])}
+def _farm_milestones(fm):  # M06.4: get_milestones()'s registered ids (constants + "grown:<starter crop>")
+    gm = re.search(r"^func get_milestones\(.*?(?=^func )", fm, re.M | re.S).group(0)
+    ids = {re.search(rf'^const {c} := "(\w+)"', fm, re.M).group(1) for c in re.findall(r"_milestone_row\(([A-Z_]+),", gm)}
+    if "_milestone_row(CROP_GROWN_PREFIX + crop.crop_id," in gm:
+        prefix = re.search(r'^const CROP_GROWN_PREFIX := "([^"]*)"', fm, re.M).group(1)
+        for f in glob.glob(os.path.join(REPO, "data", "crops", "*.tres")):
+            t = open(f, encoding="utf-8").read(); st = re.search(r"^starting_seeds = (\d+)", t, re.M)
+            if int(st.group(1) if st else 1) > 0: ids.add(prefix + re.search(r'crop_id = "([^"]+)"', t).group(1))
+    assert "var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0" in fm, "farm milestones pay by id in _reach()"
+    return ids
+FARM_MILESTONES = _farm_milestones(_src("scripts", "autoload", "farm_manager.gd"))
+MILESTONE_RULES = FARM_MILESTONES & set(RULES)       # one reward path (M06.4): a registered milestone pays its rule, if any
 
 # ---------------------------------------------------------------- 1. the pay sites (static)
 SITES = {}

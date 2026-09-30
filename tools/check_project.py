@@ -942,11 +942,12 @@ PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/inpu
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
           # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold.)
-          "scripts/autoload/farm_manager.gd": "794080fbd0bfa2f1", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
           "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "d518671dbcca5ee7",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
-          #  farm_manager.gd by M05.3: milestone bonuses from reward data.)
+          #  farm_manager.gd by M05.3: milestone bonuses from reward data;
+          #  and by M06.4: every milestone reward looked up by id in _reach(), one reward path.)
           "scripts/interactables/discovery_spawn_point.gd": "1956d72184b1d590",
           "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
           "scripts/world_simulation/time_of_day.gd": "4faf06b101abc1ef"}
@@ -1808,14 +1809,31 @@ if not rules or len(set(thr_values)) != len(thr_values):
     err(f"data/rewards: reward rules exist and no two share a threshold")
 rs_src = scripts.get(RRS, "")
 rsf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", rs_src, re.M | re.S)}
-if not re.search(r"^extends RefCounted\s*\nclass_name RewardRules", rs_src, re.M) or list(rsf) != ["_init", "points", "thresholds"] \
+if not re.search(r"^extends RefCounted\s*\nclass_name RewardRules", rs_src, re.M) or list(rsf) != ["_init", "has", "points", "thresholds"] \
+   or not re.search(r"func has\(rule_id: String\) -> bool:\s*return _rules\.has\(rule_id\)\s*$", rsf.get("has", "")) \
    or 'const REWARDS_PATH := "res://data/rewards/"' not in rs_src or "ResourceDirectory.list_tres_paths(REWARDS_PATH)" not in rsf.get("_init", "") \
    or 'rule == null or rule.id == "" or rule.points < 0 or rule.threshold < 0 or _rules.has(rule.id)' not in rsf.get("_init", "") \
    or re.findall(r"^var (\w+)", code_only(rs_src), re.M) != ["_rules"] \
    or any(re.search(r"\b_rules\s*(\[[^\]]*\]\s*=[^=]|=[^=]|\.(erase|clear|merge)\b)", b) for fn, b in rsf.items() if fn != "_init") \
    or not re.search(r"if rule == null:\s*push_warning\(.*?\)\n\s*return 0\s*return rule\.points", rsf.get("points", "")) \
    or not re.search(r"if rule\.threshold > 0:\s*result\[rule\.threshold\] = rule\.points", rsf.get("thresholds", "")):
-    err(f"{RRS}: RewardRules (a RefCounted) loads data/rewards/ via ResourceDirectory, read-only, points(id) (0 + warning if unknown), thresholds()")
+    err(f"{RRS}: RewardRules (a RefCounted) loads data/rewards/ via ResourceDirectory, read-only, has(id), points(id) (0 + warning if unknown), thresholds()")
+# Farm milestones (M06.4, D-27): the registered milestone ids — FarmManager.get_milestones()'s rows: its
+# constants, plus "grown:<crop>" for every starter crop (starting_seeds > 0) — are the progression hooks.
+fm_src_m = scripts.get("scripts/autoload/farm_manager.gd", "")
+starter_crops = set()
+for f in glob.glob("data/crops/*.tres"):
+    t = open(f, encoding="utf-8").read()
+    cid, st = re.search(r'crop_id = "([^"]+)"', t), re.search(r"^starting_seeds = (\d+)", t, re.M)
+    if cid and int(st.group(1) if st else 1) > 0:
+        starter_crops.add(cid.group(1))
+def fm_const(name):
+    m = re.search(rf'^const {name} := "([^"]*)"', fm_src_m, re.M)
+    return m.group(1) if m else None
+gm = code_only(func_body(fm_src_m, "get_milestones") or "")
+MILESTONE_CONSTS = re.findall(r"_milestone_row\(([A-Z_]+),", gm)
+FARM_MILESTONES = {fm_const(c) for c in MILESTONE_CONSTS} | ({fm_const("CROP_GROWN_PREFIX") + c for c in starter_crops}
+                                                              if "_milestone_row(CROP_GROWN_PREFIX + crop.crop_id," in gm else set())
 used = set()
 for f, s2 in scripts.items():
     if f.startswith("tools/"): continue
@@ -1832,6 +1850,7 @@ for f, s2 in scripts.items():
         err(f"{f}: a literal points amount — rewards come from data")
     if re.search(r"\.BONUS_POINTS\b", code):
         err(f"{f}: reads a reward constant — use the owner's getter")
+used |= FARM_MILESTONES & set(rules)            # a farm milestone pays its rule through _reach() (M06.4)
 for rid in sorted(used - set(rules)):
     err(f"a reward '{rid}' is paid in code but has no data/rewards/{rid}.tres")
 unused = {r for r, (_, t) in rules.items() if not t} - used
@@ -2085,6 +2104,53 @@ if bs_code.count("Market.sell(") != 1 or "Market.sell(" not in bsf.get("_on_conf
     err(f"{BS}: selling is confirm-first — a quantity stepper within 1..held, the Market's price x quantity shown, one Market.sell() on Confirm")
 notes.append(f"selling: Market.sell() the one coin source (produce only, {sum(1 for v in items.values() if v['category'] == 'produce')} items); "
              f"quality percents from {SR_TRES}; round half up per unit; GameState saves on produce_sold")
+
+# ------------------------------------------------------------ farm milestones through progression hooks (M06.4, D-27)
+# One reward path: every farm milestone goes through FarmManager._reach(id, message), which records it
+# once ever, pays the reward the reward data names for that id (no rule = nothing), opens the plots
+# waiting on it and announces it — in that order. No caller chooses an amount. The ids are the hooks:
+# plots' unlock_on_milestone, MilestoneReveals' milestone_id, farm reward rules and the Journal's
+# get_milestones() all name registered milestones. Milestones are reached only from game events.
+fmm = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", fm_src_m, re.M | re.S)}
+REACH_BODY = ["if _milestones_reached.has(milestone_id):", "return false", "_milestones_reached.append(milestone_id)",
+              "var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0",
+              "if bonus_points > 0:", "PointsManager.add_points(bonus_points)",
+              "if _unlock_plots_for(milestone_id) > 0:", 'message += " There\'s room to grow a little more."',
+              "milestone_reached.emit(milestone_id, message, bonus_points)", "return true"]
+reach_lines = [l.strip() for l in fmm.get("_reach", "").splitlines()[1:] if l.strip()]
+if reach_lines != REACH_BODY or not fmm.get("_reach", "").startswith("func _reach(milestone_id: String, message: String) -> bool:"):
+    err(f"{FM}: _reach(id, message) is the one milestone path — once ever, the id's reward from reward data, unlocks, then the announcement")
+fm_code_m = code_only(fm_src_m)
+if fm_code_m.count("milestone_reached.emit(") != 1 or re.findall(r"\b_rewards\.\w+", fm_code_m) != ["_rewards.points", "_rewards.has"] \
+   or "_rewards = RewardRules.new()" not in fmm.get("_ready", "") or "PointsManager" in fm_code_m.replace(fmm.get("_reach", ""), ""):
+    err(f"{FM}: milestone rewards are read only in _reach(); nothing else in FarmManager pays or announces a milestone")
+reach_calls = re.findall(r"\b_reach\((.*)\)", fm_code_m.replace(fmm.get("_reach", ""), ""))
+callers = sorted(fn for fn, body in fmm.items() if fn != "_reach" and "_reach(" in body)
+if callers != ["choose_seed", "notify_crop_harvested", "notify_crop_ready"]:
+    err(f"{FM}: milestones are reached only from game events — planting, ripening, harvesting (found in {callers})")
+for call in reach_calls:
+    first = call.split(",")[0].strip()
+    depth = 0; commas = 0
+    for ch in call:
+        depth += ch in "([{"; depth -= ch in ")]}"
+        commas += ch == "," and depth == 0
+    if commas != 1:
+        err(f"{FM}: _reach({call}) — a milestone call names the id and the message only; the reward comes from data")
+    if not (first == "CROP_GROWN_PREFIX + crop_definition.crop_id" or (re.fullmatch(r"[A-Z_]+", first) and first in MILESTONE_CONSTS)):
+        err(f"{FM}: _reach({first}, …) — every milestone reached is registered in get_milestones()")
+reached_consts = {c.split(",")[0].strip() for c in reach_calls}
+if set(MILESTONE_CONSTS) - reached_consts or "CROP_GROWN_PREFIX + crop_definition.crop_id" not in reached_consts:
+    err(f"{FM}: every registered milestone can be reached (unreached: {sorted(set(MILESTONE_CONSTS) - reached_consts)})")
+if len(FARM_MILESTONES) != len(MILESTONE_CONSTS) + len(starter_crops) or None in FARM_MILESTONES:
+    err(f"{FM}: get_milestones() lists each milestone once, with its id constant")
+for scene in glob.glob("scenes/**/*.tscn", recursive=True):
+    for hook in re.findall(r'^(?:unlock_on_milestone|milestone_id) = "([^"]*)"$', open(scene, encoding="utf-8").read(), re.M):
+        if hook not in FARM_MILESTONES:
+            err(f"{scene}: a milestone hook names '{hook}', which is not a registered farm milestone {sorted(FARM_MILESTONES)}")
+rule_like = {r for r in rules if r.startswith(("first_", "garden_", "all_starter", "grown"))}
+if rule_like - FARM_MILESTONES:
+    err(f"data/rewards: farm-milestone rules {sorted(rule_like - FARM_MILESTONES)} name no registered milestone")
+notes.append(f"farm milestones: {len(FARM_MILESTONES)} registered, {len(FARM_MILESTONES & set(rules))} rewarded by data; one path (_reach); hooks checked")
 
 # ------------------------------------------------------------ UI surfaces and HUD (M06.3, D-26)
 # One shared theme (scenes/ui/wriksha_theme.tres) for the HUD, the Basket,

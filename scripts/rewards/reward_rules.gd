@@ -18,6 +18,11 @@ func _init() -> void:
 			continue
 		_rules[rule.id] = rule
 
+## Whether a reward exists for this id (M06.4: a farm milestone pays only
+## if the reward data names it).
+func has(rule_id: String) -> bool:
+	return _rules.has(rule_id)
+
 ## The points a reward pays; 0 (with a warning) for an unknown id.
 func points(rule_id: String) -> int:
 	var rule: RewardRule = _rules.get(rule_id)

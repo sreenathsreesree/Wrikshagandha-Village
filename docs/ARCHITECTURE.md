@@ -152,6 +152,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - `FarmPlot` holds one plot's state and memory; `CropDefinition` holds the data; `CropVisual` the presentation.
   - **Crop order = `points_value` (documented coupling, M05.4 E3):** `_sort_crops()` orders crops by `points_value` then id, so a crop's points also decide its place in the seed picker, basket, Journal and Inventory; changing a crop's points can re-order them.
   - **Seed invariant:** seeds in hand + crops in the ground = starting seeds + exploration seeds found (ever).
+  - **Farm milestones (M06.4, D-27):** `_reach(id, message)` is the one path — once ever (saved `farm.milestones`) → the id's reward from `data/rewards/<id>.tres` (`RewardRules.has()` / `points()`; no rule = nothing) → plots with `unlock_on_milestone == id` open → `milestone_reached(id, message, bonus)` (GameState saves; HUD card; `MilestoneReveal`s grow in). Called only from planting, ripening and harvesting. The registry is `get_milestones()` (6 named milestones + "grown:<crop>" per starter crop, Journal order); every scene hook and farm reward rule must name one of its ids.
 - **Direction:**
   - Seeds and basket are items since M04.2, held by the `Inventory` autoload since M04.3.
   - Rewards move to the economy (Phase 05).
