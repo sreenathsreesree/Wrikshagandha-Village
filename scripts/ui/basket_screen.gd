@@ -4,8 +4,7 @@ class_name BasketScreen
 ## The harvest basket: one compact row per crop harvested this session —
 ## its identity swatch, how many, and the Plain / Good / Fine split. A
 ## filtered view of the Inventory (its produce, M04.4) in FarmManager's crop
-## order; keeps no counts. Same modal shape and parchment theme as the
-## Collection screen.
+## order; keeps no counts.
 ##
 ## Selling (M06.2, D-25): each quality held has a Sell button showing the
 ## coins one unit pays. It opens the sell panel — item, quality, a quantity
@@ -14,22 +13,32 @@ class_name BasketScreen
 ## sale. The coin balance sits in the header, apart from the ✿ Wriksha
 ## Points on the HUD. Refreshed on FarmManager.produce_changed and on
 ## Inventory.items_changed (a sale changes items, not the farm).
+##
+## Presentation (M06.3, D-26): the shared Wrikshagandha theme; a sheet
+## anchored to the screen's proportions; "BASKET" with the coin chip; one
+## card per crop (icon, name and total, the quality split, a wrapping row of
+## Sell buttons); the sell panel reads what → how many → how many coins →
+## Cancel / Sell. Every touch target is at least TOUCH_TARGET canvas pixels.
 
-const SWATCH_SIZE := 56.0
+## Canvas pixels (1080×1920 design): the smallest thing a thumb must hit,
+## and the crop icon's size.
+const TOUCH_TARGET := 120.0
+const ICON_SIZE := 104.0
 
-@onready var list_container: VBoxContainer = $Panel/MarginContainer/VBoxContainer/ScrollContainer/ListContainer
-@onready var close_button: Button = $Panel/MarginContainer/VBoxContainer/Header/CloseButton
-@onready var coins_label: Label = $Panel/MarginContainer/VBoxContainer/Header/CoinsLabel
-@onready var scroll_container: ScrollContainer = $Panel/MarginContainer/VBoxContainer/ScrollContainer
-@onready var sell_panel: VBoxContainer = $Panel/MarginContainer/VBoxContainer/SellPanel
-@onready var sell_detail_label: Label = $Panel/MarginContainer/VBoxContainer/SellPanel/DetailLabel
-@onready var minus_button: Button = $Panel/MarginContainer/VBoxContainer/SellPanel/Stepper/MinusButton
-@onready var quantity_label: Label = $Panel/MarginContainer/VBoxContainer/SellPanel/Stepper/QuantityLabel
-@onready var plus_button: Button = $Panel/MarginContainer/VBoxContainer/SellPanel/Stepper/PlusButton
-@onready var total_label: Label = $Panel/MarginContainer/VBoxContainer/SellPanel/TotalLabel
-@onready var message_label: Label = $Panel/MarginContainer/VBoxContainer/SellPanel/MessageLabel
-@onready var cancel_button: Button = $Panel/MarginContainer/VBoxContainer/SellPanel/Actions/CancelButton
-@onready var confirm_button: Button = $Panel/MarginContainer/VBoxContainer/SellPanel/Actions/ConfirmButton
+@onready var list_container: VBoxContainer = $Panel/VBoxContainer/ScrollContainer/ListContainer
+@onready var close_button: Button = $Panel/VBoxContainer/Header/CloseButton
+@onready var coins_label: Label = $Panel/VBoxContainer/Header/CoinChip/CoinsLabel
+@onready var scroll_container: ScrollContainer = $Panel/VBoxContainer/ScrollContainer
+@onready var sell_panel: VBoxContainer = $Panel/VBoxContainer/SellPanel
+@onready var sell_item_label: Label = $Panel/VBoxContainer/SellPanel/ItemLabel
+@onready var sell_detail_label: Label = $Panel/VBoxContainer/SellPanel/DetailLabel
+@onready var minus_button: Button = $Panel/VBoxContainer/SellPanel/Stepper/MinusButton
+@onready var quantity_label: Label = $Panel/VBoxContainer/SellPanel/Stepper/QuantityLabel
+@onready var plus_button: Button = $Panel/VBoxContainer/SellPanel/Stepper/PlusButton
+@onready var total_label: Label = $Panel/VBoxContainer/SellPanel/TotalLabel
+@onready var message_label: Label = $Panel/VBoxContainer/SellPanel/MessageLabel
+@onready var cancel_button: Button = $Panel/VBoxContainer/SellPanel/Actions/CancelButton
+@onready var confirm_button: Button = $Panel/VBoxContainer/SellPanel/Actions/ConfirmButton
 
 ## The sale being chosen — {"item": ItemDefinition, "quality": int,
 ## "quantity": int} — or empty. Nothing is sold until Confirm.
@@ -70,47 +79,78 @@ func _refresh() -> void:
 		child.queue_free()
 	var rows := _basket_rows()
 	if rows.is_empty():
-		var empty := Label.new()
-		empty.text = "Nothing harvested yet."
-		empty.modulate.a = 0.7
-		list_container.add_child(empty)
+		list_container.add_child(_build_empty_state())
 		return
 	for row: Dictionary in rows:
 		list_container.add_child(_build_row(row))
 	if not _pending.is_empty():
 		_update_sell_panel()
 
+## An empty basket is a calm, expected state, not an error.
+func _build_empty_state() -> Control:
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 12)
+	var icon := Label.new()
+	icon.text = "🧺"
+	icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon.add_theme_font_size_override("font_size", 120)
+	box.add_child(icon)
+	var title := Label.new()
+	title.text = "Nothing harvested yet."
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	var hint := Label.new()
+	hint.theme_type_variation = &"Caption"
+	hint.text = "Ripe crops you harvest in the garden wait here, ready to sell."
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(hint)
+	return box
+
+## One card per crop: icon, name and total, the quality split, then its
+## Sell buttons.
 func _build_row(row: Dictionary) -> Control:
 	var crop: CropDefinition = row.crop
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 14)
-	line.add_child(_build_swatch(crop))
+	var card := PanelContainer.new()
+	card.theme_type_variation = &"RowCard"
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 16)
+	card.add_child(column)
 
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 24)
+	line.add_child(_build_swatch(crop))
 	var text := VBoxContainer.new()
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.alignment = BoxContainer.ALIGNMENT_CENTER
 	var name_label := Label.new()
 	name_label.text = "%s  ×%d" % [crop.display_name, int(row.total)]
-	name_label.add_theme_font_size_override("font_size", 22)
+	name_label.add_theme_font_size_override("font_size", 40)
 	text.add_child(name_label)
 	var split := Label.new()
+	split.theme_type_variation = &"Caption"
 	split.text = _quality_split(row)
-	split.modulate.a = 0.8
 	text.add_child(split)
-	text.add_child(_build_sell_buttons(row))
 	line.add_child(text)
-	return line
+	column.add_child(line)
+	column.add_child(_build_sell_buttons(row))
+	return card
 
-## One Sell button per quality held that has a price.
+## One Sell button per quality held that has a price (the Market's); the
+## buttons wrap onto a new line when the card is narrow.
 func _build_sell_buttons(row: Dictionary) -> Control:
 	var item: ItemDefinition = row.item
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 8)
+	var buttons := HFlowContainer.new()
+	buttons.add_theme_constant_override("h_separation", 16)
+	buttons.add_theme_constant_override("v_separation", 16)
 	for quality in [FarmManager.QUALITY_PLAIN, FarmManager.QUALITY_GOOD, FarmManager.QUALITY_FINE]:
 		var price := Market.get_unit_price(item.id, quality)
 		if int(row.counts[quality]) <= 0 or price < 1:
 			continue
 		var button := Button.new()
+		button.theme_type_variation = &"PrimaryButton"
+		button.custom_minimum_size = Vector2(TOUCH_TARGET, TOUCH_TARGET)
 		button.text = "Sell %s · %d each" % [FarmManager.get_quality_name(quality), price]
 		button.pressed.connect(_open_sell_panel.bind(item, quality))
 		buttons.add_child(button)
@@ -143,18 +183,18 @@ func _quality_split(row: Dictionary) -> String:
 
 func _build_swatch(crop: CropDefinition) -> Control:
 	var swatch := Panel.new()
-	swatch.custom_minimum_size = Vector2(SWATCH_SIZE, SWATCH_SIZE)
+	swatch.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
 	swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var style := StyleBoxFlat.new()
 	style.bg_color = crop.identity_color
-	style.set_corner_radius_all(int(SWATCH_SIZE / 2.0))
+	style.set_corner_radius_all(int(ICON_SIZE / 2.0))
 	swatch.add_theme_stylebox_override("panel", style)
 	var glyph := Label.new()
 	glyph.text = crop.icon_glyph
 	glyph.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	glyph.add_theme_font_size_override("font_size", 28)
+	glyph.add_theme_font_size_override("font_size", 56)
 	swatch.add_child(glyph)
 	return swatch
 
@@ -186,9 +226,10 @@ func _update_sell_panel() -> void:
 	var quantity := clampi(int(_pending["quantity"]), 1, maxi(held, 1))
 	_pending["quantity"] = quantity
 	var coins := Market.get_unit_price(item.id, quality) * quantity
-	sell_detail_label.text = "%s · %s  (%d held)" % [item.display_name, FarmManager.get_quality_name(quality), held]
+	sell_item_label.text = item.display_name
+	sell_detail_label.text = "%s%s · %d held" % ["✦ " if quality == FarmManager.QUALITY_FINE else "", FarmManager.get_quality_name(quality), held]
 	quantity_label.text = str(quantity)
-	total_label.text = "You receive %d Coins" % coins
+	total_label.text = "+%d Coins" % coins
 	minus_button.disabled = quantity <= 1
 	plus_button.disabled = quantity >= held
 	confirm_button.disabled = held < quantity or coins < 1

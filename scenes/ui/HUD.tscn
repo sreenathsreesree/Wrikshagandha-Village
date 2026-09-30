@@ -8,62 +8,94 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/SeedPicker.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/ui/BasketScreen.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://scenes/ui/InventoryScreen.tscn" id="8"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_topbar"]
-bg_color = Color(0.15, 0.12, 0.08, 0.35)
-corner_radius_top_left = 14
-corner_radius_top_right = 14
-corner_radius_bottom_left = 14
-corner_radius_bottom_right = 14
-content_margin_left = 18.0
-content_margin_top = 8.0
-content_margin_right = 18.0
-content_margin_bottom = 8.0
+[ext_resource type="Theme" path="res://scenes/ui/wriksha_theme.tres" id="9"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1")
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
-mouse_filter = 2
-anchors_preset = 15
+[node name="TopArea" type="MarginContainer" parent="."]
+anchors_preset = 10
 anchor_right = 1.0
-anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 1
+mouse_filter = 2
+theme = ExtResource("9")
 theme_override_constants/margin_left = 24
 theme_override_constants/margin_top = 24
 theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_bottom = 0
 
-[node name="TopBar" type="PanelContainer" parent="MarginContainer"]
+[node name="TopColumn" type="VBoxContainer" parent="TopArea"]
 layout_mode = 2
-size_flags_horizontal = 0
+size_flags_vertical = 0
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_topbar")
-
-[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/TopBar"]
-layout_mode = 2
 theme_override_constants/separation = 20
 
-[node name="PointsLabel" type="Label" parent="MarginContainer/TopBar/HBoxContainer"]
+[node name="TopBar" type="HBoxContainer" parent="TopArea/TopColumn"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.92, 0.8, 1)
-theme_override_font_sizes/font_size = 26
+size_flags_vertical = 0
+mouse_filter = 2
+theme_override_constants/separation = 20
+
+[node name="PointsPill" type="PanelContainer" parent="TopArea/TopColumn/TopBar"]
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_type_variation = &"HudPill"
+
+[node name="PointsLabel" type="Label" parent="TopArea/TopColumn/TopBar/PointsPill"]
+layout_mode = 2
+theme_type_variation = &"HudText"
 text = "✿ 0"
 
-[node name="DiscoveriesLabel" type="Label" parent="MarginContainer/TopBar/HBoxContainer"]
+[node name="DiscoveriesLabel" type="Label" parent="TopArea/TopColumn/TopBar"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.9, 0.92, 0.85, 1)
-theme_override_font_sizes/font_size = 18
-text = "Discoveries 0/5"
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_type_variation = &"HudCaption"
+text = "Discoveries 0/9"
+text_overrun_behavior = 3
+clip_text = true
 
-[node name="NotificationRoot" type="VBoxContainer" parent="."]
+[node name="MenuButtons" type="HBoxContainer" parent="TopArea/TopColumn/TopBar"]
+layout_mode = 2
+size_flags_vertical = 4
 mouse_filter = 2
-anchors_preset = 5
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -160.0
-offset_right = 160.0
-offset_top = 40.0
-alignment = 1
+theme_override_constants/separation = 12
+
+[node name="CollectionButton" type="Button" parent="TopArea/TopColumn/TopBar/MenuButtons"]
+custom_minimum_size = Vector2(120, 120)
+layout_mode = 2
+theme_type_variation = &"HudButton"
+text = "📚"
+tooltip_text = "Collection"
+
+[node name="JournalButton" type="Button" parent="TopArea/TopColumn/TopBar/MenuButtons"]
+custom_minimum_size = Vector2(120, 120)
+layout_mode = 2
+theme_type_variation = &"HudButton"
+text = "📖"
+tooltip_text = "Journal"
+
+[node name="DailyButton" type="Button" parent="TopArea/TopColumn/TopBar/MenuButtons"]
+custom_minimum_size = Vector2(120, 120)
+layout_mode = 2
+theme_type_variation = &"HudButton"
+text = "⭐"
+tooltip_text = "Daily Discovery"
+
+[node name="MovementButton" type="Button" parent="TopArea/TopColumn/TopBar/MenuButtons"]
+custom_minimum_size = Vector2(120, 120)
+layout_mode = 2
+theme_type_variation = &"HudButton"
+text = "🕹"
+tooltip_text = "Movement"
+
+[node name="NotificationRoot" type="VBoxContainer" parent="TopArea/TopColumn"]
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_filter = 2
+theme_override_constants/separation = 16
 
 [node name="MobileControls" type="Control" parent="."]
 mouse_filter = 2
@@ -73,58 +105,37 @@ anchor_bottom = 1.0
 [node name="Joystick" parent="MobileControls" instance=ExtResource("2")]
 
 [node name="ScreenButtons" type="VBoxContainer" parent="."]
-modulate = Color(1, 1, 1, 0.55)
-anchors_preset = 1
+anchors_preset = 3
 anchor_left = 1.0
+anchor_top = 1.0
 anchor_right = 1.0
-offset_left = -68.0
-offset_top = 24.0
-offset_right = -20.0
-offset_bottom = 378.0
-theme_override_constants/separation = 10
-
-[node name="CollectionButton" type="Button" parent="ScreenButtons"]
-custom_minimum_size = Vector2(48, 48)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "📚"
-tooltip_text = "Collection"
-
-[node name="JournalButton" type="Button" parent="ScreenButtons"]
-custom_minimum_size = Vector2(48, 48)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "📖"
-tooltip_text = "Journal"
-
-[node name="DailyButton" type="Button" parent="ScreenButtons"]
-custom_minimum_size = Vector2(48, 48)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "⭐"
-tooltip_text = "Daily Discovery"
+anchor_bottom = 1.0
+offset_left = -24.0
+offset_top = -24.0
+offset_right = -24.0
+offset_bottom = -24.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+theme = ExtResource("9")
+theme_override_constants/separation = 20
 
 [node name="BasketButton" type="Button" parent="ScreenButtons"]
 visible = false
-custom_minimum_size = Vector2(48, 48)
+custom_minimum_size = Vector2(144, 144)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"HudButton"
+theme_override_font_sizes/font_size = 64
 text = "🧺"
 tooltip_text = "Basket"
 
 [node name="InventoryButton" type="Button" parent="ScreenButtons"]
-custom_minimum_size = Vector2(48, 48)
+custom_minimum_size = Vector2(144, 144)
 layout_mode = 2
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"HudButton"
+theme_override_font_sizes/font_size = 64
 text = "🎒"
 tooltip_text = "Inventory"
-
-[node name="MovementButton" type="Button" parent="ScreenButtons"]
-custom_minimum_size = Vector2(48, 48)
-layout_mode = 2
-theme_override_font_sizes/font_size = 20
-text = "🕹"
-tooltip_text = "Movement"
 
 [node name="SeedPicker" parent="." instance=ExtResource("6")]
 

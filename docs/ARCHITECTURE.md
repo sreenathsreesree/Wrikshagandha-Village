@@ -215,11 +215,17 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 ## 13. UI architecture
 - **Current:**
   - `HUD` (CanvasLayer) wires autoload signals to presentation. It holds no gameplay state.
-  - **One notification card language** (`DiscoveryNotification`: full, compact, message) for every event.
-  - **Modal screens** (Collection, Journal, Daily, Basket, Inventory) share one pattern: parchment theme, dim background, close button, rebuild on open.
-  - **Screen buttons:** Collection, Journal, Daily, Basket (appears after the first harvest), Inventory (🎒, M04.5), Movement toggle.
-  - The SeedPicker is non-modal.
-- **Direction:** a settings screen (movement, later audio and accessibility). The pattern stays the same.
+  - **One notification card language** (`DiscoveryNotification`: discovery, compact, message) for every event.
+  - **Modal screens** (Collection, Journal, Daily, Basket, Inventory) share one pattern: dim background, a sheet, a close button, rebuilt on open. Basket and Inventory use the M06.3 language below; Collection, Journal, Daily and the SeedPicker (non-modal) keep the older parchment layout until a later UI pass.
+- **UI language and layout rules (M06.3, D-26):**
+  - **Design space:** the 1080 × 1920 portrait canvas (`canvas_items` / `expand`); sizes are canvas pixels. **Touch targets are at least 120 px** (≈ 48 dp on a 1080-px-wide phone). Body text 34, captions 28, headers 48, big figures 60–64.
+  - **One shared theme,** `scenes/ui/wriksha_theme.tres` — the existing parchment / bark / leaf palette. Variations: `HudPill` (points), `CoinChip` + `ChipLabel` (coins — amber, square-cornered, never the points pill), `PrimaryButton` (leaf green), `SecondaryButton` (parchment, bark border), `HudButton` (round, translucent), `RowCard`, `SheetPanel`, `IconBadge`, `Caption`, `Header`, `Figure`, `CoinFigure`, `HudText`, `HudCaption`.
+  - **HUD:** `TopArea` is anchored top-wide and grows down to its content — the top bar can never be stretched by a full-screen container (the pre-M06.3 tall-column bug: a full-rect MarginContainer filled the bar vertically). The bar holds the ✿ points pill, the discovery count and the secondary screens 📚 📖 ⭐ 🕹; notifications flow in `NotificationRoot` just under it. `ScreenButtons` (🧺, shown only while produce is held, and 🎒) is anchored bottom-right in the thumb zone; the joystick stays bottom-left. Both clusters add the display's safe area (`DisplayServer.get_display_safe_area()`, converted to canvas pixels) to a 24 px edge margin, re-applied when the viewport resizes. HUD containers ignore the mouse, so only their buttons catch taps.
+  - **Sheets:** anchored to screen proportions (5 % side margins, 10–90 % height) — no fixed pixel offsets. Header = `Header` title (+ the `CoinChip` on the Basket) + a 120 px close button; rows are `RowCard`s with a 96–104 px icon, name `×total`, a `Caption` detail.
+  - **Basket:** one card per crop — icon, name ×total, quality split, a wrapping row of `PrimaryButton` "Sell <Quality> · N each" (price from `Market.get_unit_price()`). The sell panel reads *what* (name, quality, held) → *how many* (120 px − / + around a big figure) → *how many coins* ("You receive" / "+N Coins") → Cancel / Sell. Empty: 🧺, "Nothing harvested yet.", a one-line hint.
+  - **Inventory:** the same sheet and cards, read-only — no Sell, no Market, no Wallet. Collectibles show a glyph for their discovery's category.
+  - **Cards:** lines title / name / optional note / amount / optional detail; empty lines are hidden; the height follows the text. Harvest: "✦ HARVESTED ✦" / "Wild Carrot · Fine" / "watered with care" / "+18 Wriksha Points" / "+1 Seed". Sale: "WILD CARROT" / "Fine ×2" / "+14 Coins" — values come from the signals, never recomputed.
+- **Direction:** bring Collection, Journal, Daily and the SeedPicker onto the shared theme; a settings screen (movement, later audio and accessibility). The pattern stays the same.
 
 ## 14. Data-driven definitions
 | Resource | Location | Loaded by |

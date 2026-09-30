@@ -7,14 +7,22 @@ class_name InventoryScreen
 ## per category, only what is held. Seeds and produce follow FarmManager's
 ## crop order, like the seed picker and the basket; items without a crop
 ## (collectibles) follow the item data. Keeps no counts of its own:
-## rebuilt on open, and on Inventory.items_changed while open. Same modal
-## shape and parchment theme as the Basket screen; displays only.
+## rebuilt on open, and on Inventory.items_changed while open. Displays only:
+## nothing here sells, buys or changes an item.
+##
+## Presentation (M06.3, D-26): the Basket's shared theme, sheet and row
+## cards. Seeds and produce show their crop's icon and colour; a collectible
+## shows a glyph for its discovery's category (read from DiscoveryDatabase),
+## so every row has an icon.
 
 const SECTIONS := [["seed", "Seeds"], ["produce", "Produce"], ["collectible", "Collectibles"]]
-const SWATCH_SIZE := 44.0
+const ICON_SIZE := 96.0
+## A collectible's icon, by its discovery's category (presentation only).
+const CATEGORY_GLYPHS := {"plant": "🌿", "flower": "🌸", "fungus": "🍄", "mineral": "🪨", "insect": "🐞", "animal": "🐾", "mystery": "✧"}
+const COLLECTIBLE_COLOR := Color(0.62, 0.7, 0.5, 1)
 
-@onready var list_container: VBoxContainer = $Panel/MarginContainer/VBoxContainer/ScrollContainer/ListContainer
-@onready var close_button: Button = $Panel/MarginContainer/VBoxContainer/Header/CloseButton
+@onready var list_container: VBoxContainer = $Panel/VBoxContainer/ScrollContainer/ListContainer
+@onready var close_button: Button = $Panel/VBoxContainer/Header/CloseButton
 
 func _ready() -> void:
 	visible = false
@@ -47,8 +55,9 @@ func _refresh() -> void:
 			list_container.add_child(_build_row(row))
 	if not any_held:
 		var empty := Label.new()
+		empty.theme_type_variation = &"Caption"
 		empty.text = "Nothing carried yet."
-		empty.modulate.a = 0.7
+		empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		list_container.add_child(empty)
 
 ## One category's held items, [{item, total, counts, crop}]: items of a
@@ -74,31 +83,45 @@ func _section_rows(category: String) -> Array:
 
 func _build_heading(title: String) -> Label:
 	var heading := Label.new()
-	heading.text = title
-	heading.add_theme_font_size_override("font_size", 24)
-	heading.modulate.a = 0.85
+	heading.theme_type_variation = &"Caption"
+	heading.text = title.to_upper()
+	heading.add_theme_font_size_override("font_size", 30)
 	return heading
 
+## One card per held item: icon, name and total, and (produce) the quality
+## split. No actions.
 func _build_row(row: Dictionary) -> Control:
 	var item: ItemDefinition = row.item
+	var card := PanelContainer.new()
+	card.theme_type_variation = &"RowCard"
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 14)
+	line.add_theme_constant_override("separation", 24)
 	if row.crop != null:
-		line.add_child(_build_swatch(row.crop))
+		line.add_child(_build_swatch(row.crop.icon_glyph, row.crop.identity_color))
+	else:
+		line.add_child(_build_swatch(_collectible_glyph(item), COLLECTIBLE_COLOR))
 	var text := VBoxContainer.new()
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.alignment = BoxContainer.ALIGNMENT_CENTER
 	var name_label := Label.new()
 	name_label.text = "%s  ×%d" % [item.display_name, int(row.total)]
-	name_label.add_theme_font_size_override("font_size", 20)
+	name_label.add_theme_font_size_override("font_size", 38)
 	text.add_child(name_label)
 	if item.quality_levels > 1:
 		var split := Label.new()
+		split.theme_type_variation = &"Caption"
 		split.text = _quality_split(row.counts)
-		split.modulate.a = 0.8
 		text.add_child(split)
 	line.add_child(text)
-	return line
+	card.add_child(line)
+	return card
+
+## The collectible's discovery category as a glyph ("✧" if unknown).
+func _collectible_glyph(item: ItemDefinition) -> String:
+	var definition := DiscoveryDatabase.get_definition(item.discovery_id)
+	if definition == null:
+		return "✧"
+	return CATEGORY_GLYPHS.get(definition.category, "✧")
 
 ## "Good 3 · ✦ Fine 1" — only the qualities actually held (as the basket).
 func _quality_split(counts: Array) -> String:
@@ -113,19 +136,19 @@ func _quality_split(counts: Array) -> String:
 		parts.append("%s %d" % [label, count])
 	return " · ".join(parts)
 
-func _build_swatch(crop: CropDefinition) -> Control:
+func _build_swatch(icon_glyph: String, color: Color) -> Control:
 	var swatch := Panel.new()
-	swatch.custom_minimum_size = Vector2(SWATCH_SIZE, SWATCH_SIZE)
+	swatch.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
 	swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var style := StyleBoxFlat.new()
-	style.bg_color = crop.identity_color
-	style.set_corner_radius_all(int(SWATCH_SIZE / 2.0))
+	style.bg_color = color
+	style.set_corner_radius_all(int(ICON_SIZE / 2.0))
 	swatch.add_theme_stylebox_override("panel", style)
 	var glyph := Label.new()
-	glyph.text = crop.icon_glyph
+	glyph.text = icon_glyph
 	glyph.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	glyph.add_theme_font_size_override("font_size", 22)
+	glyph.add_theme_font_size_override("font_size", 52)
 	swatch.add_child(glyph)
 	return swatch

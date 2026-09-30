@@ -934,9 +934,10 @@ if found_al != AUTOLOADS:
 # say why in the plan.
 PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
           "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
-          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "e58d6f3099f3e9f4",
+          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "30c3d242996c7da3",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
-          # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen.)
+          # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen;
+          #  and by M06.3: the top-anchored top bar, bottom-right thumb buttons, the shared theme.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
@@ -2084,6 +2085,129 @@ if bs_code.count("Market.sell(") != 1 or "Market.sell(" not in bsf.get("_on_conf
     err(f"{BS}: selling is confirm-first — a quantity stepper within 1..held, the Market's price x quantity shown, one Market.sell() on Confirm")
 notes.append(f"selling: Market.sell() the one coin source (produce only, {sum(1 for v in items.values() if v['category'] == 'produce')} items); "
              f"quality percents from {SR_TRES}; round half up per unit; GameState saves on produce_sold")
+
+# ------------------------------------------------------------ UI surfaces and HUD (M06.3, D-26)
+# One shared theme (scenes/ui/wriksha_theme.tres) for the HUD, the Basket,
+# the Inventory and the notification card. The HUD's top bar is anchored to
+# the top edge and sizes to its content — never stretched by a full-screen
+# container (the pre-M06.3 tall-column bug); the Basket and Inventory buttons
+# sit bottom-right; HUD containers never catch world taps. Every touch
+# control on these surfaces is at least 120 canvas px (1080×1920 design).
+# Points (✿ pill) and coins (Coins chip) never share a label. The harvest
+# and sale cards have fixed structures; the Inventory has no sell path.
+THEME_TRES = "scenes/ui/wriksha_theme.tres"
+TOUCH_MIN = 120
+def scene_nodes(path):
+    """{node path: (attrs text, body text)} for a .tscn, paths relative to the root ('.' = root)."""
+    txt = open(path, encoding="utf-8").read()
+    out = {}
+    for m in re.finditer(r"^\[node ([^\]]*)\]\n(.*?)(?=^\[|\Z)", txt, re.M | re.S):
+        name = re.search(r'name="([^"]+)"', m.group(1)).group(1)
+        par = re.search(r'parent="([^"]*)"', m.group(1))
+        key = "." if par is None else (name if par.group(1) == "." else par.group(1) + "/" + name)
+        out[key] = (m.group(1), m.group(2))
+    return out, txt
+def prop(body, key):
+    m = re.search(rf"^{re.escape(key)} = (.+)$", body, re.M)
+    return m.group(1).strip() if m else None
+def theme_id(txt):
+    m = re.search(rf'\[ext_resource type="Theme" path="res://{re.escape(THEME_TRES)}" id="([^"]+)"\]', txt)
+    return m.group(1) if m else None
+theme_txt = open(THEME_TRES, encoding="utf-8").read() if os.path.exists(THEME_TRES) else ""
+variations = dict(re.findall(r'^(\w+)/base_type = &"(\w+)"$', theme_txt, re.M))
+WANT_VARIATIONS = {"HudPill": "PanelContainer", "CoinChip": "PanelContainer", "PrimaryButton": "Button", "SecondaryButton": "Button",
+                   "HudButton": "Button", "RowCard": "PanelContainer", "Caption": "Label", "Header": "Label"}
+if not theme_txt.startswith('[gd_resource type="Theme"') or any(variations.get(k) != v for k, v in WANT_VARIATIONS.items()):
+    err(f"{THEME_TRES}: the shared UI theme defines {sorted(WANT_VARIATIONS)} on their base types (found {variations})")
+UI_SCENES = {"scenes/ui/HUD.tscn": ["TopArea", "ScreenButtons"], "scenes/ui/BasketScreen.tscn": ["."],
+             "scenes/ui/InventoryScreen.tscn": ["."], "scenes/ui/DiscoveryNotification.tscn": ["."]}
+ui_nodes = {}
+for scene, roots in UI_SCENES.items():
+    nodes, txt = scene_nodes(scene)
+    ui_nodes[scene] = nodes
+    tid = theme_id(txt)
+    for r in roots:
+        if tid is None or r not in nodes or prop(nodes[r][1], "theme") != f'ExtResource("{tid}")':
+            err(f"{scene}: '{r}' uses the shared theme {THEME_TRES}")
+    for key, (attrs, body) in nodes.items():
+        used = re.search(r'theme_type_variation = &"(\w+)"', body)
+        if used and used.group(1) not in variations:
+            err(f"{scene}: {key} uses theme variation '{used.group(1)}', which {THEME_TRES} doesn't define")
+    if scene == "scenes/ui/DiscoveryNotification.tscn":
+        continue
+    for key, (attrs, body) in nodes.items():
+        if 'type="Button"' not in attrs:
+            continue
+        size = re.match(r"Vector2\(([\d.]+), ([\d.]+)\)", prop(body, "custom_minimum_size") or "")
+        if not size or min(float(size.group(1)), float(size.group(2))) < TOUCH_MIN:
+            err(f"{scene}: button {key} is smaller than the {TOUCH_MIN} px touch target ({prop(body, 'custom_minimum_size')})")
+hud_nodes = ui_nodes["scenes/ui/HUD.tscn"]
+ta = hud_nodes.get("TopArea", ("", ""))
+if 'type="MarginContainer"' not in ta[0] or prop(ta[1], "anchor_right") != "1.0" or prop(ta[1], "anchor_bottom") not in (None, "0.0") \
+   or prop(ta[1], "anchor_top") not in (None, "0.0") or prop(ta[1], "grow_vertical") != "1" \
+   or any(prop(hud_nodes.get(k, ("", ""))[1], "size_flags_vertical") != "0" for k in ("TopArea/TopColumn", "TopArea/TopColumn/TopBar")):
+    err("scenes/ui/HUD.tscn: the top bar is anchored to the top edge (TopArea: top-wide, growing down) and never stretched vertically (TopColumn/TopBar shrink)")
+if set(k for k in hud_nodes if k.startswith("TopArea/TopColumn/TopBar/MenuButtons/")) != \
+   {f"TopArea/TopColumn/TopBar/MenuButtons/{b}" for b in ("CollectionButton", "JournalButton", "DailyButton", "MovementButton")} \
+   or {k for k in hud_nodes if k.startswith("ScreenButtons/")} != {"ScreenButtons/BasketButton", "ScreenButtons/InventoryButton"} \
+   or prop(hud_nodes.get("ScreenButtons", ("", ""))[1], "anchor_left") != "1.0" or prop(hud_nodes.get("ScreenButtons", ("", ""))[1], "anchor_top") != "1.0" \
+   or prop(hud_nodes.get("ScreenButtons/BasketButton", ("", ""))[1], "visible") != "false":
+    err("scenes/ui/HUD.tscn: 📚 📖 ⭐ 🕹 in the top bar; 🧺 (hidden until produce) and 🎒 anchored bottom-right")
+for k in ("TopArea", "TopArea/TopColumn", "TopArea/TopColumn/TopBar", "TopArea/TopColumn/TopBar/PointsPill",
+          "TopArea/TopColumn/TopBar/MenuButtons", "TopArea/TopColumn/NotificationRoot", "ScreenButtons"):
+    if prop(hud_nodes.get(k, ("", ""))[1], "mouse_filter") != "2":
+        err(f"scenes/ui/HUD.tscn: {k} ignores the mouse, so HUD layout never swallows world taps")
+if prop(hud_nodes.get("TopArea/TopColumn/TopBar/PointsPill", ("", ""))[1], "theme_type_variation") != '&"HudPill"' \
+   or "TopArea/TopColumn/TopBar/PointsPill/PointsLabel" not in hud_nodes \
+   or "$TopArea/TopColumn/TopBar/PointsPill/PointsLabel" not in hud_src:
+    err("scenes/ui/HUD.tscn: the ✿ points value lives in its own HudPill")
+bs_nodes = ui_nodes["scenes/ui/BasketScreen.tscn"]
+if prop(bs_nodes.get("Panel/VBoxContainer/Header/CoinChip", ("", ""))[1], "theme_type_variation") != '&"CoinChip"' \
+   or "Panel/VBoxContainer/Header/CoinChip/CoinsLabel" not in bs_nodes \
+   or prop(bs_nodes.get("Panel/VBoxContainer/Header/TitleLabel", ("", ""))[1], "text") != '"BASKET"':
+    err("scenes/ui/BasketScreen.tscn: \"BASKET\" with the coin balance in its own CoinChip")
+for key, (attrs, body) in ui_nodes["scenes/ui/BasketScreen.tscn"].items():
+    if 'type="Panel' in attrs and key == "Panel" and (prop(body, "offset_left") or prop(body, "anchor_left") != "0.05"):
+        err("scenes/ui/BasketScreen.tscn: the sheet is anchored to the screen's proportions, not fixed offsets")
+bsu = code_only(scripts.get(BS, ""))
+bsu_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", scripts.get(BS, ""), re.M | re.S)}
+if "const TOUCH_TARGET := 120.0" not in bsu or bsu.count("Button.new()") != 1 \
+   or "button.custom_minimum_size = Vector2(TOUCH_TARGET, TOUCH_TARGET)" not in bsu_funcs.get("_build_sell_buttons", "") \
+   or "var price := Market.get_unit_price(item.id, quality)" not in bsu_funcs.get("_build_sell_buttons", ""):
+    err(f"{BS}: every Sell button is a {TOUCH_MIN} px touch target priced by Market.get_unit_price()")
+if '"Nothing harvested yet."' not in bsu_funcs.get("_build_empty_state", "") or "_build_empty_state()" not in bsu_funcs.get("_refresh", ""):
+    err(f"{BS}: an empty basket shows the \"Nothing harvested yet.\" state")
+hud_fn = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", hud_src, re.M | re.S)}
+if 'notification.show_message("✦ HARVESTED ✦", name_line, "+%d Wriksha Points" % points_awarded, "+1 Seed", FarmManager.get_care_note(care))' not in hud_fn.get("_on_crop_harvested", "") \
+   or 'var name_line := "%s · %s" % [crop_definition.display_name, FarmManager.get_quality_name(quality)]' not in hud_fn.get("_on_crop_harvested", ""):
+    err("scripts/ui/hud.gd: the harvest card — ✦ HARVESTED ✦ / crop · quality / the care note / +N Wriksha Points / +1 Seed")
+if 'notification.show_message(item_name.to_upper(), "%s ×%d" % [FarmManager.get_quality_name(quality), quantity], "+%d Coins" % coins)' not in hud_fn.get("_on_produce_sold", ""):
+    err("scripts/ui/hud.gd: the sale card — CROP / quality ×quantity / +N Coins, from the Market's reported values")
+if "get_viewport().size_changed.connect(_apply_safe_area)" not in hud_fn.get("_ready", "") or "DisplayServer.get_display_safe_area()" not in hud_fn.get("_apply_safe_area", ""):
+    err("scripts/ui/hud.gd: the top bar and thumb buttons follow the display's safe area")
+if re.search(r"\bWallet\b|\bMarket\.(sell|get_unit_price)\(", code_only(hud_src)):
+    err("scripts/ui/hud.gd: the HUD shows points and sale feedback only — it never reads coins or prices")
+DN = "scripts/ui/discovery_notification.gd"
+dn = scripts.get(DN, "")
+dn_nodes = ui_nodes["scenes/ui/DiscoveryNotification.tscn"]
+if not re.search(r'^func show_message\(title: String, name_text: String, points_text: String, detail_text: String = "", note_text: String = ""\) -> void:', dn, re.M) \
+   or any(f"Panel/VBoxContainer/{n}" not in dn_nodes for n in ("TitleLabel", "NameLabel", "NoteLabel", "PointsLabel", "DetailLabel")) \
+   or "label.visible = pair[1] != \"\"" not in code_only(dn):
+    err(f"{DN}: one card — title, name, optional note, amount, optional detail (empty lines hidden); existing callers unchanged")
+for f in ("scripts/ui/hud.gd", BS, IS, DN):
+    for lit in re.findall(r'"([^"\n]*)"', code_only(scripts.get(f, ""))):
+        if re.search(r"✿|Points", lit) and re.search(r"Coin", lit):
+            err(f"{f}: '{lit}' — points and coins never share a label")
+for scene, nodes in ui_nodes.items():
+    for key, (attrs, body) in nodes.items():
+        t = prop(body, "text") or ""
+        if re.search(r"✿|Points", t) and "Coin" in t:
+            err(f"{scene}: {key} shows points and coins together")
+isu = code_only(scripts.get(IS, ""))
+if re.search(r"\bMarket\b|\bWallet\b|Button\.new\(|\"Sell|sell_value|get_unit_price", isu) \
+   or [k for k, (a, b) in ui_nodes["scenes/ui/InventoryScreen.tscn"].items() if 'type="Button"' in a] != ["Panel/VBoxContainer/Header/CloseButton"]:
+    err(f"{IS}: the Inventory stays read-only — its only button closes it; no Market, Wallet, price or Sell")
+notes.append(f"ui: shared theme {len(variations)} variations; top bar anchored top; touch targets >= {TOUCH_MIN} px; harvest/sale cards fixed; inventory read-only")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

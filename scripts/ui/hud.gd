@@ -4,22 +4,32 @@ extends CanvasLayer
 ## the Collection/Journal/Daily Discovery/Basket/Inventory screens) to the autoload
 ## systems. Holds no gameplay state itself. There is no Interact button:
 ## the player taps the world (see InputManager).
+##
+## Layout (M06.3, D-26): a top bar anchored to the top edge that sizes to its
+## content (never stretched) — the ✿ points pill first, the discovery count,
+## then the secondary screens (📚 📖 ⭐ 🕹); notifications flow just below
+## it; the Basket and Inventory sit in the bottom-right thumb zone. Both
+## clusters keep clear of notches through the display's safe area.
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
 ## A seed that introduces a new crop is shown a beat after the discovery
 ## that revealed it, so it reads as that discovery's consequence.
 const NEW_CROP_CARD_DELAY := 1.1
+## Canvas-pixel gap kept between the screen (or its safe area) and the HUD.
+const EDGE_MARGIN := 24.0
 
-@onready var points_label: Label = $MarginContainer/TopBar/HBoxContainer/PointsLabel
-@onready var discoveries_label: Label = $MarginContainer/TopBar/HBoxContainer/DiscoveriesLabel
-@onready var notification_root: Control = $NotificationRoot
+@onready var top_area: MarginContainer = $TopArea
+@onready var points_label: Label = $TopArea/TopColumn/TopBar/PointsPill/PointsLabel
+@onready var discoveries_label: Label = $TopArea/TopColumn/TopBar/DiscoveriesLabel
+@onready var notification_root: Control = $TopArea/TopColumn/NotificationRoot
 
-@onready var collection_button: Button = $ScreenButtons/CollectionButton
-@onready var journal_button: Button = $ScreenButtons/JournalButton
-@onready var daily_button: Button = $ScreenButtons/DailyButton
+@onready var collection_button: Button = $TopArea/TopColumn/TopBar/MenuButtons/CollectionButton
+@onready var journal_button: Button = $TopArea/TopColumn/TopBar/MenuButtons/JournalButton
+@onready var daily_button: Button = $TopArea/TopColumn/TopBar/MenuButtons/DailyButton
+@onready var movement_button: Button = $TopArea/TopColumn/TopBar/MenuButtons/MovementButton
+@onready var screen_buttons: Control = $ScreenButtons
 @onready var basket_button: Button = $ScreenButtons/BasketButton
 @onready var inventory_button: Button = $ScreenButtons/InventoryButton
-@onready var movement_button: Button = $ScreenButtons/MovementButton
 @onready var mobile_controls: Control = $MobileControls
 
 @onready var collection_screen: CollectionScreen = $CollectionScreen
@@ -61,6 +71,33 @@ func _ready() -> void:
 
 	_on_points_changed(PointsManager.get_points())
 	_update_discoveries_label()
+	get_viewport().size_changed.connect(_apply_safe_area)
+	_apply_safe_area()
+
+## Keeps the top bar and the thumb buttons inside the display's safe area
+## (notches, rounded corners, system bars): the safe area's insets, converted
+## from screen pixels to canvas pixels, are added to the edge margin. Where
+## the whole window is safe (desktop) only the edge margin applies.
+func _apply_safe_area() -> void:
+	var window_size := Vector2(DisplayServer.window_get_size())
+	var canvas_size: Vector2 = get_viewport().get_visible_rect().size
+	var insets := [0.0, 0.0, 0.0, 0.0]  # left, top, right, bottom (canvas pixels)
+	if window_size.x > 0.0 and window_size.y > 0.0:
+		var window := Rect2(Vector2(DisplayServer.window_get_position()), window_size)
+		var safe := Rect2(DisplayServer.get_display_safe_area()).intersection(window)
+		if safe.has_area():
+			var to_canvas: Vector2 = canvas_size / window_size
+			insets = [
+				maxf(safe.position.x - window.position.x, 0.0) * to_canvas.x,
+				maxf(safe.position.y - window.position.y, 0.0) * to_canvas.y,
+				maxf(window.end.x - safe.end.x, 0.0) * to_canvas.x,
+				maxf(window.end.y - safe.end.y, 0.0) * to_canvas.y,
+			]
+	top_area.add_theme_constant_override("margin_left", int(EDGE_MARGIN + insets[0]))
+	top_area.add_theme_constant_override("margin_top", int(EDGE_MARGIN + insets[1]))
+	top_area.add_theme_constant_override("margin_right", int(EDGE_MARGIN + insets[2]))
+	screen_buttons.offset_right = -(EDGE_MARGIN + insets[2])
+	screen_buttons.offset_bottom = -(EDGE_MARGIN + insets[3])
 
 func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total
@@ -91,23 +128,25 @@ func _on_daily_completed(definition: DiscoveryDefinition, bonus_points: int) -> 
 	notification.show_message("✓ Daily Discovery Complete", definition.display_name, "+%d Wriksha Points" % bonus_points)
 
 ## Reuses the exact same notification card as a discovery harvest — a
-## crop is presented the same way, not a separate farming UI. The seed that
-## came back is mentioned in the same line, not as a second card; the
-## quality it grew at sits beside its name, with how it was cared for.
+## crop is presented the same way, not a separate farming UI. The quality it
+## grew at sits beside its name, how it was cared for just under it (that
+## is how the care rule is learned); then the points and the seed that came
+## back, on the same card, never a second one.
 func _on_crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int, care: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
-	var name_line := "%s · %s\n%s" % [crop_definition.display_name, FarmManager.get_quality_name(quality), FarmManager.get_care_note(care)]
-	notification.show_message("✦ Harvested ✦", name_line, "+%d Wriksha Points · +1 seed" % points_awarded)
+	var name_line := "%s · %s" % [crop_definition.display_name, FarmManager.get_quality_name(quality)]
+	notification.show_message("✦ HARVESTED ✦", name_line, "+%d Wriksha Points" % points_awarded, "+1 Seed", FarmManager.get_care_note(care))
 
-## A sale (M06.2): the coins it paid on the shared quiet card — coins,
-## never Wriksha Points.
+## A sale (M06.2): the coins it paid (as the Market reported them) on the
+## shared card — the crop, then quality × quantity, then coins, never
+## Wriksha Points.
 func _on_produce_sold(item_id: String, quality: int, quantity: int, coins: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
 	notification_root.add_child(notification)
 	var item := Inventory.get_definition(item_id)
 	var item_name := item.display_name if item != null else item_id
-	notification.show_compact("%s · %s ×%d" % [item_name, FarmManager.get_quality_name(quality), quantity], "+%d Coins" % coins)
+	notification.show_message(item_name.to_upper(), "%s ×%d" % [FarmManager.get_quality_name(quality), quantity], "+%d Coins" % coins)
 
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
