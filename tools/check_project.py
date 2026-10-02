@@ -2152,6 +2152,55 @@ if rule_like - FARM_MILESTONES:
     err(f"data/rewards: farm-milestone rules {sorted(rule_like - FARM_MILESTONES)} name no registered milestone")
 notes.append(f"farm milestones: {len(FARM_MILESTONES)} registered, {len(FARM_MILESTONES & set(rules))} rewarded by data; one path (_reach); hooks checked")
 
+# ------------------------------------------------------------ farming frozen (M06.5, D-11)
+# Phase 06 leaves FarmManager with farm rules, plots, crops, milestones and the farm save; seeds and
+# produce are the Inventory's, coins the Market's, reward amounts data. The boundary is frozen: the
+# public API (signals with their exact signatures, functions, the constants others read), FarmPlot's
+# calls into it and the farm save keys are pinned here; behaviour stays pinned by the whole-file
+# pins of farm_manager.gd / farm_plot.gd. A deliberate change updates these lists and ARCHITECTURE §8.
+FM_SIGNALS = ["crop_planted(crop_definition: CropDefinition, announced_by_milestone: bool, soil: int)",
+              "crop_harvested(crop_definition: CropDefinition, points_awarded: int, quality: int, care: int)",
+              "seeds_changed", "produce_changed", "seed_choice_requested", "seed_choice_closed",
+              "seed_found(crop_definition: CropDefinition, new_crop: bool)",
+              "milestone_reached(milestone_id: String, message: String, bonus_points: int)", "garden_interest_changed(level: float)"]
+FM_PUBLIC = ["get_crops", "get_seed_count", "get_known_crops", "rate_soil", "get_soil_rating", "rate_care", "combine_quality",
+             "get_care_note", "get_quality_name", "get_soil_note", "get_quality_size", "get_harvest_points", "get_produce_count",
+             "get_produce_total", "get_basket", "get_found_seed_origins", "has_ready_crops", "get_last_ripened_msec",
+             "get_garden_interest", "is_garden_found", "register_plot", "release_plots_in", "unlock_plot", "get_plot_counts",
+             "is_choosing_seed", "request_seed_choice", "cancel_seed_choice", "choose_seed", "notify_crop_ready",
+             "notify_crop_harvested", "notify_place_reached", "get_milestones", "is_milestone_reached", "get_grown_crop_names",
+             "get_activity_counts", "get_save_data", "apply_save_data"]
+FM_SHARED_CONSTS = {"QUALITY_PLAIN", "QUALITY_GOOD", "QUALITY_FINE", "CARE_CAREFUL", "SOIL_MEMORY", "GARDEN_IN_BLOOM", "WILDLIFE_ATTRACTION_KEY"}
+FP_USES = {"register_plot", "request_seed_choice", "cancel_seed_choice", "notify_crop_ready", "notify_crop_harvested", "rate_care",
+           "combine_quality", "get_harvest_points", "get_quality_size", "QUALITY_GOOD", "CARE_CAREFUL", "SOIL_MEMORY"}
+FARM_SAVE_KEYS = ["version", "starter_seeds", "found_seeds", "grown", "milestones", "counts", "harvested_plots", "garden_found", "plots"]
+fm_f = scripts.get(FM, "")
+if re.findall(r"^signal (.+)$", fm_f, re.M) != FM_SIGNALS:
+    err(f"{FM}: farming is frozen (M06.5) — FarmManager's signals and their signatures are {FM_SIGNALS}")
+fm_public_now = re.findall(r"^func ([a-z]\w*)\(", fm_f, re.M)
+if fm_public_now != FM_PUBLIC:
+    err(f"{FM}: farming is frozen (M06.5) — FarmManager's public functions are exactly {FM_PUBLIC} (found {fm_public_now})")
+fm_api = set(FM_PUBLIC) | {re.match(r"\w+", x).group(0) for x in FM_SIGNALS} | FM_SHARED_CONSTS
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == FM: continue
+    for name in set(re.findall(r"\bFarmManager\.(\w+)", code_only(s2))):
+        if name.startswith("_") or name not in fm_api:
+            err(f"{f}: uses FarmManager.{name} — outside FarmManager only its frozen public API is used (ARCHITECTURE §8)")
+fp_uses = set(re.findall(r"\bFarmManager\.(\w+)", code_only(scripts.get(FP, ""))))
+if fp_uses != FP_USES:
+    err(f"{FP}: FarmPlot talks to FarmManager only through {sorted(FP_USES)} (found {sorted(fp_uses)})")
+for c in FM_SHARED_CONSTS:
+    if not re.search(rf"^const {c} := ", fm_f, re.M):
+        err(f"{FM}: the shared constant {c} stays")
+fsd_m = re.search(r"return \{(.*?)\n\t\}", code_only(func_body(fm_f, "get_save_data") or ""), re.S)
+if not fsd_m or re.findall(r'^\s*"(\w+)":', fsd_m.group(1), re.M) != FARM_SAVE_KEYS \
+   or '"version": SAVE_VERSION,' not in fsd_m.group(1) or not re.search(r"^const SAVE_VERSION := 1$", fm_f, re.M):
+    err(f"{FM}: the farm save section keeps exactly {FARM_SAVE_KEYS} with its own version 1 (save_version 5 compatibility)")
+if "scripts/autoload/farm_manager.gd" not in PINNED or "scripts/farming/farm_plot.gd" not in PINNED:
+    err("farming is frozen: farm_manager.gd and farm_plot.gd stay pinned by content")
+notes.append(f"farming frozen: FarmManager {len(FM_SIGNALS)} signals, {len(FM_PUBLIC)} public functions, {len(FM_SHARED_CONSTS)} shared constants; "
+             f"FarmPlot {len(FP_USES)} calls; farm save keys {len(FARM_SAVE_KEYS)}")
+
 # ------------------------------------------------------------ UI surfaces and HUD (M06.3, D-26)
 # One shared theme (scenes/ui/wriksha_theme.tres) for the HUD, the Basket,
 # the Inventory and the notification card. The HUD's top bar is anchored to

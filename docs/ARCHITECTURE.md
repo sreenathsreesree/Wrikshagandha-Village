@@ -146,17 +146,49 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 - **Rules (toolkit-enforced):** Player and InputManager use only the contract and never name an implementation, a fixture or a specific verb, nor tell objects apart by reflection; `interact()` has one call site (`Player._interact_with`); the base holds no object-specific code; no second interaction hierarchy.
 - **Direction (Phase 02):** a verb UI and routing its choice through Player's guarded path come later; further behaviours (NPC talk, door enter/exit, container open, read, give, feed…) are new implementations of the same contract.
 
-## 8. Farming — FarmManager (frozen, decision D-11)
-- **Current:**
-  - `FarmManager` owns: crops loaded from `data/crops/`; the seed and basket *rules* (the counts are items in the `Inventory` autoload — M04.2, M04.3); quality rules (soil rotation + care → Plain/Good/Fine); farm milestones and plot unlocks; garden interest for wildlife; seed choice; persistence (`get_save_data`/`apply_save_data`, plot states restored in `register_plot`).
-  - `FarmPlot` holds one plot's state and memory; `CropDefinition` holds the data; `CropVisual` the presentation.
-  - **Crop order = `points_value` (documented coupling, M05.4 E3):** `_sort_crops()` orders crops by `points_value` then id, so a crop's points also decide its place in the seed picker, basket, Journal and Inventory; changing a crop's points can re-order them.
-  - **Seed invariant:** seeds in hand + crops in the ground = starting seeds + exploration seeds found (ever).
-  - **Farm milestones (M06.4, D-27):** `_reach(id, message)` is the one path — once ever (saved `farm.milestones`) → the id's reward from `data/rewards/<id>.tres` (`RewardRules.has()` / `points()`; no rule = nothing) → plots with `unlock_on_milestone == id` open → `milestone_reached(id, message, bonus)` (GameState saves; HUD card; `MilestoneReveal`s grow in). Called only from planting, ripening and harvesting. The registry is `get_milestones()` (6 named milestones + "grown:<crop>" per starter crop, Journal order); every scene hook and farm reward rule must name one of its ids.
-- **Direction:**
-  - Seeds and basket are items since M04.2, held by the `Inventory` autoload since M04.3.
-  - Rewards move to the economy (Phase 05).
-  - Farming is integrated, then frozen again (Phase 06). Rules, plots and crops stay in FarmManager.
+## 8. Farming — frozen boundary (D-11; integrated in Phase 06, frozen by M06.5)
+Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy (M06.2), the UI (M06.3) and progression (M06.4). Since M06.5 this section is the **authoritative, frozen boundary**: behaviour is pinned by the content pins of `farm_manager.gd` / `farm_plot.gd`, and the public API, FarmPlot's calls into it and the farm save keys are pinned by `check_project.py` ("farming frozen"). A deliberate change updates those contracts and this section together.
+
+**Responsibilities**
+
+| Responsibility | Owner | Notes |
+|---|---|---|
+| Crop data — `data/crops/` loaded and sorted (`get_crops`, `get_known_crops`) | FarmManager | **Crop order = `points_value`, then id** (M05.4 E3): it also orders the seed picker, Basket, Journal and Inventory |
+| Seed / basket **rules** — starting seeds once ever, a seed taken only after the plot plants, one seed back + one produce (at its quality) per harvest, a found seed once ever per crop | FarmManager | The **counts** are items in the `Inventory` (M04.2–M04.3); FarmManager only calls `Inventory.add/remove/get_quantity` at those rule sites. **Seed invariant:** seeds in hand + crops in the ground = starting seeds + exploration seeds found (ever) |
+| Inventory read helpers — `get_seed_count`, `get_produce_count`, `get_produce_total`, `get_basket` | FarmManager | Thin views for the HUD, Journal and screens |
+| Quality rules — `rate_soil` (rotation, `SOIL_MEMORY` 2), `rate_care` (thirst vs tolerance × `NEGLECT_FACTOR` 3), `combine_quality`, `get_harvest_points` (`QUALITY_POINT_SCALE`), `get_quality_size` | FarmManager | Frozen farm rules, pinned by body hash; texts `QUALITY_NAMES`, `SOIL_NOTES`, `CARE_NOTES` |
+| Plot registry and lifecycle — `register_plot` (restore a saved/unloaded state), `release_plots_in` (M03.3 area unload), starter plots, `get_plot_counts`, `unlock_plot` | FarmManager | Unlocks are **derived from milestones on load**, never saved |
+| Seed choice — `request_seed_choice` / `cancel_seed_choice` / `choose_seed` | FarmManager | One pending plot; the SeedPicker drives it |
+| One plot's state machine — prepare, plant, water, thirst timing (real time), growth timers, ripen, harvest sequence, soil memory, `capture()` / `restore()` | FarmPlot | **Pays the harvest's Wriksha Points** itself (amount from `FarmManager.get_harvest_points`), then reports `notify_crop_harvested` |
+| Farm counters — ready per crop, planted, harvested, harvested plots, grown crops | FarmManager | Feed milestones and garden interest |
+| Garden interest for wildlife — `garden_interest_changed`, `get_garden_interest`, `has_ready_crops`, `get_last_ripened_msec` | FarmManager | Read by WorldSimulation and EnvironmentalEvent |
+| Exploration hooks — `notify_place_reached` (from ExplorationManager), discovery signals → `_grant_found_seeds`, `garden_found` | FarmManager | Found seeds |
+| Farm milestones — `_reach` (the one path), registry `get_milestones()`, `is_milestone_reached` | FarmManager | M06.4, below; merged with exploration bonuses only in M13.1 (O-04 open) |
+| Journal read models — `get_milestones`, `get_grown_crop_names`, `get_activity_counts`, `get_found_seed_origins`, `is_garden_found` | FarmManager | Read-only |
+| Farm save section — `get_save_data` / `apply_save_data` | FarmManager | Shape below |
+| Crop data / presentation | `CropDefinition` / `CropVisual` | |
+| World change on a milestone | `MilestoneReveal` | Grows in on `milestone_reached` |
+| Coins, prices, selling | `Market` (M06.2) | Never FarmManager |
+
+**Public API (frozen)**
+- **Signals:** `crop_planted(crop_definition, announced_by_milestone, soil)`, `crop_harvested(crop_definition, points_awarded, quality, care)`, `seeds_changed`, `produce_changed`, `seed_choice_requested`, `seed_choice_closed`, `seed_found(crop_definition, new_crop)`, `milestone_reached(milestone_id, message, bonus_points)`, `garden_interest_changed(level)`. GameState autosaves on `crop_planted`, `crop_harvested`, `seed_found`, `milestone_reached`.
+- **Functions:** the 37 public functions listed in `check_project.py` (`FM_PUBLIC`) — crops/seeds, quality, basket views, garden interest, plots, seed choice, FarmPlot reports, exploration, milestones, Journal views, persistence. Nothing outside FarmManager touches a `_private` member.
+- **Constants others read:** `QUALITY_PLAIN/GOOD/FINE`, `CARE_CAREFUL`, `SOIL_MEMORY`, `GARDEN_IN_BLOOM`, `WILDLIFE_ATTRACTION_KEY`.
+- **FarmPlot → FarmManager:** `register_plot`, `request_seed_choice`, `cancel_seed_choice`, `notify_crop_ready`, `notify_crop_harvested`, `rate_care`, `combine_quality`, `get_harvest_points`, `get_quality_size`, `QUALITY_GOOD`, `CARE_CAREFUL`, `SOIL_MEMORY` — nothing else.
+
+**Farm save section (`farm`, inside `save_version` 5)** — keys exactly `version` (the farm block's own version, 1; written, not read), `starter_seeds`, `found_seeds` (crop → {source, source_id}), `grown`, `milestones`, `counts` {planted, harvested}, `harvested_plots`, `garden_found`, `plots` (plot_id → `FarmPlot.capture()`: `state`, `soil_memory`, and with a crop `crop`, `stage`, `needs_water`, `stage_time_left`, `thirsty_for`, `longest_thirst`, `soil`, `care`, `quality`). Seeds and produce are in `items` (the Inventory), points in `points`, coins in `wallet`. The Inventory is loaded before the farm (a fresh farm's starting seeds depend on it).
+
+**Farm milestones (M06.4, D-27):** `_reach(id, message)` is the one path — once ever (saved `farm.milestones`) → the id's reward from `data/rewards/<id>.tres` (`RewardRules.has()` / `points()`; no rule = nothing) → plots with `unlock_on_milestone == id` open → `milestone_reached(id, message, bonus)` (GameState saves; HUD card; `MilestoneReveal`s grow in). Called only from planting, ripening and harvesting. The registry is `get_milestones()` (6 named milestones + "grown:<crop>" per starter crop, Journal order); every scene hook and farm reward rule must name one of its ids.
+
+**Known couplings (deliberate, recorded)**
+- **Harvest points:** FarmPlot asks FarmManager for the amount, pays PointsManager, *then* reports the harvest — the payment is in before `crop_harvested` triggers the autosave.
+- **FarmManager ↔ ExplorationManager:** places call `notify_place_reached`; the farm asks ExplorationManager for the garden's id and name (bloom message, found-garden note).
+- **Load order:** `Inventory.apply_save_data` before `FarmManager.apply_save_data`.
+- **Crop order** follows `points_value` (above).
+- **`unlock_plot()`** is an unused entry point for a future expansion: a plot it opens is not saved and would re-lock on relaunch unless its milestone is reached — a later expansion must persist it.
+- `notify_place_reached`'s comment still says "this session"; since M05.2 places are reached once ever (comment left as is in M06.5 to keep the file pinned).
+
+**Parked (could move later, not in Phase 06):** display texts (quality/soil/care names, milestone labels and messages) → data or UI; Journal read models → the Journal; garden interest → WorldSimulation; a crop database separate from FarmManager. Each would touch pinned rules or signals.
 
 ## 9. Inventory (Phase 04)
 - **Current (M04.1–M04.3):** items are data — `ItemDefinition` (`id`, `display_name`, `category` seed/produce/collectible, `crop_id`, `quality_levels`, `discovery_id`) in `data/items/`: one seed item and one produce item per crop, one collectible per discovery (named as the discovery). `ItemStore` (a RefCounted class) counts items by id with **one count per quality level** — quality is an attribute of held produce, not a separate item (D-18). Only `add()`/`remove()`/`apply_save_data()` change counts; `add`/`remove` refuse unknown ids, levels and amounts below 1; `remove()` is all or nothing; counts never go negative; no stack limit; malformed saved entries are dropped with a warning.
