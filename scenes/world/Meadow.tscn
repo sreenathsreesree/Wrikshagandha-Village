@@ -1,4 +1,4 @@
-[gd_scene load_steps=48 format=3]
+[gd_scene load_steps=50 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
@@ -40,6 +40,8 @@
 [ext_resource type="PackedScene" path="res://scenes/farming/FarmPlot.tscn" id="38"]
 [ext_resource type="PackedScene" path="res://scenes/farming/GardenBloomFlowers.tscn" id="39"]
 [ext_resource type="Script" path="res://scripts/farming/milestone_reveal.gd" id="40"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/HousePlaceholder.tscn" id="41"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/NpcSpotPlaceholder.tscn" id="42"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -879,3 +881,383 @@ entry_id = "meadow_start"
 [node name="CameraBounds" type="Node3D" parent="."]
 script = ExtResource("camera_bounds")
 size = Vector2(64, 64)
+
+[node name="VerticalSlice" type="Node3D" parent="."]
+
+[node name="House" parent="VerticalSlice" instance=ExtResource("41")]
+position = Vector3(-24, 0, 0)
+
+[node name="NpcSpot" parent="VerticalSlice" instance=ExtResource("42")]
+position = Vector3(-19.5, 0, 2.2)
+rotation_degrees = Vector3(0, -30, 0)
+
+[node name="ForestWest1" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-29.06, 0, -26.92)
+scale = Vector3(1.15, 1.15, 1.15)
+rotation_degrees = Vector3(0, 220, 0)
+
+[node name="ForestWest2" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-28.68, 0, -22.9)
+scale = Vector3(0.98, 0.98, 0.98)
+rotation_degrees = Vector3(0, 80, 0)
+
+[node name="ForestWest3" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.51, 0, -18.84)
+scale = Vector3(0.99, 0.99, 0.99)
+rotation_degrees = Vector3(0, 240, 0)
+
+[node name="ForestWest4" parent="VerticalSlice" instance=ExtResource("11")]
+position = Vector3(-29.01, 0, -15.38)
+scale = Vector3(1.1, 1.1, 1.1)
+rotation_degrees = Vector3(0, 290, 0)
+
+[node name="ForestWest5" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-28.61, 0, -11.04)
+scale = Vector3(1.09, 1.09, 1.09)
+rotation_degrees = Vector3(0, 55, 0)
+
+[node name="ForestWest6" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.8, 0, -6.82)
+scale = Vector3(1.12, 1.12, 1.12)
+rotation_degrees = Vector3(0, 160, 0)
+
+[node name="ForestWest7" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.94, 0, -3.1)
+scale = Vector3(0.99, 0.99, 0.99)
+rotation_degrees = Vector3(0, 310, 0)
+
+[node name="ForestWest8" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.72, 0, 0.88)
+scale = Vector3(1.02, 1.02, 1.02)
+rotation_degrees = Vector3(0, 115, 0)
+
+[node name="ForestWest9" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.92, 0, 4.93)
+scale = Vector3(1.11, 1.11, 1.11)
+rotation_degrees = Vector3(0, 210, 0)
+
+[node name="ForestWest10" parent="VerticalSlice" instance=ExtResource("11")]
+position = Vector3(-29.01, 0, 9.36)
+scale = Vector3(0.95, 0.95, 0.95)
+rotation_degrees = Vector3(0, 35, 0)
+
+[node name="ForestWest11" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-28.9, 0, 12.65)
+scale = Vector3(0.92, 0.92, 0.92)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="ForestWest12" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.92, 0, 17.37)
+scale = Vector3(1.02, 1.02, 1.02)
+rotation_degrees = Vector3(0, 345, 0)
+
+[node name="ForestWest13" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.81, 0, 21.3)
+scale = Vector3(1.13, 1.13, 1.13)
+rotation_degrees = Vector3(0, 145, 0)
+
+[node name="ForestWest14" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-29.03, 0, 25.27)
+scale = Vector3(1.04, 1.04, 1.04)
+rotation_degrees = Vector3(0, 50, 0)
+
+[node name="ForestWest15" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-28.94, 0, 28.87)
+scale = Vector3(1.02, 1.02, 1.02)
+rotation_degrees = Vector3(0, 50, 0)
+
+[node name="ForestWestBack1" parent="VerticalSlice" instance=ExtResource("11")]
+position = Vector3(-30.52, 0, -29.15)
+scale = Vector3(0.99, 0.99, 0.99)
+rotation_degrees = Vector3(0, 120, 0)
+
+[node name="ForestWestBack2" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-30.23, 0, -21)
+scale = Vector3(1.12, 1.12, 1.12)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="ForestWestBack3" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-30.23, 0, -13.06)
+scale = Vector3(1.07, 1.07, 1.07)
+rotation_degrees = Vector3(0, 30, 0)
+
+[node name="ForestWestBack4" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-30.31, 0, -5.24)
+scale = Vector3(1.04, 1.04, 1.04)
+rotation_degrees = Vector3(0, 200, 0)
+
+[node name="ForestWestBack5" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-30.58, 0, 3.28)
+scale = Vector3(1.11, 1.11, 1.11)
+rotation_degrees = Vector3(0, 135, 0)
+
+[node name="ForestWestBack6" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-30.63, 0, 11.26)
+scale = Vector3(0.96, 0.96, 0.96)
+rotation_degrees = Vector3(0, 125, 0)
+
+[node name="ForestWestBack7" parent="VerticalSlice" instance=ExtResource("11")]
+position = Vector3(-30.24, 0, 19.02)
+scale = Vector3(1.02, 1.02, 1.02)
+rotation_degrees = Vector3(0, 95, 0)
+
+[node name="ForestWestBack8" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-30.47, 0, 26.68)
+scale = Vector3(1.12, 1.12, 1.12)
+rotation_degrees = Vector3(0, 210, 0)
+
+[node name="ForestNorth1" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-26.5, 0, -25.36)
+scale = Vector3(1.02, 1.02, 1.02)
+rotation_degrees = Vector3(0, 110, 0)
+
+[node name="ForestNorth2" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-21.5, 0, -25.58)
+scale = Vector3(1.11, 1.11, 1.11)
+rotation_degrees = Vector3(0, 305, 0)
+
+[node name="ForestNorth3" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-17.7, 0, -25.18)
+scale = Vector3(1.0, 1.0, 1.0)
+rotation_degrees = Vector3(0, 15, 0)
+
+[node name="ForestNorth4" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-13.59, 0, -25.53)
+scale = Vector3(0.95, 0.95, 0.95)
+rotation_degrees = Vector3(0, 270, 0)
+
+[node name="ForestNorth5" parent="VerticalSlice" instance=ExtResource("11")]
+position = Vector3(-9.58, 0, -25.57)
+scale = Vector3(1.09, 1.09, 1.09)
+rotation_degrees = Vector3(0, 205, 0)
+
+[node name="ForestNorth6" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-5.37, 0, -25.03)
+scale = Vector3(1.07, 1.07, 1.07)
+rotation_degrees = Vector3(0, 40, 0)
+
+[node name="ForestNorth7" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-1.72, 0, -25.27)
+scale = Vector3(0.93, 0.93, 0.93)
+rotation_degrees = Vector3(0, 215, 0)
+
+[node name="ForestNorth8" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(2.57, 0, -25.03)
+scale = Vector3(1.06, 1.06, 1.06)
+rotation_degrees = Vector3(0, 200, 0)
+
+[node name="ForestNorthBack1" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-24.78, 0, -29.62)
+scale = Vector3(1.04, 1.04, 1.04)
+rotation_degrees = Vector3(0, 25, 0)
+
+[node name="ForestNorthBack2" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(-16.98, 0, -30.05)
+scale = Vector3(0.93, 0.93, 0.93)
+rotation_degrees = Vector3(0, 175, 0)
+
+[node name="ForestNorthBack3" parent="VerticalSlice" instance=ExtResource("11")]
+position = Vector3(-8.78, 0, -30.14)
+scale = Vector3(1.14, 1.14, 1.14)
+rotation_degrees = Vector3(0, 190, 0)
+
+[node name="ForestNorthBack4" parent="VerticalSlice" instance=ExtResource("9")]
+position = Vector3(-1.16, 0, -30.08)
+scale = Vector3(1.06, 1.06, 1.06)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="ForestNorthBack5" parent="VerticalSlice" instance=ExtResource("10")]
+position = Vector3(2.89, 0, -29.43)
+scale = Vector3(0.9, 0.9, 0.9)
+rotation_degrees = Vector3(0, 350, 0)
+
+[node name="Path" type="Node3D" parent="VerticalSlice"]
+
+[node name="HousePath1" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-1.19, 0.015, 2.98)
+rotation_degrees = Vector3(0, 80, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath2" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-2.87, 0.015, 2.75)
+rotation_degrees = Vector3(0, 85, 0)
+scale = Vector3(1.1, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath3" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-4.5, 0.015, 2.35)
+rotation_degrees = Vector3(0, 58, 0)
+scale = Vector3(1.2, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath4" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-6.02, 0.015, 1.59)
+rotation_degrees = Vector3(0, 65, 0)
+scale = Vector3(1.1, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath5" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-7.54, 0.015, 0.83)
+rotation_degrees = Vector3(0, 62, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath6" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-9.06, 0.015, 0.07)
+rotation_degrees = Vector3(0, 63, 0)
+scale = Vector3(1.2, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath7" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-10.65, 0.015, -0.42)
+rotation_degrees = Vector3(0, -88, 0)
+scale = Vector3(1.2, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath8" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-12.35, 0.015, -0.48)
+rotation_degrees = Vector3(0, 89, 0)
+scale = Vector3(1.1, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath9" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-14.05, 0.015, -0.53)
+rotation_degrees = Vector3(0, -87, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath10" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-15.75, 0.015, -0.59)
+rotation_degrees = Vector3(0, 84, 0)
+scale = Vector3(1.0, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath11" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-17.44, 0.015, -0.43)
+rotation_degrees = Vector3(0, -82, 0)
+scale = Vector3(1.2, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath12" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-19.13, 0.015, -0.22)
+rotation_degrees = Vector3(0, -86, 0)
+scale = Vector3(1.2, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="HousePath13" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.01, 0.015, -0.12)
+rotation_degrees = Vector3(0, -85, 0)
+scale = Vector3(1.2, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath1" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.38, 0.015, -0.92)
+rotation_degrees = Vector3(0, -1, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath2" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.29, 0.015, -2.62)
+rotation_degrees = Vector3(0, -2, 0)
+scale = Vector3(1.0, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath3" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.2, 0.015, -4.31)
+rotation_degrees = Vector3(0, 1, 0)
+scale = Vector3(1.2, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath4" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.11, 0.015, -6.01)
+rotation_degrees = Vector3(0, -3, 0)
+scale = Vector3(1.2, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath5" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.02, 0.015, -7.71)
+rotation_degrees = Vector3(0, -1, 0)
+scale = Vector3(1.0, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath6" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.39, 0.015, -9.35)
+rotation_degrees = Vector3(0, 15, 0)
+scale = Vector3(1.1, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath7" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-20.85, 0.015, -10.99)
+rotation_degrees = Vector3(0, 10, 0)
+scale = Vector3(1.1, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath8" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-21.32, 0.015, -12.62)
+rotation_degrees = Vector3(0, 12, 0)
+scale = Vector3(1.2, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath9" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-21.79, 0.015, -14.26)
+rotation_degrees = Vector3(0, 21, 0)
+scale = Vector3(1.2, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath10" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-22.24, 0.015, -15.9)
+rotation_degrees = Vector3(0, 12, 0)
+scale = Vector3(1.1, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath11" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-22.68, 0.015, -17.54)
+rotation_degrees = Vector3(0, 18, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath12" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-23.12, 0.015, -19.18)
+rotation_degrees = Vector3(0, 14, 0)
+scale = Vector3(1.2, 1, 2.0)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath13" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-23.55, 0.015, -20.82)
+rotation_degrees = Vector3(0, 20, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="ForestPath14" type="MeshInstance3D" parent="VerticalSlice/Path"]
+position = Vector3(-24, 0.015, -22.5)
+rotation_degrees = Vector3(0, 15, 0)
+scale = Vector3(1.0, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")

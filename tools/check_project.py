@@ -2201,6 +2201,51 @@ if "scripts/autoload/farm_manager.gd" not in PINNED or "scripts/farming/farm_plo
 notes.append(f"farming frozen: FarmManager {len(FM_SIGNALS)} signals, {len(FM_PUBLIC)} public functions, {len(FM_SHARED_CONSTS)} shared constants; "
              f"FarmPlot {len(FP_USES)} calls; farm save keys {len(FARM_SAVE_KEYS)}")
 
+# ------------------------------------------------------------ vertical slice placement (M07.2)
+# The approved M07.1 layout (docs/VERTICAL_SLICE_LAYOUT.md) is placed in the Meadow under one
+# VerticalSlice node: placeholders only, and "placement needs no code" — no script on any of its
+# nodes, none in the two new prop scenes, and no script that names them. The house is a plain
+# StaticBody3D (the navigation bake from the navigation_source group avoids it); the NPC spot is a
+# marker without a collider; the door is a plain marker — the Meadow's only AreaEntry stays
+# meadow_start until M08.1 adds the door's (so Main._find_entry's fallback is unchanged). Geometry
+# against the plan (footprint, door, zones, paths, the existing-world digest) is sim_slice_layout's.
+SLICE_PROPS = {"scenes/world/props/HousePlaceholder.tscn", "scenes/world/props/NpcSpotPlaceholder.tscn"}
+SLICE_INSTANCES = SLICE_PROPS | {"scenes/world/props/TreeRound.tscn", "scenes/world/props/TreeTall.tscn", "scenes/world/props/TreeWide.tscn"}
+_, msecs, mext, _ = load_scene_info(MEADOW_SCENE)
+slice_nodes = [(a["name"].strip('"'), a.get("parent", "").strip('"'), a, b) for k, a, b in msecs
+               if k == "node" and (a.get("parent", "").strip('"') == "VerticalSlice" or a.get("parent", "").strip('"').startswith("VerticalSlice/")
+                                   or (a["name"].strip('"') == "VerticalSlice" and a.get("parent", "").strip('"') == "."))]
+roots = [n for n in slice_nodes if n[0] == "VerticalSlice"]
+if len(roots) != 1 or roots[0][2].get("type", "").strip('"') != "Node3D" or re.search(r"^(position|rotation|rotation_degrees|scale|transform) = ", roots[0][3], re.M):
+    err(f"{MEADOW_SCENE}: one VerticalSlice Node3D directly under the Meadow, at the origin, unrotated")
+for name, par, a, b in slice_nodes:
+    inst = script_for_ext(mext, re.search(r'ExtResource\("([^"]+)"\)', a["instance"]).group(1)) if "instance" in a else None
+    if re.search(r"^script = ", b, re.M) or (inst and scene_root_script_of(inst)):
+        err(f"{MEADOW_SCENE}: VerticalSlice/{name} carries a script — M07.2 placement needs no code")
+    if inst and inst not in SLICE_INSTANCES:
+        err(f"{MEADOW_SCENE}: VerticalSlice/{name} instances {inst} — only the house, NPC spot and tree placeholders")
+    if par == "VerticalSlice/Path" and (a.get("type", "").strip('"') != "MeshInstance3D" or 'mesh = SubResource("CylinderMesh_path")' not in b
+                                         or 'surface_material_override/0 = SubResource("Material_path")' not in b):
+        err(f"{MEADOW_SCENE}: VerticalSlice/Path/{name} is a path patch (the existing path mesh and material)")
+for prop in sorted(SLICE_PROPS):
+    ptxt = open(prop, encoding="utf-8").read() if os.path.exists(prop) else ""
+    if not ptxt or 'type="Script"' in ptxt or re.search(r"^script = ", ptxt, re.M):
+        err(f"{prop}: a placeholder scene with no script (M07.2)")
+hp = open("scenes/world/props/HousePlaceholder.tscn", encoding="utf-8").read() if os.path.exists("scenes/world/props/HousePlaceholder.tscn") else ""
+if not re.search(r'^\[node name="HousePlaceholder" type="StaticBody3D"\]', hp, re.M) or hp.count('type="CollisionShape3D"') != 1 \
+   or not re.search(r'^\[node name="DoorMarker" type="Marker3D" parent="\."\]', hp, re.M):
+    err("scenes/world/props/HousePlaceholder.tscn: a StaticBody3D with one collision box and a plain DoorMarker (no AreaEntry before M08.1)")
+npt = open("scenes/world/props/NpcSpotPlaceholder.tscn", encoding="utf-8").read() if os.path.exists("scenes/world/props/NpcSpotPlaceholder.tscn") else ""
+if not re.search(r'^\[node name="NpcSpotPlaceholder" type="Marker3D"\]', npt, re.M) or re.search(r"Body3D|CollisionShape3D|Area3D", npt):
+    err("scenes/world/props/NpcSpotPlaceholder.tscn: a marker only — no collider (the NPC is M08.3's)")
+if sorted(e for e, _ in entry_scenes.get(MEADOW_SCENE, [])) != ["meadow_start"]:
+    err(f"{MEADOW_SCENE}: the Meadow's only AreaEntry stays meadow_start until M08.1 adds the door's (found {entry_scenes.get(MEADOW_SCENE)})")
+for f, s2 in scripts.items():
+    if not f.startswith("tools/") and re.search(r"VerticalSlice|HousePlaceholder|NpcSpotPlaceholder|DoorMarker|\bNpcSpot\b", code_only(s2)):
+        err(f"{f}: names the vertical slice placeholders — M07.2 placement needs no code")
+notes.append(f"vertical slice (M07.2): {len(slice_nodes)} VerticalSlice nodes, no scripts; house StaticBody3D + DoorMarker, NPC marker without collider; "
+             f"Meadow entries {sorted(e for e, _ in entry_scenes.get(MEADOW_SCENE, []))}")
+
 # ------------------------------------------------------------ UI surfaces and HUD (M06.3, D-26)
 # One shared theme (scenes/ui/wriksha_theme.tres) for the HUD, the Basket,
 # the Inventory and the notification card. The HUD's top bar is anchored to

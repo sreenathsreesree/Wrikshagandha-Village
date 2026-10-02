@@ -7,8 +7,9 @@
    Facing on arrival (M02.3): accept -> face the target -> interact, from the
    target's position (behind/side/underfoot), never for a cancelled or
    replaced target; walking faces the path, not a target.
-3. Meadow geometry: spawn and every interactable reachable (not inside an
-   obstacle footprint grown by the nav agent radius).
+3. Meadow geometry: spawn, every interactable and the NPC spot (M07.2) reachable
+   (not inside an obstacle footprint grown by the nav agent radius; the forest-edge
+   trees and the house placeholder count as obstacles).
 """
 import itertools, math, os, random, re
 
@@ -202,7 +203,8 @@ print(f"player model: 2000 runs x 600 steps OK; {stats}")
 
 # ------------------------------------------------------------ 3. geometry
 AGENT_R = 0.35
-FOOT = {"12": 0.42 + 0.1, "14": 0.38, "9": 0.2, "10": 0.16, "11": 0.24, "15": 0.9 + 0.23, "33": 0.36}  # rock (offset), bush, trees, log half-length, monolith half-diag
+FOOT = {"12": 0.42 + 0.1, "14": 0.38, "9": 0.2, "10": 0.16, "11": 0.24, "15": 0.9 + 0.23, "33": 0.36,  # rock (offset), bush, trees, log half-length, monolith half-diag
+        "41": math.hypot(3.0, 2.5)}                                    # M07.2: the 6 x 5 m house placeholder, as its half-diagonal (conservative)
 s = open(os.path.join(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")), "scenes", "world", "Meadow.tscn")).read()
 obstacles, points = [], []
 for chunk in s.split("\n[")[1:]:
@@ -217,7 +219,7 @@ for chunk in s.split("\n[")[1:]:
     parent = (re.search(r'parent="([^"]+)"', chunk.split("\n")[0]) or [None, ""])[1]
     if inst and inst.group(1) in FOOT and "/" not in parent.replace("Farm", "", 0):
         obstacles.append((name, x, z, FOOT[inst.group(1)] * k))
-    if inst and inst.group(1) in ("3", "4", "5", "6", "7", "19", "20", "21", "22", "23", "38"):
+    if inst and inst.group(1) in ("3", "4", "5", "6", "7", "19", "20", "21", "22", "23", "38", "42"):   # 42: the NPC spot (M07.2) must be reachable
         points.append((name, x, z))
 # The player now lives in the persistent Main scene (M03.1), with the Meadow
 # instanced at the origin — so its position there is its Meadow position.

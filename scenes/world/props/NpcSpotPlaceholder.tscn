@@ -1,0 +1,18 @@
+[gd_scene load_steps=3 format=3]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_spot"]
+top_radius = 0.45
+bottom_radius = 0.45
+height = 0.02
+radial_segments = 16
+
+[sub_resource type="StandardMaterial3D" id="Material_spot"]
+albedo_color = Color(0.78, 0.64, 0.36, 1)
+roughness = 1.0
+
+[node name="NpcSpotPlaceholder" type="Marker3D"]
+
+[node name="Spot" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.02, 0)
+mesh = SubResource("CylinderMesh_spot")
+surface_material_override/0 = SubResource("Material_spot")
