@@ -44,6 +44,15 @@ Checks:
    - path patches (the existing path's mesh and material) are centred on their planned path
      and cover it end to end with no gap (every 0.25 m of the polyline lies inside a patch,
      the first metres of "to_house" inside the existing path), and none lies in the house.
+7. Navigation and bounds (M07.3; the runtime audit's fixes):
+   - `WorldRim` (outside the existing-world digest, like VerticalSlice): four walls whose inner faces lie
+     exactly on the camera bounds' edges (the 64×64 ground), each spanning the whole side, tall enough to
+     stop the player (≥ 1.2 m), at y from 0;
+   - the house's NavigationObstacle3D outline is exactly its 6×5 footprint and rises above the walls;
+   - the pond's blocked core (O-07B, D-28): collider radius = carve radius, smaller than the water so a
+     walkable shallow edge remains inside the water (≥ 0.4 m past the carve; the bank beyond), and every discovery inside the water is
+     still within the Player's INTERACTION_RADIUS (with 0.3 m to spare) from the nearest walkable point
+     (core radius + the navigation agent radius).
 """
 import hashlib, math, os, re
 
@@ -59,7 +68,8 @@ SOLID_R = {"TreeRound.tscn": 1.5, "TreeTall.tscn": 1.2, "TreeWide.tscn": 1.8, "R
 SOFT_R = {"GrassClump.tscn": 0.4, "GlowingMotes.tscn": 0.5, "Footprints.tscn": 0.5, "DriftingLeaf.tscn": 0.3, "Butterfly.tscn": 0.3}
 MOVING = ("Wildlife", "Ambient", "EnvironmentalEvents", "WorldSimulation")   # actors that move or carry no footprint
 SLICE = "VerticalSlice"
-def in_slice(par, name): return par == SLICE or par.startswith(SLICE + "/") or (par == "." and name == SLICE)
+ADDED = (SLICE, "WorldRim")                                                       # M07.2 slice, M07.3 rim: outside the existing-world digest
+def in_slice(par, name): return any(par == r or par.startswith(r + "/") or (par == "." and name == r) for r in ADDED)
 NODES, OBJECTS, PATCHES, GEOM, BASE_GEOM, PLACED = {}, [], [], [], [], []
 for m in re.finditer(r'^\[node name="([^"]+)"([^\]]*)\]\n(.*?)(?=^\[|\Z)', SCENE, re.M | re.S):
     name, attrs, body = m.groups()
@@ -285,6 +295,42 @@ for pid, pts in plan["path"].items():
             assert ok, f"path {pid} has a gap at ({px:.2f}, {pz:.2f})"
 n_patches = {pid: sum(1 for p in new_patches if p[0] == pid) for pid in plan["path"]}
 
+# ---------------------------------------------------------------- 7. navigation and bounds (M07.3)
+SUBS = dict(re.findall(r'\[sub_resource type="BoxShape3D" id="(\w+)"\]\nsize = Vector3\(([^)]*)\)', SCENE))
+rim = {name: (vec(props, "position"), tuple(float(v) for v in SUBS[re.search(r'SubResource\("(\w+)"\)', body).group(1)].split(",")))
+       for name, (par, attrs, body, props) in placed.items() if par == "WorldRim"}
+assert sorted(rim) == ["East", "North", "South", "West"], f"four rim walls ({sorted(rim)})"
+for name, ((px, py, pz), (sx, sy, sz)) in rim.items():
+    assert sy >= 1.2 and abs(py - sy / 2) < 1e-6, f"rim {name}: from the ground up, tall enough to stop the player"
+    if name in ("North", "South"):
+        inner = abs(pz) - sz / 2
+        assert math.isclose(inner, HALF_Z) and sx / 2 >= HALF_X and px == 0, f"rim {name}: inner face on the bounds edge, spanning the side"
+    else:
+        inner = abs(px) - sx / 2
+        assert math.isclose(inner, HALF_X) and sz / 2 >= HALF_Z and pz == 0, f"rim {name}: inner face on the bounds edge, spanning the side"
+ob = re.search(r'\[node name="NavigationObstacle3D"[^\]]*\]\nheight = ([0-9.]+)\nvertices = PackedVector3Array\(([^)]*)\)', htxt)
+hv = [float(v) for v in ob.group(2).split(",")]
+outline = sorted({(hv[i], hv[i + 2]) for i in range(0, len(hv), 3)})
+assert outline == sorted({(sx_ * w / 2, sz_ * d / 2) for sx_ in (-1, 1) for sz_ in (-1, 1)}) and float(ob.group(1)) > 3.0 + 1.5 - 1e-6, \
+    f"the house carve is its footprint and rises above the house ({outline}, {ob.group(1)})"
+PT = _src("scenes", "world", "props", "PondWater.tscn")
+water_r = float(re.search(r'\[sub_resource type="CylinderMesh" id="CylinderMesh_water"\]\ntop_radius = ([0-9.]+)', PT).group(1))
+core_r = float(re.search(r'\[sub_resource type="CylinderShape3D" id="CylinderShape3D_core"\]\nradius = ([0-9.]+)', PT).group(1))
+pv = [float(v) for v in re.search(r'\[node name="NavigationObstacle3D"[^\]]*\]\nheight = [0-9.]+\nvertices = PackedVector3Array\(([^)]*)\)', PT).group(1).split(",")]
+carve_r = [math.hypot(pv[i], pv[i + 2]) for i in range(0, len(pv), 3)]
+assert all(math.isclose(r, core_r, abs_tol=0.01) for r in carve_r), "the pond carve is the core's outline"
+AGENT_R = float(re.search(r"^agent_radius = ([0-9.]+)", SCENE, re.M).group(1))
+REACH = float(re.search(r"^const INTERACTION_RADIUS := ([0-9.]+)", _src("scripts", "player", "player.gd"), re.M).group(1))
+assert water_r - (core_r + AGENT_R) >= 0.4, f"a walkable shallow edge remains ({water_r} water, {core_r} core)"
+pond_x, pond_z = NODES["Pond"][0]
+in_pond = [(n, x, z) for n, x, z, r, k in OBJECTS if k == "solid" and n.endswith("Spawn") and math.hypot(x - pond_x, z - pond_z) < water_r]
+assert in_pond, "the pond holds discoveries"
+reach = {}
+for n, x, z in in_pond:
+    gap = max(core_r + AGENT_R - math.hypot(x - pond_x, z - pond_z), 0.0)
+    assert gap <= REACH - 0.3, f"{n} stays in reach from the pond edge ({gap:.2f} m > {REACH - 0.3:.2f})"
+    reach[n] = round(gap, 2)
+
 print(f"slice layout: {len(plan['existing'])} existing coordinates match Meadow.tscn; existing geometry digest {DIGEST} unchanged; scene digest {SCENE_DIGEST}; "
       f"bounds ±{HALF_X:g}×±{HALF_Z:g}; house {w:g}×{d:g} m at ({cx:g}, {cz:g}) clear by ≥{min(clear['house']):.2f} m, "
       f"NPC by ≥{min(clear['npc']):.2f} m, paths by ≥{min(clear['paths']):.2f} m; {len(plan['forest'])} forest zones empty; "
@@ -292,4 +338,6 @@ print(f"slice layout: {len(plan['existing'])} existing coordinates match Meadow.
 print(f"placement: house {w:g}×{d:g} m StaticBody3D on the footprint, door marker on the door facing out, no AreaEntry; NPC marker without collider; "
       f"{len(trees)} forest-edge trees in their zones (canopies clear of existing objects by ≥{min(tclear):.2f} m, no gap > 5 m); "
       f"path patches {n_patches} cover both paths end to end")
+print(f"navigation and bounds: rim walls on the ±{HALF_X:g} edges (1.6 m); house carve = footprint; pond core {core_r:g} m in {water_r:g} m water "
+      f"(shallow edge {water_r - core_r - AGENT_R:.2f} m), in-pond discoveries within reach {reach} (≤ {REACH - 0.3:.1f} m)")
 print("ALL SLICE LAYOUT SIMULATIONS PASSED")

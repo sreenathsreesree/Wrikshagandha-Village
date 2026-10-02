@@ -933,11 +933,13 @@ if found_al != AUTOLOADS:
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
 PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
-          "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c6b25f3568d7b59a",
+          "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "30c3d242996c7da3",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen;
           #  and by M06.3: the top-anchored top bar, bottom-right thumb buttons, the shared theme.)
+          # (FollowCamera.tscn re-pinned deliberately by M07.3 (D-29): the SpringArm3D ignores geometry,
+          #  collision_mask = 0 — the camera no longer collapses against the house or the monolith.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
@@ -2245,6 +2247,30 @@ for f, s2 in scripts.items():
         err(f"{f}: names the vertical slice placeholders — M07.2 placement needs no code")
 notes.append(f"vertical slice (M07.2): {len(slice_nodes)} VerticalSlice nodes, no scripts; house StaticBody3D + DoorMarker, NPC marker without collider; "
              f"Meadow entries {sorted(e for e, _ in entry_scenes.get(MEADOW_SCENE, []))}")
+
+# ------------------------------------------------------------ slice navigation and bounds (M07.3, D-28, D-29)
+# Runtime-audit fixes, each isolated: the camera's SpringArm3D ignores geometry (D-29); the house carves
+# its footprint (and its top) out of the navigation mesh baked at load, so a tap on the house is never a
+# walk onto its roof; the Meadow has four invisible rim walls just outside its 64 x 64 ground (inner faces
+# on the camera bounds' edges), so the player can't walk off the world; the pond has a blocked inner core
+# (collider + matching carve) inside its water, leaving a walkable shallow edge (O-07 -> D-28). Geometry
+# (the core keeps both in-pond discoveries in interaction reach) is sim_slice_layout's.
+fc = open("scenes/camera/FollowCamera.tscn", encoding="utf-8").read()
+if not re.search(r'\[node name="SpringArm3D" type="SpringArm3D" parent="\."\]\n(?:[^\[]*\n)?collision_mask = 0\n', fc):
+    err("scenes/camera/FollowCamera.tscn: the SpringArm3D ignores geometry (collision_mask = 0, D-29) — the camera never collapses onto the player")
+def obstacle_ok(txt, name="NavigationObstacle3D"):
+    m = re.search(rf'\[node name="{name}" type="NavigationObstacle3D" parent="\."\]\n(.*?)(?=\n\[|\Z)', txt, re.S)
+    return bool(m) and all(k in m.group(1) for k in ("affect_navigation_mesh = true", "carve_navigation_mesh = true", "avoidance_enabled = false"))
+if not obstacle_ok(hp):
+    err("scenes/world/props/HousePlaceholder.tscn: a NavigationObstacle3D carves the house out of the navigation mesh (affect + carve, no avoidance)")
+pw = open("scenes/world/props/PondWater.tscn", encoding="utf-8").read()
+if not obstacle_ok(pw) or not re.search(r'^\[node name="Core" type="StaticBody3D" parent="\."\]', pw, re.M) or pw.count('type="CollisionShape3D"') != 1:
+    err("scenes/world/props/PondWater.tscn: the pond has one blocked inner core (a StaticBody3D Core + a carving NavigationObstacle3D) — O-07B, never a solid pond")
+rim = [(a["name"].strip('"'), b) for k, a, b in msecs if k == "node" and a.get("parent", "").strip('"') == "WorldRim"]
+rim_root = [b for k, a, b in msecs if k == "node" and a["name"].strip('"') == "WorldRim" and a.get("parent", "").strip('"') == "." and a.get("type", "").strip('"') == "StaticBody3D"]
+if len(rim_root) != 1 or sorted(n for n, _ in rim) != ["East", "North", "South", "West"] or re.search(r"^script = ", "".join(b for _, b in rim) + (rim_root[0] if rim_root else ""), re.M):
+    err(f"{MEADOW_SCENE}: one WorldRim StaticBody3D with four collision walls (North/South/West/East), no script")
+notes.append(f"slice navigation and bounds (M07.3): camera arm ignores geometry; house + pond core carve the navigation mesh; WorldRim walls {sorted(n for n, _ in rim)}")
 
 # ------------------------------------------------------------ UI surfaces and HUD (M06.3, D-26)
 # One shared theme (scenes/ui/wriksha_theme.tres) for the HUD, the Basket,

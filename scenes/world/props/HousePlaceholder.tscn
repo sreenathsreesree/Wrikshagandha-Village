@@ -45,6 +45,13 @@ surface_material_override/0 = SubResource("Material_door")
 position = Vector3(3, 0, 0)
 rotation_degrees = Vector3(0, -90, 0)
 
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+height = 4.5
+vertices = PackedVector3Array(-3, 0, -2.5, 3, 0, -2.5, 3, 0, 2.5, -3, 0, 2.5)
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+avoidance_enabled = false
+
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 position = Vector3(0, 1.5, 0)
 shape = SubResource("BoxShape3D_house")

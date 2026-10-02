@@ -1,4 +1,4 @@
-[gd_scene load_steps=50 format=3]
+[gd_scene load_steps=52 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
@@ -72,6 +72,12 @@ radial_segments = 10
 [sub_resource type="StandardMaterial3D" id="Material_path"]
 albedo_color = Color(0.55, 0.44, 0.3, 1)
 roughness = 1.0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rim_x"]
+size = Vector3(66, 1.6, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_rim_z"]
+size = Vector3(1, 1.6, 66)
 
 [sub_resource type="NavigationMesh" id="NavigationMesh_meadow"]
 geometry_parsed_geometry_type = 1
@@ -881,6 +887,24 @@ entry_id = "meadow_start"
 [node name="CameraBounds" type="Node3D" parent="."]
 script = ExtResource("camera_bounds")
 size = Vector2(64, 64)
+
+[node name="WorldRim" type="StaticBody3D" parent="."]
+
+[node name="North" type="CollisionShape3D" parent="WorldRim"]
+position = Vector3(0, 0.8, -32.5)
+shape = SubResource("BoxShape3D_rim_x")
+
+[node name="South" type="CollisionShape3D" parent="WorldRim"]
+position = Vector3(0, 0.8, 32.5)
+shape = SubResource("BoxShape3D_rim_x")
+
+[node name="West" type="CollisionShape3D" parent="WorldRim"]
+position = Vector3(-32.5, 0.8, 0)
+shape = SubResource("BoxShape3D_rim_z")
+
+[node name="East" type="CollisionShape3D" parent="WorldRim"]
+position = Vector3(32.5, 0.8, 0)
+shape = SubResource("BoxShape3D_rim_z")
 
 [node name="VerticalSlice" type="Node3D" parent="."]
 

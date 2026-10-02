@@ -9,7 +9,9 @@
    replaced target; walking faces the path, not a target.
 3. Meadow geometry: spawn, every interactable and the NPC spot (M07.2) reachable
    (not inside an obstacle footprint grown by the nav agent radius; the forest-edge
-   trees and the house placeholder count as obstacles).
+   trees and the house placeholder count as obstacles). The pond's blocked core
+   (M07.3, O-07B) is an obstacle too; a discovery inside it must be within the
+   Player's INTERACTION_RADIUS (0.3 m to spare) of the walkable edge.
 """
 import itertools, math, os, random, re
 
@@ -204,7 +206,10 @@ print(f"player model: 2000 runs x 600 steps OK; {stats}")
 # ------------------------------------------------------------ 3. geometry
 AGENT_R = 0.35
 FOOT = {"12": 0.42 + 0.1, "14": 0.38, "9": 0.2, "10": 0.16, "11": 0.24, "15": 0.9 + 0.23, "33": 0.36,  # rock (offset), bush, trees, log half-length, monolith half-diag
-        "41": math.hypot(3.0, 2.5)}                                    # M07.2: the 6 x 5 m house placeholder, as its half-diagonal (conservative)
+        "41": math.hypot(3.0, 2.5),                                     # M07.2: the 6 x 5 m house placeholder, as its half-diagonal (conservative)
+        "17": float(re.search(r'id="CylinderShape3D_core"\]\nradius = ([0-9.]+)', open(os.path.join(REPO, "scenes", "world", "props", "PondWater.tscn")).read()).group(1))}
+REACH_ONLY = {"17"}   # M07.3 (O-07B): discoveries inside the pond's blocked core are reached by the interaction range, not by standing on them
+INTERACTION_R = _const("INTERACTION_RADIUS", _PL_SRC)
 s = open(os.path.join(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")), "scenes", "world", "Meadow.tscn")).read()
 obstacles, points = [], []
 for chunk in s.split("\n[")[1:]:
@@ -218,7 +223,7 @@ for chunk in s.split("\n[")[1:]:
     k = max(float(v) for v in sc.group(1).split(",")) if sc else 1.0
     parent = (re.search(r'parent="([^"]+)"', chunk.split("\n")[0]) or [None, ""])[1]
     if inst and inst.group(1) in FOOT and "/" not in parent.replace("Farm", "", 0):
-        obstacles.append((name, x, z, FOOT[inst.group(1)] * k))
+        obstacles.append((name, x, z, FOOT[inst.group(1)] * k, inst.group(1) in REACH_ONLY))
     if inst and inst.group(1) in ("3", "4", "5", "6", "7", "19", "20", "21", "22", "23", "38", "42"):   # 42: the NPC spot (M07.2) must be reachable
         points.append((name, x, z))
 # The player now lives in the persistent Main scene (M03.1), with the Meadow
@@ -229,12 +234,16 @@ _pp = re.search(r'\[node name="Player" parent="\." [^\n]*\]\nposition = Vector3\
 assert _pp, "Main.tscn places the Player"
 _px, _, _pz = [float(v) for v in _pp.group(1).split(",")]
 points.append(("PlayerSpawn", _px, _pz))
-bad = []
+bad, by_reach = [], []
 for pn, px, pz in points:
-    for on, ox, oz, r in obstacles:
-        if math.hypot(px - ox, pz - oz) < r + AGENT_R * 0.5:
-            bad.append(f"{pn} inside {on} ({math.hypot(px-ox, pz-oz):.2f} < {r + AGENT_R*0.5:.2f})")
-print(f"geometry: {len(obstacles)} solid obstacles, {len(points)} interactables/spawn checked; problems: {len(bad)}")
+    for on, ox, oz, r, reach_only in obstacles:
+        d = math.hypot(px - ox, pz - oz)
+        if d < r + AGENT_R * 0.5:
+            if reach_only and pn != "PlayerSpawn" and (r + AGENT_R) - d <= INTERACTION_R - 0.3:
+                by_reach.append(f"{pn} ({(r + AGENT_R) - d:.2f} m from the {on} edge)")
+                continue
+            bad.append(f"{pn} inside {on} ({d:.2f} < {r + AGENT_R*0.5:.2f})")
+print(f"geometry: {len(obstacles)} solid obstacles, {len(points)} interactables/spawn checked; problems: {len(bad)}; reached from the pond edge: {by_reach}")
 for b in bad: print("  ", b)
 print(f"nav agent radius {AGENT_R} >= capsule 0.32: {AGENT_R >= 0.32}; mound tier step 0.15 <= max_climb 0.25: {0.15 <= 0.25}")
 assert not bad

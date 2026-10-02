@@ -1,8 +1,8 @@
 # Vertical slice layout plan (M07.1)
 
-Status: **approved by the developer as proposed** (M07.1 `[x]`). **Placed in `Meadow.tscn` by M07.2**
-(`[~]`: statically verified; the editor open and the runtime checks below are pending).
-Navigation tuning, bounds and the pond decision are M07.3; the house interior is M08.1.
+Status: **approved by the developer as proposed** (M07.1 `[x]`). **Placed in `Meadow.tscn` by M07.2** and **made walkable,
+bounded and runtime-checked by M07.3** (both `[~]`: verified at runtime on desktop Godot 4.7.2; Android pending).
+The house interior is M08.1.
 
 ## Scope (decided)
 - The whole vertical slice stays **inside the existing 64 × 64 m Meadow** (camera bounds `CameraBounds`, ±32 m). No larger world, no second area (D-12; O-05 keeps the final area structure open until Phase 16).
@@ -61,7 +61,7 @@ The garden, pond and existing paths are unchanged: the existing path still runs 
 - Forest-edge zones contain no existing object.
 - Planned paths keep **0.8 m** from solid objects, never cross the pond, a plot or the house, and may pass through places' trigger zones, decoration and past the player spawn point (the existing path already starts beside it).
 - Connections: "to_house" starts on an existing path patch and ends at the door; "to_forest" starts at the door and ends at the trailhead, which touches a forest zone; the NPC stands 1.2–3 m from a planned path and within 4 m of the door; the door sits on the footprint's edge.
-- The existing Meadow's geometry digest below (every node outside `VerticalSlice`) must still match the scene — M07.2 added nodes without changing any existing one — and the whole scene must match `scene_digest`, so any later change to `Meadow.tscn` is made deliberately together with this plan.
+- The existing Meadow's geometry digest below (every node outside `VerticalSlice` and `WorldRim`) must still match the scene — M07.2 and M07.3 added nodes without changing any existing one — and the whole scene must match `scene_digest`, so any later change to `Meadow.tscn` is made deliberately together with this plan.
 - Placement (M07.2): see **Implementation state** below for the extra rules the placed nodes are checked against.
 
 ## Implementation state (M07.2)
@@ -91,25 +91,38 @@ placeholders); `tools/sims/sim_slice_layout.py` (placement against this plan —
 NPC spot, trees in their zones and clear of everything, gaps ≤ 5 m, path coverage end to end, existing-world digest);
 `tools/sims/sim_tap_movement.py` (spawn, interactables and the NPC spot clear of every obstacle, the house and trees included).
 
-**Runtime pending (needs the Godot editor / a device — not done):**
-- [ ] Open `Meadow.tscn` and the two new prop scenes in the Godot 4.7.2 editor: no load errors or warnings (they are hand-written in the existing scene style).
-- [ ] Look: the house, roof and door read as a house; the forest edge reads as an edge; the path patches join the existing path without visible gaps.
-- [ ] Navigation: the mesh bakes at load with the house and trees; tap-to-move routes around the house and reaches the door front, the NPC spot and the trailhead; joystick collides with the house walls.
-- [ ] Camera: the roof (≈ 4.1 m) hiding the player behind the house is acceptable or noted for M07.3; the forest canopies at the rim look right against the bounds (bounds unchanged).
-- [ ] Android: frame rate and load (bake) time with 36 more trees, 27 patches and the house (shadows on).
+**Runtime (desktop Godot 4.7.2, rendered window; after M07.3's fixes):**
+- [x] The editor opens the project, `Meadow.tscn`, `HousePlaceholder.tscn`, `NpcSpotPlaceholder.tscn`, `PondWater.tscn`, `FollowCamera.tscn` and `Main.tscn` with no errors or warnings.
+- [x] Look: the house reads as a house from the south; the path patches join the existing path. The forest edge is sparse and the ground's edge is visible behind it — art polish (Phase 16), not a blocker.
+- [x] Navigation: see M07.3 below.
+- [x] Camera: steady at its 11 m arm everywhere (D-29); the roof hides the player directly behind the house (accepted trade-off).
+- [ ] Android: frame rate and load (bake) time — pending (desktop software rendering only: ~9 % slower frames than before M07.2, not representative).
+
+## Navigation, bounds and the pond (M07.3)
+The runtime audit (first real run of M07.2) found three blockers; each got one isolated fix:
+
+| Finding (runtime) | Cause | Fix |
+|---|---|---|
+| North of the house the camera collapsed to 0.4–1.1 m (the screen showed only the player's head); the same at the Overlook monolith since before M07.2 | the `SpringArm3D` collides with tall solids | `FollowCamera.tscn`: `collision_mask = 0` on the arm (D-29) |
+| A tap on or behind the house walked the player into the wall (target on the house top, y 3.3) | the flat top of the house collider baked as a walkable island | `HousePlaceholder.tscn`: a `NavigationObstacle3D` (affect + carve, footprint outline, 4.5 m high) carves the house from the mesh |
+| The joystick walked off the world on every side (also before M07.2); the forest edge's 4 m spacing doesn't stop it | no boundary | `Meadow.tscn`: `WorldRim`, four invisible 1.6 m walls just outside the 64 × 64 ground (inner faces on the camera bounds' edges; camera bounds unchanged) |
+| The pond was fully walkable by accident (the player stood on the water) — O-07 | the pond has no collider | `PondWater.tscn`: a blocked core of radius 2.8 m (collider + matching carve) inside the 3.6 m water — O-07B (D-28) |
+
+**Verified at runtime (desktop):** start → garden → pond → Quiet Farm → Wildflower Clearing → house approach; tapping the ground at the door walks to (-20.4, 0) — the door is a plain marker (not an `AreaEntry`; `meadow_start` the only entry; standing on it triggers nothing); the joystick stops at all four walls (x -20.68 / -27.32, z ±2.82), slides along them, never sticks; walking round the house works by joystick and by tapping the ground beside it; 14 taps on the roof/walls do nothing (never a walk onto the roof; the navigation mesh has no polygon in the footprint) and the mesh routes around the house (19.8 m vs 17.0 m straight); the camera keeps 11 m behind the house and the monolith (the roof then hides the player); the NPC spot is reached by tap (0.04 m) and crossed at full speed; both paths by tap and joystick at full speed; the trailhead from the path and from the forest side; the joystick stops at ±31.68 on all four sides and the corner, never falls, and walks back freely; a tap at the rim stops on the walkable edge; the joystick stops at the pond edge 3.12 m from the centre (from the south and the west), slides along it and leaves freely; a tap on the shallow edge arrives, a tap on the core does nothing; Wild Mint and River Stone are both collected from the edge; tap replacement, joystick takeover and mode switching unchanged; the places route behaves exactly as before.
+
+**Pre-existing (identical before M07.2; not M07.3's):** tap-walks toward the NW mound (around (-10.4, 1.2), (-13.5, 3.0)) and the NE mound (Overlook approach, (8.6, 9.0)) jitter at the first terrace edge until the next input; `Patch7` of the existing path is drawn into the water; 9 `det == 0` engine errors at boot. **Future polish:** roof fade / cutaway behind tall objects (D-29); a denser or framed forest edge hiding the ground's rim (Phase 16 art); wading visuals at the pond edge.
 
 ## Not decided here
-- **O-07** — is the pond walkable? (M07.3; the plan keeps every proposed element and path out of the pond either way.)
 - **O-12** — camera bounds for interiors (before M08.2).
 - The house's final look (Phase 16 art), the NPC's identity and dialogue (Phase 08).
 
 ## Machine-readable plan
 
 ```slice-layout
-# existing Meadow (every node outside VerticalSlice) — unchanged by M07.2
+# existing Meadow (every node outside VerticalSlice and WorldRim) — unchanged by M07.2 and M07.3
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice included (M07.2)
-scene_digest 076b3a88611ba905
+# the whole Meadow, VerticalSlice (M07.2) and WorldRim (M07.3) included
+scene_digest 6d460e2222d7ccc0
 # existing Meadow nodes the plan relies on (checked against Meadow.tscn)
 existing PlayerSpawn 0.0 5.0
 existing Patch1 0.5 3.2

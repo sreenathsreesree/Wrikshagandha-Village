@@ -9,6 +9,7 @@ script = ExtResource("1")
 position = Vector3(0, 1.4, 0)
 rotation_degrees = Vector3(-42, 0, 0)
 spring_length = 11.0
+collision_mask = 0
 
 [node name="Camera3D" type="Camera3D" parent="SpringArm3D"]
 current = true
