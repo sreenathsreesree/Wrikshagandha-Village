@@ -1,6 +1,6 @@
 # Vertical slice layout plan (M07.1)
 
-Status: **proposed — awaiting developer approval** (M07.1 "done when: developer-approved layout").
+Status: **approved by the developer as proposed** (M07.1 `[x]`).
 Nothing in the game has changed: `scenes/world/Meadow.tscn` is untouched. Placing anything is M07.2;
 navigation, bounds and the pond decision are M07.3; the house interior is M08.1.
 

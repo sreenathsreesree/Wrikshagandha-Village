@@ -242,7 +242,7 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
 - World content is always placed in the editor. Places, elements and (later) NPCs are data resources referenced by id.
 - Nothing in scripts depends on exact prop positions.
 - *(Resolved by M03.6: the place list, the garden place id, curiosity pairs and the secret count are `PlaceDefinition` data in `data/places/`.)*
-- **Vertical slice layout (M07.1, proposed):** the whole slice stays inside the existing 64 × 64 m Meadow — house exterior slot, NPC spot, forest-edge zones and the path extensions are planned in `docs/VERTICAL_SLICE_LAYOUT.md`, whose machine-readable block `tools/sims/sim_slice_layout.py` checks against `Meadow.tscn` (existing coordinates, a geometry digest, bounds, clearances, connections). Any change to `Meadow.tscn` (M07.2 onward) updates the plan's digest deliberately.
+- **Vertical slice layout (M07.1, approved):** the whole slice stays inside the existing 64 × 64 m Meadow — house exterior slot, NPC spot, forest-edge zones and the path extensions are planned in `docs/VERTICAL_SLICE_LAYOUT.md`, whose machine-readable block `tools/sims/sim_slice_layout.py` checks against `Meadow.tscn` (existing coordinates, a geometry digest, bounds, clearances, connections). Any change to `Meadow.tscn` (M07.2 onward) updates the plan's digest deliberately.
 
 ## 13. UI architecture
 - **Current:**
