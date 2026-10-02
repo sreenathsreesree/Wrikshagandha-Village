@@ -2322,7 +2322,9 @@ WANT_VARIATIONS = {"HudPill": "PanelContainer", "CoinChip": "PanelContainer", "P
 if not theme_txt.startswith('[gd_resource type="Theme"') or any(variations.get(k) != v for k, v in WANT_VARIATIONS.items()):
     err(f"{THEME_TRES}: the shared UI theme defines {sorted(WANT_VARIATIONS)} on their base types (found {variations})")
 UI_SCENES = {"scenes/ui/HUD.tscn": ["TopArea", "ScreenButtons"], "scenes/ui/BasketScreen.tscn": ["."],
-             "scenes/ui/InventoryScreen.tscn": ["."], "scenes/ui/DiscoveryNotification.tscn": ["."]}
+             "scenes/ui/InventoryScreen.tscn": ["."], "scenes/ui/DiscoveryNotification.tscn": ["."],
+             # M07.4a: the Collection, Journal and Daily screens joined the shared theme (landscape pass).
+             "scenes/ui/CollectionScreen.tscn": ["."], "scenes/ui/JournalScreen.tscn": ["."], "scenes/ui/DailyDiscoveryScreen.tscn": ["."]}
 ui_nodes = {}
 for scene, roots in UI_SCENES.items():
     nodes, txt = scene_nodes(scene)
@@ -2410,6 +2412,38 @@ if re.search(r"\bMarket\b|\bWallet\b|Button\.new\(|\"Sell|sell_value|get_unit_pr
    or [k for k, (a, b) in ui_nodes["scenes/ui/InventoryScreen.tscn"].items() if 'type="Button"' in a] != ["Panel/VBoxContainer/Header/CloseButton"]:
     err(f"{IS}: the Inventory stays read-only — its only button closes it; no Market, Wallet, price or Sell")
 notes.append(f"ui: shared theme {len(variations)} variations; top bar anchored top; touch targets >= {TOUCH_MIN} px; harvest/sale cards fixed; inventory read-only")
+
+# ------------------------------------------------------------ landscape UI pass: Collection, Journal, Daily (M07.4a, D-26/D-30)
+# The three older screens use the shared theme's sheet (checked above with the other UI scenes: theme,
+# variations, 120 px buttons). They only display: no reward, discovery, item, coin, seed or save call;
+# nothing undiscovered is named (Collection and Journal show "???", the Daily teaser names a rarity until
+# it is found); their cards let a drag through to the scrolling column; the Daily card's "Keep exploring"
+# closes it like the ✕. Every modal sheet keeps clear of the safe area's insets.
+LAND_UI = {"scripts/ui/collection_screen.gd": "Collection", "scripts/ui/journal_screen.gd": "Journal", "scripts/ui/daily_discovery_screen.gd": "Daily"}
+WRITES = re.compile(r"\b(PointsManager\.add_points|mark_\w+\(|\.discover\(|Inventory\.(add|remove|apply_save_data)|Wallet|Market|choose_seed|request_seed_choice|notify_\w+\(|SaveManager|apply_save_data|_reach\()")
+for f in LAND_UI:
+    if WRITES.search(code_only(scripts.get(f, ""))):
+        err(f"{f}: a display screen — it never pays, discovers, changes items/coins/seeds or saves")
+cs_src, js_src, ds_src = (code_only(scripts.get(f, "")) for f in LAND_UI)
+if 'entry.text = definition.display_name if discovered else "???"' not in cs_src or "var discovered := DiscoveryManager.is_discovered(definition.id)" not in cs_src:
+    err("scripts/ui/collection_screen.gd: an undiscovered entry is \"???\" — the Collection never spoils a find")
+if 'row.text = "✓ %s" % place.display_name if visited else "???"' not in js_src:
+    err("scripts/ui/journal_screen.gd: an unvisited place stays \"???\" (secret places stay secret)")
+drf = code_only(func_body(scripts.get("scripts/ui/daily_discovery_screen.gd", ""), "_refresh") or "")
+done_branch, _, teaser_branch = drf.partition("\n\telse:")
+if "if DailyDiscoveryManager.is_completed_today():" not in done_branch or "display_name" not in done_branch or "display_name" in teaser_branch \
+   or "var bonus := DailyDiscoveryManager.get_bonus_points()" not in drf:
+    err("scripts/ui/daily_discovery_screen.gd: the find's name only once it is found (the teaser names a rarity); the reward from get_bonus_points()")
+if "explore_button.pressed.connect(_on_close_pressed)" not in (func_body(scripts.get("scripts/ui/daily_discovery_screen.gd", ""), "_ready") or ""):
+    err("scripts/ui/daily_discovery_screen.gd: \"Keep exploring\" closes the card")
+for f in ("scripts/ui/collection_screen.gd", "scripts/ui/journal_screen.gd"):
+    if "card.mouse_filter = Control.MOUSE_FILTER_PASS" not in scripts.get(f, ""):
+        err(f"{f}: its cards pass drags through to the scrolling column (MOUSE_FILTER_PASS)")
+sa2 = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_apply_safe_area") or "")
+if "for screen: Control in [collection_screen, journal_screen, daily_screen, basket_screen, inventory_screen]:" not in sa2 \
+   or not all(f"sheet.offset_{side} = " in sa2 for side in ("left", "top", "right", "bottom")):
+    err("scripts/ui/hud.gd: every modal sheet (Collection, Journal, Daily, Basket, Inventory) keeps clear of the safe area's insets")
+notes.append("landscape UI pass (M07.4a): Collection/Journal/Daily on the shared theme, display-only, spoiler-free, scroll-friendly; sheets in the safe area")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

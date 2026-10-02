@@ -4,9 +4,20 @@ class_name JournalScreen
 ## Modal Journal screen: a permanent record of every discovery ever made,
 ## in the order the player found them, with rarity, description and the
 ## points earned.
+##
+## Presentation (M07.4a, D-26 / D-30): the shared theme's sheet, laid out
+## for a landscape phone in two columns that scroll on their own — on the
+## left where the player has been (Places, then the garden's record), on
+## the right what they have found (one card per discovery). Displays only.
 
-@onready var list_container: VBoxContainer = $Panel/MarginContainer/VBoxContainer/ScrollContainer/ListContainer
-@onready var close_button: Button = $Panel/MarginContainer/VBoxContainer/Header/CloseButton
+## Leaf green for a visited place; an unvisited one stays "???" (secrets
+## stay secret).
+const VISITED_COLOR := Color(0.22, 0.32, 0.16, 1)
+
+@onready var left_list: VBoxContainer = $Panel/VBoxContainer/Columns/LeftScroll/LeftList
+@onready var list_container: VBoxContainer = $Panel/VBoxContainer/Columns/RightScroll/ListContainer
+@onready var summary_label: Label = $Panel/VBoxContainer/Header/SummaryLabel
+@onready var close_button: Button = $Panel/VBoxContainer/Header/CloseButton
 
 func _ready() -> void:
 	visible = false
@@ -25,27 +36,29 @@ func _on_entry_added(_entry: Dictionary) -> void:
 	_refresh()
 
 func _refresh() -> void:
-	for child in list_container.get_children():
-		child.queue_free()
+	for list in [left_list, list_container]:
+		for child in list.get_children():
+			list.remove_child(child)
+			child.queue_free()
 
-	list_container.add_child(_build_places_section())
-	list_container.add_child(_build_spacer())
-
+	left_list.add_child(_build_places_section())
 	if FarmManager.is_garden_found() or int(FarmManager.get_activity_counts().planted) > 0:
-		list_container.add_child(_build_garden_section())
-		list_container.add_child(_build_spacer())
-
-	var discoveries_header := Label.new()
-	discoveries_header.text = "Discoveries"
-	discoveries_header.add_theme_font_size_override("font_size", 18)
-	discoveries_header.modulate.a = 0.8
-	list_container.add_child(discoveries_header)
+		left_list.add_child(_build_garden_section())
 
 	var entries := JournalManager.get_entries()
+	var visited := 0
+	var places := ExplorationManager.get_places_progress()
+	for place: Dictionary in places:
+		if place.visited:
+			visited += 1
+	summary_label.text = "%d %s · %d of %d places" % [entries.size(), "discovery" if entries.size() == 1 else "discoveries", visited, places.size()]
+
+	list_container.add_child(_build_heading("Discoveries"))
 	if entries.is_empty():
 		var empty_label := Label.new()
+		empty_label.theme_type_variation = &"Caption"
 		empty_label.text = "No discoveries yet. Go explore the meadow!"
-		empty_label.modulate.a = 0.7
+		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		list_container.add_child(empty_label)
 		return
 	for entry: Dictionary in entries:
@@ -56,19 +69,23 @@ func _refresh() -> void:
 ## visited, stays "???" until then so secret locations stay secret.
 func _build_places_section() -> Control:
 	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	box.add_child(_build_heading("Places"))
 
-	var header := Label.new()
-	header.text = "Places"
-	header.add_theme_font_size_override("font_size", 18)
-	header.modulate.a = 0.8
-	box.add_child(header)
-
+	var card := _build_card()
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 10)
 	for place: Dictionary in ExplorationManager.get_places_progress():
 		var row := Label.new()
 		var visited: bool = place.visited
 		row.text = "✓ %s" % place.display_name if visited else "???"
-		row.modulate.a = 1.0 if visited else 0.6
-		box.add_child(row)
+		if visited:
+			row.add_theme_color_override("font_color", VISITED_COLOR)
+		else:
+			row.modulate.a = 0.45
+		rows.add_child(row)
+	card.add_child(rows)
+	box.add_child(card)
 
 	return box
 
@@ -78,13 +95,14 @@ func _build_places_section() -> Control:
 ## the Journal only displays, it never decides progression — and every
 ## crop-specific line is built from crop data, so a new crop needs no code.
 func _build_garden_section() -> Control:
+	var section := VBoxContainer.new()
+	section.add_theme_constant_override("separation", 12)
+	section.add_child(_build_heading(ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())))
+	var card := _build_card()
 	var box := VBoxContainer.new()
-
-	var header := Label.new()
-	header.text = ExplorationManager.get_place_display_name(ExplorationManager.get_garden_place_id())
-	header.add_theme_font_size_override("font_size", 18)
-	header.modulate.a = 0.8
-	box.add_child(header)
+	box.add_theme_constant_override("separation", 12)
+	card.add_child(box)
+	section.add_child(card)
 
 	var plots := FarmManager.get_plot_counts()
 	var garden_line := "%d plots to tend" % int(plots.unlocked)
@@ -116,13 +134,19 @@ func _build_garden_section() -> Control:
 		if FarmManager.get_produce_total(FarmManager.QUALITY_FINE) == 0:
 			box.add_child(_build_note("The soil remembers what grew last, and crops remember how long they waited for water. Both together grow Fine."))
 
-	var marks: PackedStringArray = []
+	# The milestones as separate marks that wrap whole (never mid-name).
+	var marks := HFlowContainer.new()
+	marks.add_theme_constant_override("h_separation", 24)
+	marks.add_theme_constant_override("v_separation", 6)
 	for milestone: Dictionary in FarmManager.get_milestones():
-		var mark := "✓ %s" if milestone.reached else "○ %s"
-		marks.append(mark % milestone.label)
-	box.add_child(_build_note("  ".join(marks)))
+		var mark := _build_note(("✓ %s" if milestone.reached else "○ %s") % milestone.label)
+		mark.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if milestone.reached:
+			mark.add_theme_color_override("font_color", VISITED_COLOR)
+		marks.add_child(mark)
+	box.add_child(marks)
 
-	return box
+	return section
 
 ## "Wild Carrot ×2, Meadow Herb ×1, Golden Sunflower ×0" — read straight
 ## from FarmManager's session inventory, in its crop order. Only crops the
@@ -158,37 +182,56 @@ func _origin_name(source: String, source_id: String) -> String:
 func _build_note(text: String) -> Label:
 	var label := Label.new()
 	label.text = text
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	label.modulate.a = 0.85
+	label.theme_type_variation = &"Caption"
+	label.add_theme_font_size_override("font_size", 30)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return label
 
-func _build_spacer() -> Control:
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 12)
-	return spacer
+## A section title, as the Inventory's: small capitals above its cards.
+func _build_heading(title: String) -> Label:
+	var heading := Label.new()
+	heading.theme_type_variation = &"Caption"
+	heading.text = title.to_upper()
+	heading.add_theme_font_size_override("font_size", 30)
+	return heading
 
+## A row card that lets a drag through to the scrolling column.
+func _build_card() -> PanelContainer:
+	var card := PanelContainer.new()
+	card.theme_type_variation = &"RowCard"
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	return card
+
+## One card per discovery: its name with the rarity beside it, the
+## description, the points it earned.
 func _build_entry_row(entry: Dictionary) -> Control:
+	var card := _build_card()
 	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	card.add_child(box)
 
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 16)
 	var name_row := Label.new()
-	var rarity_text: String = String(entry["rarity"]).replace("_", " ").to_upper()
-	name_row.text = "%s  —  %s" % [entry["name"], rarity_text]
-	name_row.add_theme_font_size_override("font_size", 20)
-	box.add_child(name_row)
+	name_row.text = String(entry["name"])
+	name_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_row.add_theme_font_size_override("font_size", 38)
+	top.add_child(name_row)
+	var rarity_row := Label.new()
+	rarity_row.theme_type_variation = &"Caption"
+	rarity_row.text = String(entry["rarity"]).replace("_", " ").to_upper()
+	top.add_child(rarity_row)
+	box.add_child(top)
 
 	var description_row := Label.new()
 	description_row.text = String(entry["description"])
-	description_row.autowrap_mode = TextServer.AUTOWRAP_WORD
-	description_row.modulate.a = 0.85
+	description_row.add_theme_font_size_override("font_size", 30)
+	description_row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(description_row)
 
 	var points_row := Label.new()
+	points_row.theme_type_variation = &"Caption"
 	points_row.text = "+%d Wriksha Points" % int(entry["points_earned"])
-	points_row.modulate.a = 0.7
 	box.add_child(points_row)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 12)
-	box.add_child(spacer)
-
-	return box
+	return card

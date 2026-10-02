@@ -13,7 +13,8 @@ extends CanvasLayer
 ##
 ## Landscape (M07.4, D-30): the canvas is 1920×1080 (short side 1080, so
 ## every size keeps its physical size); the joystick in the bottom-left
-## thumb zone also keeps clear of side cut-outs and the gesture bar.
+## thumb zone also keeps clear of side cut-outs and the gesture bar, and so
+## does every modal sheet (M07.4a).
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
 ## A seed that introduces a new crop is shown a beat after the discovery
@@ -111,6 +112,14 @@ func _apply_safe_area() -> void:
 	joystick.offset_right = insets[0] + joystick_size.x
 	joystick.offset_bottom = -insets[3]
 	joystick.offset_top = -insets[3] - joystick_size.y
+	# Modal sheets (M07.4a): each keeps its designed margin, and moves in
+	# only as far as a cut-out reaches past it (plus the edge margin).
+	for screen: Control in [collection_screen, journal_screen, daily_screen, basket_screen, inventory_screen]:
+		var sheet: Control = screen.get_node("Panel")
+		sheet.offset_left = maxf(insets[0] + EDGE_MARGIN - sheet.anchor_left * canvas_size.x, 0.0)
+		sheet.offset_top = maxf(insets[1] + EDGE_MARGIN - sheet.anchor_top * canvas_size.y, 0.0)
+		sheet.offset_right = -maxf(insets[2] + EDGE_MARGIN - (1.0 - sheet.anchor_right) * canvas_size.x, 0.0)
+		sheet.offset_bottom = -maxf(insets[3] + EDGE_MARGIN - (1.0 - sheet.anchor_bottom) * canvas_size.y, 0.0)
 
 func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total
