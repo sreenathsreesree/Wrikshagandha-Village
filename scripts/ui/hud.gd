@@ -14,7 +14,7 @@ extends CanvasLayer
 ## Landscape (M07.4, D-30): the canvas is 1920×1080 (short side 1080, so
 ## every size keeps its physical size); the joystick in the bottom-left
 ## thumb zone also keeps clear of side cut-outs and the gesture bar, and so
-## does every modal sheet (M07.4a).
+## does every modal sheet (M07.4a) and the seed picker (M07.4b).
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
 ## A seed that introduces a new crop is shown a beat after the discovery
@@ -37,6 +37,7 @@ const EDGE_MARGIN := 24.0
 @onready var inventory_button: Button = $ScreenButtons/InventoryButton
 @onready var mobile_controls: Control = $MobileControls
 @onready var joystick: Control = $MobileControls/Joystick
+@onready var seed_picker: Control = $SeedPicker
 
 @onready var collection_screen: CollectionScreen = $CollectionScreen
 @onready var journal_screen: JournalScreen = $JournalScreen
@@ -120,6 +121,13 @@ func _apply_safe_area() -> void:
 		sheet.offset_top = maxf(insets[1] + EDGE_MARGIN - sheet.anchor_top * canvas_size.y, 0.0)
 		sheet.offset_right = -maxf(insets[2] + EDGE_MARGIN - (1.0 - sheet.anchor_right) * canvas_size.x, 0.0)
 		sheet.offset_bottom = -maxf(insets[3] + EDGE_MARGIN - (1.0 - sheet.anchor_bottom) * canvas_size.y, 0.0)
+	# The seed picker (M07.4b), docked at the bottom centre: above the
+	# gesture bar, centred between the side insets; it grows upward.
+	var picker_panel: Control = seed_picker.get_node("Panel")
+	picker_panel.offset_bottom = -(EDGE_MARGIN + insets[3])
+	picker_panel.offset_top = picker_panel.offset_bottom
+	picker_panel.offset_left = (insets[0] - insets[2]) / 2.0
+	picker_panel.offset_right = picker_panel.offset_left
 
 func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total

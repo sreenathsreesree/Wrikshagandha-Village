@@ -2324,7 +2324,9 @@ if not theme_txt.startswith('[gd_resource type="Theme"') or any(variations.get(k
 UI_SCENES = {"scenes/ui/HUD.tscn": ["TopArea", "ScreenButtons"], "scenes/ui/BasketScreen.tscn": ["."],
              "scenes/ui/InventoryScreen.tscn": ["."], "scenes/ui/DiscoveryNotification.tscn": ["."],
              # M07.4a: the Collection, Journal and Daily screens joined the shared theme (landscape pass).
-             "scenes/ui/CollectionScreen.tscn": ["."], "scenes/ui/JournalScreen.tscn": ["."], "scenes/ui/DailyDiscoveryScreen.tscn": ["."]}
+             "scenes/ui/CollectionScreen.tscn": ["."], "scenes/ui/JournalScreen.tscn": ["."], "scenes/ui/DailyDiscoveryScreen.tscn": ["."],
+             # M07.4b: the SeedPicker, the last screen on the old parchment theme, joined it too.
+             "scenes/ui/SeedPicker.tscn": ["."]}
 ui_nodes = {}
 for scene, roots in UI_SCENES.items():
     nodes, txt = scene_nodes(scene)
@@ -2444,6 +2446,37 @@ if "for screen: Control in [collection_screen, journal_screen, daily_screen, bas
    or not all(f"sheet.offset_{side} = " in sa2 for side in ("left", "top", "right", "bottom")):
     err("scripts/ui/hud.gd: every modal sheet (Collection, Journal, Daily, Basket, Inventory) keeps clear of the safe area's insets")
 notes.append("landscape UI pass (M07.4a): Collection/Journal/Daily on the shared theme, display-only, spoiler-free, scroll-friendly; sheets in the safe area")
+
+# ------------------------------------------------------------ landscape seed picker (M07.4b, D-26/D-30)
+# The SeedPicker stays a non-modal choice (no dim, the root ignores the mouse so the world stays playable),
+# now docked at the bottom centre in the shared theme (checked above with the other UI scenes: theme,
+# variations, a 120 px ✕). Its behaviour is unchanged: it opens and closes only on FarmManager's
+# seed_choice_requested / seed_choice_closed, a card calls FarmManager.choose_seed(crop) and nothing else,
+# the ✕ calls cancel_seed_choice(), a crop with no seeds is a disabled card; its code-built cards are at
+# least the 120 px touch target and never take focus; the HUD keeps it above the gesture bar.
+SPN, _ = scene_nodes("scenes/ui/SeedPicker.tscn")
+spr = SPN.get(".", ("", ""))[1]; spp = SPN.get("Panel", ("", ""))[1]
+if prop(spr, "mouse_filter") != "2" or "Dim" in SPN or prop(spp, "anchor_top") != "1.0" or prop(spp, "anchor_bottom") != "1.0" \
+   or prop(spp, "anchor_left") != "0.5" or prop(spp, "anchor_right") != "0.5" or prop(spp, "grow_vertical") != "0":
+    err("scenes/ui/SeedPicker.tscn: a non-modal picker (root ignores the mouse, no dim) docked at the bottom centre, growing upward")
+sp_src = scripts.get(SP, "")
+spc = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", sp_src, re.M | re.S)}
+csz = re.search(r"^const CHOICE_SIZE := Vector2\(([\d.]+), ([\d.]+)\)", sp_src, re.M)
+cmin = re.search(r"^const CHOICE_MIN_WIDTH := ([\d.]+)", sp_src, re.M)
+if not csz or not cmin or min(float(csz.group(1)), float(csz.group(2)), float(cmin.group(1))) < TOUCH_MIN \
+   or "button.custom_minimum_size = Vector2(width, CHOICE_SIZE.y)" not in spc.get("_build_choice", "") \
+   or "return clampf(fitted, CHOICE_MIN_WIDTH, CHOICE_SIZE.x)" not in spc.get("_choice_width", "") \
+   or "button.focus_mode = Control.FOCUS_NONE" not in spc.get("_build_choice", ""):
+    err(f"{SP}: every seed card is at least the {TOUCH_MIN} px touch target (CHOICE_SIZE, CHOICE_MIN_WIDTH) and never takes focus")
+if not re.search(r"FarmManager\.seed_choice_requested\.connect\(open\)\s*FarmManager\.seed_choice_closed\.connect\(close\)", spc.get("_ready", "")) \
+   or not re.search(r"func _on_choice_pressed\(crop: CropDefinition\) -> void:\s*AmbientAudioManager\.play_ui_feedback\(\)\s*FarmManager\.choose_seed\(crop\)\s*$", spc.get("_on_choice_pressed", "")) \
+   or not re.search(r"func _on_close_pressed\(\) -> void:\s*AmbientAudioManager\.play_ui_feedback\(\)\s*FarmManager\.cancel_seed_choice\(\)\s*$", spc.get("_on_close_pressed", "")) \
+   or "button.disabled = count <= 0" not in spc.get("_build_choice", "") or "button.pressed.connect(_on_choice_pressed.bind(crop))" not in spc.get("_build_choice", ""):
+    err(f"{SP}: the seed choice is unchanged — opens/closes on FarmManager's signals, a card plants through choose_seed(crop), the ✕ cancels, no seeds = a disabled card")
+sa3 = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_apply_safe_area") or "")
+if 'var picker_panel: Control = seed_picker.get_node("Panel")' not in sa3 or "picker_panel.offset_bottom = -(EDGE_MARGIN + insets[3])" not in sa3:
+    err("scripts/ui/hud.gd: the seed picker keeps clear of the gesture bar (safe area)")
+notes.append("landscape seed picker (M07.4b): shared theme, non-modal, bottom-centre dock, 120 px cards and ✕, behaviour pinned, safe area")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

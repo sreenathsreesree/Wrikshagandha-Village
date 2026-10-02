@@ -3,8 +3,14 @@ class_name SeedPicker
 
 ## The small seed choice shown when the player interacts with prepared
 ## soil. One large, thumb-sized card per crop — its identity color and
-## glyph, its name, and how many seeds are left — sitting above the
-## joystick so it isn't covered.
+## glyph, its name, and how many seeds are left.
+##
+## Landscape (M07.4b, D-26 / D-30): the shared theme's sheet, docked at the
+## bottom centre between the two thumb zones (joystick bottom-left, 🎒
+## bottom-right) and kept low, so the player and the plot stay in view above
+## it; the ✕ (120 px) sits at the end of the card row, in thumb reach. The
+## HUD keeps it clear of the gesture bar (safe area). Cards narrow evenly
+## when more crops are known than fit between the thumb zones.
 ##
 ## Deliberately not a menu screen: no dim, no pause, and the world stays
 ## playable underneath. It opens and closes entirely on FarmManager's
@@ -18,16 +24,19 @@ class_name SeedPicker
 ## soil would grow for that crop (FarmManager's rating), so the rotation
 ## rule is visible right where the choice is made.
 
-const CHOICE_SIZE := Vector2(206, 256)
-## The panel's inner width; with more crops than fit at full size, cards
-## narrow evenly instead of pushing the panel wider than the screen.
-const CHOICES_WIDTH := 700.0
-const CHOICE_MIN_WIDTH := 128.0
-const SWATCH_SIZE := 84.0
+## Canvas pixels: a card's full size and the narrowest it may get (both at
+## least the 120 px touch target).
+const CHOICE_SIZE := Vector2(240, 270)
+const CHOICE_MIN_WIDTH := 160.0
+const SWATCH_SIZE := 76.0
+## Kept clear on each side of the screen for the thumb zones (the joystick,
+## the 🎒 button); plus what the sheet's padding and the ✕ take from the row.
+const THUMB_ZONE_WIDTH := 300.0
+const ROW_RESERVED_WIDTH := 80.0 + 120.0 + 24.0
 
 @onready var panel: PanelContainer = $Panel
-@onready var choices: HBoxContainer = $Panel/VBoxContainer/Choices
-@onready var close_button: Button = $Panel/VBoxContainer/Header/CloseButton
+@onready var choices: HBoxContainer = $Panel/VBoxContainer/Row/Choices
+@onready var close_button: Button = $Panel/VBoxContainer/Row/CloseButton
 @onready var hint_label: Label = $Panel/VBoxContainer/HintLabel
 
 func _ready() -> void:
@@ -83,11 +92,14 @@ func _rebuild() -> void:
 		choices.add_child(_build_choice(crop, count, width))
 	hint_label.visible = not any_seeds
 
+## Full-size cards when they fit between the thumb zones; narrower (evenly)
+## when more crops are known, never below CHOICE_MIN_WIDTH.
 func _choice_width(crop_count: int) -> float:
 	if crop_count <= 1:
 		return CHOICE_SIZE.x
 	var separation := float(choices.get_theme_constant("separation"))
-	var fitted := (CHOICES_WIDTH - separation * (crop_count - 1)) / crop_count
+	var room := size.x - 2.0 * THUMB_ZONE_WIDTH - ROW_RESERVED_WIDTH
+	var fitted := (room - separation * (crop_count - 1)) / crop_count
 	return clampf(fitted, CHOICE_MIN_WIDTH, CHOICE_SIZE.x)
 
 func _build_choice(crop: CropDefinition, count: int, width: float) -> Button:
@@ -107,14 +119,14 @@ func _build_choice(crop: CropDefinition, count: int, width: float) -> Button:
 	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_theme_constant_override("separation", 6)
+	column.add_theme_constant_override("separation", 4)
 	button.add_child(column)
 
 	column.add_child(_build_swatch(crop))
-	column.add_child(_build_label(crop.display_name, 22))
-	column.add_child(_build_label(_seed_count_text(count), 20))
+	column.add_child(_build_label(crop.display_name, 30))
+	column.add_child(_build_label(_seed_count_text(count), 28, true))
 	if count > 0:
-		column.add_child(_build_label(FarmManager.get_soil_note(FarmManager.get_soil_rating(crop)), 18))
+		column.add_child(_build_label(FarmManager.get_soil_note(FarmManager.get_soil_rating(crop)), 28, true))
 	return button
 
 ## A round swatch in the crop's identity color with its glyph on top — the
@@ -134,14 +146,16 @@ func _build_swatch(crop: CropDefinition) -> Control:
 	glyph.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	glyph.add_theme_font_size_override("font_size", 40)
+	glyph.add_theme_font_size_override("font_size", 42)
 	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	swatch.add_child(glyph)
 	return swatch
 
-func _build_label(text: String, font_size: int) -> Label:
+func _build_label(text: String, font_size: int, caption := false) -> Label:
 	var label := Label.new()
 	label.text = text
+	if caption:
+		label.theme_type_variation = &"Caption"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	label.add_theme_font_size_override("font_size", font_size)
@@ -152,8 +166,9 @@ func _card_style(accent: Color, fill_alpha: float) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(1, 1, 1, fill_alpha)
 	style.border_color = accent
-	style.set_border_width_all(3)
-	style.set_corner_radius_all(18)
+	style.set_border_width_all(4)
+	style.set_corner_radius_all(24)
+	style.set_content_margin_all(10)
 	return style
 
 func _seed_count_text(count: int) -> String:
