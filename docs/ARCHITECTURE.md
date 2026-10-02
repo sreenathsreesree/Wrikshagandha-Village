@@ -241,9 +241,8 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
 - A persistent shell with swappable areas (M03.1–M03.2). Named entry markers (`AreaEntry`). Per-area navigation mesh. Per-area camera bounds (`AreaCameraBounds`, M03.4). Farm plots survive reloads (M03.3).
 - World content is always placed in the editor. Places, elements and (later) NPCs are data resources referenced by id.
 - Nothing in scripts depends on exact prop positions.
-- **Known hard-coded data to move:**
-  - the place list in `exploration_manager.gd`;
-  - `FarmManager.GARDEN_PLACE_ID`.
+- *(Resolved by M03.6: the place list, the garden place id, curiosity pairs and the secret count are `PlaceDefinition` data in `data/places/`.)*
+- **Vertical slice layout (M07.1, proposed):** the whole slice stays inside the existing 64 × 64 m Meadow — house exterior slot, NPC spot, forest-edge zones and the path extensions are planned in `docs/VERTICAL_SLICE_LAYOUT.md`, whose machine-readable block `tools/sims/sim_slice_layout.py` checks against `Meadow.tscn` (existing coordinates, a geometry digest, bounds, clearances, connections). Any change to `Meadow.tscn` (M07.2 onward) updates the plan's digest deliberately.
 
 ## 13. UI architecture
 - **Current:**
