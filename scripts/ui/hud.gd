@@ -10,6 +10,10 @@ extends CanvasLayer
 ## then the secondary screens (📚 📖 ⭐ 🕹); notifications flow just below
 ## it; the Basket and Inventory sit in the bottom-right thumb zone. Both
 ## clusters keep clear of notches through the display's safe area.
+##
+## Landscape (M07.4, D-30): the canvas is 1920×1080 (short side 1080, so
+## every size keeps its physical size); the joystick in the bottom-left
+## thumb zone also keeps clear of side cut-outs and the gesture bar.
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
 ## A seed that introduces a new crop is shown a beat after the discovery
@@ -31,6 +35,7 @@ const EDGE_MARGIN := 24.0
 @onready var basket_button: Button = $ScreenButtons/BasketButton
 @onready var inventory_button: Button = $ScreenButtons/InventoryButton
 @onready var mobile_controls: Control = $MobileControls
+@onready var joystick: Control = $MobileControls/Joystick
 
 @onready var collection_screen: CollectionScreen = $CollectionScreen
 @onready var journal_screen: JournalScreen = $JournalScreen
@@ -98,6 +103,14 @@ func _apply_safe_area() -> void:
 	top_area.add_theme_constant_override("margin_right", int(EDGE_MARGIN + insets[2]))
 	screen_buttons.offset_right = -(EDGE_MARGIN + insets[2])
 	screen_buttons.offset_bottom = -(EDGE_MARGIN + insets[3])
+	# The joystick's touch zone (its own size, its base inset inside it)
+	# moves in by the left and bottom insets only — on a desktop window or a
+	# phone without cut-outs it stays exactly where the scene puts it.
+	var joystick_size := Vector2(joystick.offset_right - joystick.offset_left, joystick.offset_bottom - joystick.offset_top)
+	joystick.offset_left = insets[0]
+	joystick.offset_right = insets[0] + joystick_size.x
+	joystick.offset_bottom = -insets[3]
+	joystick.offset_top = -insets[3] - joystick_size.y
 
 func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total

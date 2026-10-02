@@ -2272,13 +2272,29 @@ if len(rim_root) != 1 or sorted(n for n, _ in rim) != ["East", "North", "South",
     err(f"{MEADOW_SCENE}: one WorldRim StaticBody3D with four collision walls (North/South/West/East), no script")
 notes.append(f"slice navigation and bounds (M07.3): camera arm ignores geometry; house + pond core carve the navigation mesh; WorldRim walls {sorted(n for n, _ in rim)}")
 
+# ------------------------------------------------------------ landscape orientation (M07.4, D-30)
+# Wrikshagandha is a mobile-first landscape game: a 1920×1080 canvas (short side 1080, so every D-26
+# size keeps its physical size), canvas_items / expand stretching, sensor landscape on the phone (either
+# way up; never portrait). The HUD keeps the joystick in the bottom-left thumb zone clear of side
+# cut-outs and the gesture bar through the display's safe area, as it does the top bar and thumb buttons.
+LANDSCAPE = {"window/size/viewport_width": "1920", "window/size/viewport_height": "1080", "window/handheld/orientation": "4",
+             "window/stretch/mode": '"canvas_items"', "window/stretch/aspect": '"expand"'}
+display = dict(re.findall(r"^(window/[\w/]+)=(.+)$", cfg, re.M))
+if any(display.get(k) != v for k, v in LANDSCAPE.items()):
+    err(f"project.godot: the game is landscape (D-30) — {LANDSCAPE} (found { {k: display.get(k) for k in LANDSCAPE} })")
+sa = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_apply_safe_area") or "")
+if not all(k in sa for k in ("joystick.offset_left = insets[0]", "joystick.offset_right = insets[0] + joystick_size.x",
+                             "joystick.offset_bottom = -insets[3]", "joystick.offset_top = -insets[3] - joystick_size.y")):
+    err("scripts/ui/hud.gd: _apply_safe_area() keeps the joystick (its size unchanged) clear of the left and bottom safe-area insets")
+notes.append("landscape (M07.4): canvas 1920x1080, sensor landscape; joystick, top bar and thumb buttons follow the safe area")
+
 # ------------------------------------------------------------ UI surfaces and HUD (M06.3, D-26)
 # One shared theme (scenes/ui/wriksha_theme.tres) for the HUD, the Basket,
 # the Inventory and the notification card. The HUD's top bar is anchored to
 # the top edge and sizes to its content — never stretched by a full-screen
 # container (the pre-M06.3 tall-column bug); the Basket and Inventory buttons
 # sit bottom-right; HUD containers never catch world taps. Every touch
-# control on these surfaces is at least 120 canvas px (1080×1920 design).
+# control on these surfaces is at least 120 canvas px (short side 1080; the canvas is 1920×1080 landscape since M07.4, D-30).
 # Points (✿ pill) and coins (Coins chip) never share a label. The harvest
 # and sale cards have fixed structures; the Inventory has no sell path.
 THEME_TRES = "scenes/ui/wriksha_theme.tres"

@@ -33,9 +33,9 @@ InputManager="*res://scripts/autoload/input_manager.gd"
 
 [display]
 
-window/size/viewport_width=1080
-window/size/viewport_height=1920
-window/handheld/orientation=1
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/handheld/orientation=4
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/energy_saving/keep_screen_on=true

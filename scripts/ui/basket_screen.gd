@@ -20,7 +20,7 @@ class_name BasketScreen
 ## Sell buttons); the sell panel reads what → how many → how many coins →
 ## Cancel / Sell. Every touch target is at least TOUCH_TARGET canvas pixels.
 
-## Canvas pixels (1080×1920 design): the smallest thing a thumb must hit,
+## Canvas pixels (1920×1080 landscape design, D-30): the smallest thing a thumb must hit,
 ## and the crop icon's size.
 const TOUCH_TARGET := 120.0
 const ICON_SIZE := 104.0

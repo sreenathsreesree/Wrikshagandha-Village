@@ -7,7 +7,7 @@ a Direction note exists yet.
 
 ## 1. Project basics
 - **Engine:** Godot 4.7 (feature tag `4.7`), GDScript with static typing, mobile renderer.
-- **Target:** Android, portrait 1080×1920, stretch mode `canvas_items`/`expand`.
+- **Target:** Android phones, **landscape** (D-30): canvas 1920×1080, stretch mode `canvas_items`/`expand`, sensor landscape (either way up). Desktop is for development and testing only.
 - **Main scene:** `res://scenes/Main.tscn`.
 - **Physics layers** (named in `project.godot`):
   - layer 1 `world`: ground, mounds, trees, rocks, bushes, logs, monolith; everything solid.
@@ -251,7 +251,7 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - **One notification card language** (`DiscoveryNotification`: discovery, compact, message) for every event.
   - **Modal screens** (Collection, Journal, Daily, Basket, Inventory) share one pattern: dim background, a sheet, a close button, rebuilt on open. Basket and Inventory use the M06.3 language below; Collection, Journal, Daily and the SeedPicker (non-modal) keep the older parchment layout until a later UI pass.
 - **UI language and layout rules (M06.3, D-26):**
-  - **Design space:** the 1080 × 1920 portrait canvas (`canvas_items` / `expand`); sizes are canvas pixels. **Touch targets are at least 120 px** (≈ 48 dp on a 1080-px-wide phone). Body text 34, captions 28, headers 48, big figures 60–64.
+  - **Design space:** the 1920 × 1080 landscape canvas (`canvas_items` / `expand`; D-30 — the M06.3 portrait canvas is superseded); sizes are canvas pixels on the 1080-px short side, so they kept their physical size. **Touch targets are at least 120 px** (≈ 48 dp on a phone 1080 px tall in landscape). Thumb zones are the bottom corners: the joystick bottom-left, 🧺 🎒 bottom-right; the joystick, the top bar and the thumb buttons all follow the display's safe area (side cut-outs, the gesture bar). Body text 34, captions 28, headers 48, big figures 60–64.
   - **One shared theme,** `scenes/ui/wriksha_theme.tres` — the existing parchment / bark / leaf palette. Variations: `HudPill` (points), `CoinChip` + `ChipLabel` (coins — amber, square-cornered, never the points pill), `PrimaryButton` (leaf green), `SecondaryButton` (parchment, bark border), `HudButton` (round, translucent), `RowCard`, `SheetPanel`, `IconBadge`, `Caption`, `Header`, `Figure`, `CoinFigure`, `HudText`, `HudCaption`.
   - **HUD:** `TopArea` is anchored top-wide and grows down to its content — the top bar can never be stretched by a full-screen container (the pre-M06.3 tall-column bug: a full-rect MarginContainer filled the bar vertically). The bar holds the ✿ points pill, the discovery count and the secondary screens 📚 📖 ⭐ 🕹; notifications flow in `NotificationRoot` just under it. `ScreenButtons` (🧺, shown only while produce is held, and 🎒) is anchored bottom-right in the thumb zone; the joystick stays bottom-left. Both clusters add the display's safe area (`DisplayServer.get_display_safe_area()`, converted to canvas pixels) to a 24 px edge margin, re-applied when the viewport resizes. HUD containers ignore the mouse, so only their buttons catch taps.
   - **Sheets:** anchored to screen proportions (5 % side margins, 10–90 % height) — no fixed pixel offsets. Header = `Header` title (+ the `CoinChip` on the Basket) + a 120 px close button; rows are `RowCard`s with a 96–104 px icon, name `×total`, a `Caption` detail.

@@ -8,7 +8,7 @@ class_name DiscoveryNotification
 ## system. Compact mode (repeat harvests) is quieter and smaller so it
 ## never competes with a genuine first-time discovery.
 ##
-## Phone scale (M06.3, D-26): sized in 1080×1920 canvas pixels; the card's
+## Phone scale (M06.3, D-26): sized in canvas pixels (1920×1080 landscape, D-30); the card's
 ## height follows its text, so a card never clips a line. Lines, top to
 ## bottom: title, name, an optional small note (e.g. how a crop was cared
 ## for), the amount, an optional detail (e.g. "+1 Seed"). A line with no
