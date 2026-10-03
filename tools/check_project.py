@@ -677,7 +677,9 @@ FIXTURES = {"tools/fixtures/inspect_fixture.gd": {"INSPECT"},
 EXPECTED_VERBS = {"scripts/interactables/discovery_interactable.gd": {"COLLECT"},
                   "scripts/farming/farm_plot.gd": {"PLANT", "WATER", "HARVEST"},
                   # M08.1: a door offers its own verb, ENTER (a way in) or EXIT (a way out).
-                  "scripts/world/area_door.gd": {"ENTER", "EXIT"}, **FIXTURES}
+                  "scripts/world/area_door.gd": {"ENTER", "EXIT"},
+                  # M08.3: an NPC offers TALK.
+                  "scripts/npc/npc_talk.gd": {"TALK"}, **FIXTURES}
 for f, want in EXPECTED_VERBS.items():
     body = func_body(scripts.get(f, ""), "_get_interaction_verbs") or ""
     have = set(re.findall(r"\bVerb\.([A-Z_]+)", body))
@@ -851,7 +853,7 @@ if "Vector2(offset.x, offset.z).length() - reach" not in td:
     err(f"{IM}: _tap_distance() must measure to the object's shape (minus its radius), not its centre")
 # Per-frame loops: this is the whole set. A new one is a deliberate,
 # reviewed change to this list (docs/ARCHITECTURE.md §17), never a side effect.
-PER_FRAME = [('scripts/camera/follow_camera.gd', '_physics_process'), ('scripts/interactables/indicator_bob.gd', '_process'), ('scripts/player/player.gd', '_physics_process'), ('scripts/ui/virtual_joystick.gd', '_process'), ('scripts/world/butterfly.gd', '_process'), ('scripts/world/drifting_leaf.gd', '_process'), ('scripts/world/floating_motes.gd', '_process'), ('scripts/world_simulation/environmental_event_controller.gd', '_process'), ('scripts/world_simulation/exploration_landmark_controller.gd', '_process'), ('scripts/world_simulation/time_of_day.gd', '_process'), ('scripts/world_simulation/vegetation_controller.gd', '_process'), ('scripts/world_simulation/wildlife_actor.gd', '_process'), ('scripts/world_simulation/wildlife_butterfly.gd', '_process')]
+PER_FRAME = [('scripts/camera/follow_camera.gd', '_physics_process'), ('scripts/interactables/indicator_bob.gd', '_process'), ('scripts/npc/npc.gd', '_physics_process'), ('scripts/player/player.gd', '_physics_process'), ('scripts/ui/virtual_joystick.gd', '_process'), ('scripts/world/butterfly.gd', '_process'), ('scripts/world/drifting_leaf.gd', '_process'), ('scripts/world/floating_motes.gd', '_process'), ('scripts/world_simulation/environmental_event_controller.gd', '_process'), ('scripts/world_simulation/exploration_landmark_controller.gd', '_process'), ('scripts/world_simulation/time_of_day.gd', '_process'), ('scripts/world_simulation/vegetation_controller.gd', '_process'), ('scripts/world_simulation/wildlife_actor.gd', '_process'), ('scripts/world_simulation/wildlife_butterfly.gd', '_process')]
 found = sorted((f, m) for f, s2 in scripts.items() if not f.startswith("tools/") or f.startswith("tools/fixtures/")
                for m in re.findall(r"^func (_process|_physics_process)\(", s2, re.M))
 if found != sorted(tuple(x) for x in PER_FRAME):
@@ -950,12 +952,13 @@ if found_al != AUTOLOADS:
 # say why in the plan.
 PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
           "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
-          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "30c3d242996c7da3",
+          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "c567a3c097843e8f",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen;
           #  and by M06.3: the top-anchored top bar, bottom-right thumb buttons, the shared theme.)
           # (player.gd re-pinned deliberately by M08.1: _interact_with() keeps its spent list typed with assign() —
           #  the old "= filter()" raised a script error and aborted every interaction after a one-shot collection.)
+          # (HUD.tscn re-pinned deliberately by M08.3: the SpeechPanel instance, docked by _apply_safe_area().)
           # (FollowCamera.tscn re-pinned deliberately by M07.3 (D-29): the SpringArm3D ignores geometry,
           #  collision_mask = 0 — the camera no longer collapses against the house or the monolith.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
@@ -2257,6 +2260,8 @@ for name, par, a, b in slice_nodes:
     sm = re.search(r'^script = ExtResource\("([^"]+)"\)', b, re.M)
     if name == "HouseDoorEntry" and par == "VerticalSlice" and sm and script_for_ext(mext, sm.group(1)) == ENTRY_GD:
         continue  # M08.1: the house door's AreaEntry (house_door) — data, the one script allowed here
+    if name == "Villager" and par == "VerticalSlice/NpcSpot" and inst == "scenes/npc/Npc.tscn":
+        continue  # M08.3: the NPC stands at the NPC spot (checked in "NPC framework (M08.3)")
     if re.search(r"^script = ", b, re.M) or (inst and scene_root_script_of(inst)):
         err(f"{MEADOW_SCENE}: VerticalSlice/{name} carries a script — M07.2 placement needs no code")
     if inst and inst not in SLICE_INSTANCES:
@@ -2362,7 +2367,9 @@ UI_SCENES = {"scenes/ui/HUD.tscn": ["TopArea", "ScreenButtons"], "scenes/ui/Bask
              # M07.4a: the Collection, Journal and Daily screens joined the shared theme (landscape pass).
              "scenes/ui/CollectionScreen.tscn": ["."], "scenes/ui/JournalScreen.tscn": ["."], "scenes/ui/DailyDiscoveryScreen.tscn": ["."],
              # M07.4b: the SeedPicker, the last screen on the old parchment theme, joined it too.
-             "scenes/ui/SeedPicker.tscn": ["."]}
+             "scenes/ui/SeedPicker.tscn": ["."],
+             # M08.3: the speech panel (an NPC's greeting) in the shared theme.
+             "scenes/ui/SpeechPanel.tscn": ["."]}
 ui_nodes = {}
 for scene, roots in UI_SCENES.items():
     nodes, txt = scene_nodes(scene)
@@ -2767,6 +2774,128 @@ if len(omni) > 3 or [l for l in omni if l[3]] or [l for l in lights if not (l[2]
     err(f"{HOME_SCENE}: the home is lit warm (every light's colour red >= green >= blue), by at most 3 lamps without shadows (found {[(os.path.basename(p), k, c, sh) for p, k, c, sh in lights]})")
 notes.append(f"home interior (M08.2): furniture {sorted(n for n, _ in furniture)} (no scripts, nothing interactive; {len(FURNITURE_SOLID)} carving solids); "
              f"slots {sorted(slot_ids)} read by nothing; {len(lights)} warm lights")
+
+# ------------------------------------------------------------ NPC framework (M08.3)
+# One neutral placeholder villager — not a Rishi (R-01..R-07 stay open), no relationship, schedule,
+# request, service or saved state. NPCs are data (one NpcDefinition per data/npcs/*.tres: id, name,
+# greeting, wander radius); the Npc scene consumes its definition and stands where it is placed (the
+# Meadow's NpcSpot marker). It wanders a little on the area's own navigation map through its own
+# NavigationAgent3D (no other navigation), stops and faces the player within NOTICE_DISTANCE (wider
+# than the player's interaction reach, so it is still before the player arrives), steps aside only
+# when a moving player is about to bump into it, and keeps its targets clear of area entries. Its body
+# is solid (the player collides with it; not in the static bake). Talking is an ordinary Interactable
+# (NpcTalk, verb TALK = 10) — Player/InputManager stay unaware — whose interact() shows the greeting
+# in the HUD's SpeechPanel; the panel holds the conversation (its speaker) and closes on the ✕, when
+# the player walks out of range (set_highlighted(false)) or when the speaker leaves the tree (its area
+# parked). No autoload: nothing global is needed for one greeting (sim_npc models the approach).
+NPC_DEF_GD, NPC_GD, NPC_TALK_GD, NPC_SCENE = "scripts/npc/npc_definition.gd", "scripts/npc/npc.gd", "scripts/npc/npc_talk.gd", "scenes/npc/Npc.tscn"
+SPEECH_GD, SPEECH_SCENE = "scripts/ui/speech_panel.gd", "scenes/ui/SpeechPanel.tscn"
+NPC_DEF_FIELDS = [("id", "String"), ("display_name", "String"), ("greeting", "String"), ("wander_radius", "float")]
+nd_src, np_src, nt_src, sp2_src = (scripts.get(f, "") for f in (NPC_DEF_GD, NPC_GD, NPC_TALK_GD, SPEECH_GD))
+if not re.search(r"^extends Resource\s*\nclass_name NpcDefinition", nd_src, re.M) or re.search(r"^func ", nd_src, re.M) \
+   or re.findall(r"^@export(?:_multiline)? var (\w+): (\w+)", nd_src, re.M) != NPC_DEF_FIELDS:
+    err(f"{NPC_DEF_GD}: NpcDefinition has exactly {NPC_DEF_FIELDS} and no logic")
+npc_defs = {}
+for path in sorted(glob.glob("data/npcs/*.tres")):
+    txt = open(path, encoding="utf-8").read()
+    fields = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', txt.split("[resource]", 1)[-1], re.M))
+    nid = fields.get("id", "")
+    if 'path="res://scripts/npc/npc_definition.gd"' not in txt or nid != os.path.basename(path)[:-5] or not re.fullmatch(r"[a-z][a-z0-9_]*", nid) \
+       or not fields.get("display_name") or not fields.get("greeting") or not (0.0 < float(fields.get("wander_radius", "0") or 0) <= 3.0):
+        err(f"{path}: an NpcDefinition with a lower_snake id equal to its file name, a name, a greeting and a wander radius in (0, 3] m")
+    if re.search(r"rishi", txt, re.I):
+        err(f"{path}: an NPC is never a Rishi until R-01..R-07 are decided")
+    npc_defs[nid] = fields
+if sorted(npc_defs) != ["villager"]:
+    err(f"data/npcs: M08.3 has one placeholder villager (found {sorted(npc_defs)})")
+# The Npc: data in, a small wander on the existing navigation, notice, step aside, no state.
+if not re.search(r"^extends CharacterBody3D\s*\nclass_name Npc", np_src, re.M) or "@export var definition: NpcDefinition" not in np_src \
+   or re.findall(r"^@export var (\w+)", np_src, re.M) != ["definition"]:
+    err(f"{NPC_GD}: Npc is a CharacterBody3D whose only export is its NpcDefinition")
+consts = {k: const_val(np_src, k) for k in ("NOTICE_DISTANCE", "WALK_SPEED", "YIELD_DISTANCE", "YIELD_LEASH", "DOOR_CLEARANCE")}
+reach = const_val(scripts.get(PL, ""), "INTERACTION_RADIUS") or 0.0
+talk_r = re.search(r'\[sub_resource type="SphereShape3D" id="SphereShape3D_talk"\]\nradius = ([0-9.]+)', open(NPC_SCENE, encoding="utf-8").read()) if os.path.exists(NPC_SCENE) else None
+talk_r = float(talk_r.group(1)) if talk_r else 0.0
+if None in consts.values() or not (reach + talk_r < consts["NOTICE_DISTANCE"] <= 4.5) or not (0.0 < consts["YIELD_DISTANCE"] <= 1.2 < consts["NOTICE_DISTANCE"]) \
+   or not (0.0 < consts["WALK_SPEED"] <= 1.5) or not (0.0 <= consts["YIELD_LEASH"] <= 1.0) or (consts["DOOR_CLEARANCE"] or 0) < 1.0:
+    err(f"{NPC_GD}: it notices the player beyond the interaction reach ({reach} + {talk_r} m) and within 4.5 m, steps aside only at contact range (<= 1.2 m), walks slowly, stays leashed and clear of doors ({consts})")
+npc_fn = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", np_src, re.M | re.S)}
+ppn = npc_fn.get("_physics_process", "")
+if not re.search(r"if player != null and \(talk\.is_tap_selected\(\) or _flat_distance\(player\.global_position\) <= NOTICE_DISTANCE\):\s*_wandering = false\s*_turn_toward\(player\.global_position - global_position, delta\)\s*direction = _yield_direction\(player\)", ppn):
+    err(f"{NPC_GD}: from the tap that chooses it, and while the player is within NOTICE_DISTANCE, it stops wandering and faces the player (moving only to step aside)")
+if not re.search(r"func is_tap_selected\(\) -> bool:\s*return _tap_selected\s*$", code_only(func_body(base_src, "is_tap_selected") or "").strip() + "\n") \
+   or any(func_body(scripts[f], "is_tap_selected") is not None for f in subclasses) \
+   or [f for f, s2 in scripts.items() if re.search(r"\._tap_selected\b|_tap_selected\s*=", code_only(s2)) and f != BASE]:
+    err(f"{BASE}: is_tap_selected() only reads the tap selection (Player alone sets it) and is never overridden")
+sw2 = npc_fn.get("_start_wander", "")
+if "var radius := definition.wander_radius if definition else 0.0" not in sw2 or "NavigationServer3D.map_get_closest_point(map, candidate)" not in sw2 \
+   or "nav_agent.target_position = point" not in sw2 or "<= radius and _clear_of_doors(point)" not in sw2 or "get_world_3d().navigation_map" not in sw2:
+    err(f"{NPC_GD}: wander targets are points of the area's own navigation map within the definition's radius of home, clear of doors, walked by its NavigationAgent3D")
+if re.search(r"NavigationRegion3D|bake_navigation|AStar|map_create|region_create|navigation_mesh|set_navigation_map", code_only(np_src)):
+    err(f"{NPC_GD}: an NPC uses the existing navigation map only — no regions, bakes or path-finding of its own")
+yd = npc_fn.get("_yield_direction", "")
+if "var touching := to_me.length() <= YIELD_CONTACT" not in yd \
+   or "var heading_at_me := motion.length() >= YIELD_MIN_PLAYER_SPEED and to_me.length() <= YIELD_DISTANCE and motion.dot(to_me) > 0.0" not in yd \
+   or not re.search(r"if not touching and not heading_at_me:\s*_yield_side = Vector3\.ZERO\s*return Vector3\.ZERO", yd) \
+   or not re.search(r"if _yield_side == Vector3\.ZERO:", yd) or "for candidate in [_yield_side, -_yield_side]:" not in yd \
+   or "<= leash and _clear_of_doors(step)" not in npc_fn.get("_step_allowed", "") \
+   or not (0.0 < (const_val(np_src, "YIELD_CONTACT") or 0) <= consts["YIELD_DISTANCE"]):
+    err(f"{NPC_GD}: it steps aside only when touched or about to be walked into, to one committed side (the other if blocked), within its leash and clear of doors")
+if re.search(r"SaveManager|save|user://|FileAccess|FarmManager|Inventory|Wallet|PointsManager|DiscoveryManager|AreaRouter|\bMain\b|\.place_at\(|_interact_with", code_only(np_src + nt_src + sp2_src)):
+    err("scripts/npc/*, scripts/ui/speech_panel.gd: an NPC and its greeting save nothing and touch no game system, travel or Player internals")
+if re.search(r"\b(villager|Villager)\b|calm day in the meadow", "\n".join(code_only(s2) for f, s2 in scripts.items() if not f.startswith("tools/"))):
+    err("an NPC's identity and words live only in data/npcs — no script names them")
+# The Npc scene: a solid body, its own agent, the TALK Interactable with the shared Indicator.
+ns_txt = open(NPC_SCENE, encoding="utf-8").read() if os.path.exists(NPC_SCENE) else ""
+ns_root = re.search(r'^\[node name="Npc" type="CharacterBody3D"\]\n(.*?)\n\n', ns_txt, re.M | re.S)
+if not ns_root or "collision_layer" in ns_root.group(1) or "collision_mask" in ns_root.group(1) or scene_root_script_of(NPC_SCENE) != NPC_GD \
+   or not re.search(r'\[node name="CollisionShape3D" type="CollisionShape3D" parent="\."\]\n[^\[]*shape = SubResource\("CapsuleShape3D_body"\)', ns_txt) \
+   or ns_txt.count('type="NavigationAgent3D"') != 1 or "avoidance_enabled = true" in ns_txt \
+   or not re.search(r'\[node name="NpcTalk" type="Area3D" parent="\."\]\ncollision_layer = 4\ncollision_mask = 0\nscript = ExtResource\("2"\)', ns_txt) \
+   or "DiscoveryIndicator.tscn" not in ns_txt or 'type="StaticBody3D"' in ns_txt or "NavigationObstacle3D" in ns_txt:
+    err(f"{NPC_SCENE}: a solid CharacterBody3D on the world layer (not a static collider, so never baked) with a capsule, one NavigationAgent3D, and the NpcTalk Interactable (interactables layer, detecting nothing) with the shared Indicator")
+# NpcTalk: TALK through the normal contract; greeting from data into the SpeechPanel; walking away closes.
+nt_fn = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", nt_src, re.M | re.S)}
+if not re.search(r"^extends Interactable\s*\nclass_name NpcTalk", nt_src, re.M) or "remove_on_harvest = false" not in nt_fn.get("_ready", "") \
+   or not re.search(r'_panel = get_tree\(\)\.get_first_node_in_group\(SpeechPanel\.GROUP\) as SpeechPanel.*return _panel\.open\(self, npc\.definition\.display_name, npc\.definition\.greeting\)', nt_fn.get("interact", ""), re.S) \
+   or not re.search(r"super\(active\)\s*if not active and _panel != null:\s*_panel\.close_for\(self\)", nt_fn.get("set_highlighted", "")) \
+   or "return npc.definition.greeting" not in nt_fn.get("_greeting", ""):
+    err(f"{NPC_TALK_GD}: TALK shows the definition's greeting in the SpeechPanel, and leaving interaction range closes it")
+if VERBS.get("TALK") != 10 or {k: v for k, v in VERBS.items() if k != "TALK"} != {"COLLECT": 1, "PLANT": 2, "WATER": 3, "HARVEST": 4, "INSPECT": 5, "OPEN": 6, "READ": 7, "ENTER": 8, "EXIT": 9}:
+    err(f"{BASE}: TALK is appended as 10 and every earlier verb keeps its value (found {VERBS})")
+# Placement: exactly one NPC, standing at the NpcSpot marker, with a definition from data/npcs.
+npcs_placed = []
+for path in glob.glob("scenes/**/*.tscn", recursive=True):
+    _, secs3, ext3, _ = load_scene_info(path)
+    for k, a, b in secs3:
+        if k == "node" and "instance" in a and script_for_ext(ext3, re.search(r'ExtResource\("([^"]+)"\)', a["instance"]).group(1)) == NPC_SCENE:
+            dref = re.search(r'^definition = ExtResource\("([^"]+)"\)', b, re.M)
+            npcs_placed.append((path, a.get("parent", "").strip('"'), script_for_ext(ext3, dref.group(1)) if dref else None,
+                                bool(re.search(r"^(position|transform|rotation|rotation_degrees) = ", b, re.M))))
+if npcs_placed != [(MEADOW_SCENE, "VerticalSlice/NpcSpot", "data/npcs/villager.tres", False)]:
+    err(f"the one NPC stands exactly at the Meadow's NpcSpot marker (its authored position) with its data/npcs definition (found {npcs_placed})")
+# The speech panel: non-modal, bottom-centre, the ✕ closes; its own state; docked by the HUD's safe area.
+SPN2, _ = scene_nodes(SPEECH_SCENE)
+spr2 = SPN2.get(".", ("", ""))[1]; spp2 = SPN2.get("Panel", ("", ""))[1]
+if prop(spr2, "mouse_filter") != "2" or "Dim" in SPN2 or prop(spp2, "anchor_top") != "1.0" or prop(spp2, "anchor_bottom") != "1.0" \
+   or prop(spp2, "anchor_left") != "0.5" or prop(spp2, "anchor_right") != "0.5" or prop(spp2, "grow_vertical") != "0" \
+   or prop(SPN2.get("Panel/VBoxContainer/Row/CloseButton", ("", ""))[1], "custom_minimum_size") != "Vector2(120, 120)":
+    err(f"{SPEECH_SCENE}: a non-modal panel (root ignores the mouse, no dim) docked at the bottom centre growing upward, with a 120 px ✕")
+sp2_fn = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", sp2_src, re.M | re.S)}
+if not re.search(r"^extends Control\s*\nclass_name SpeechPanel", sp2_src, re.M) or 'const GROUP := &"speech_panel"' not in sp2_src \
+   or "add_to_group(GROUP)" not in sp2_fn.get("_ready", "") or "_speaker.tree_exiting.connect(close)" not in sp2_fn.get("open", "") \
+   or not re.search(r"if speaker == _speaker and visible:\s*return true", sp2_fn.get("open", "")) \
+   or not re.search(r"if speaker == _speaker:\s*close\(\)", sp2_fn.get("close_for", "")) \
+   or not re.search(r"AmbientAudioManager\.play_ui_feedback\(\)\s*close\(\)\s*$", sp2_fn.get("_on_close_pressed", "")):
+    err(f"{SPEECH_GD}: the panel keeps its speaker, opens once per speaker, closes on the ✕, for its own speaker only, and when the speaker leaves the tree")
+sa4 = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_apply_safe_area") or "")
+if 'var speech: Control = speech_panel.get_node("Panel")' not in sa4 or "speech.offset_bottom = -(EDGE_MARGIN + insets[3])" not in sa4 \
+   or "speech.offset_left = (insets[0] - insets[2]) / 2.0" not in sa4:
+    err("scripts/ui/hud.gd: the speech panel keeps clear of the gesture bar and centres between the side insets (safe area)")
+if "ConversationManager" in cfg or any(re.search(r"\bConversation\w*\b", code_only(s2)) for f, s2 in scripts.items() if not f.startswith("tools/")):
+    err("M08.3 keeps the conversation in the SpeechPanel — no global conversation state")
+notes.append(f"NPC framework (M08.3): npcs {sorted(npc_defs)} from data/npcs; one placed at NpcSpot; notice {consts['NOTICE_DISTANCE']} m > reach {reach + talk_r:.1f} m; "
+             f"TALK = {VERBS.get('TALK')}; speech panel in the HUD (shared theme, safe area, 120 px ✕); no autoload, no saved state")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

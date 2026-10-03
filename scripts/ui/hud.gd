@@ -38,6 +38,7 @@ const EDGE_MARGIN := 24.0
 @onready var mobile_controls: Control = $MobileControls
 @onready var joystick: Control = $MobileControls/Joystick
 @onready var seed_picker: Control = $SeedPicker
+@onready var speech_panel: Control = $SpeechPanel
 
 @onready var collection_screen: CollectionScreen = $CollectionScreen
 @onready var journal_screen: JournalScreen = $JournalScreen
@@ -128,6 +129,13 @@ func _apply_safe_area() -> void:
 	picker_panel.offset_top = picker_panel.offset_bottom
 	picker_panel.offset_left = (insets[0] - insets[2]) / 2.0
 	picker_panel.offset_right = picker_panel.offset_left
+	# The speech panel (M08.3) docks the same way: bottom centre, above the
+	# gesture bar, centred between the side insets.
+	var speech: Control = speech_panel.get_node("Panel")
+	speech.offset_bottom = -(EDGE_MARGIN + insets[3])
+	speech.offset_top = speech.offset_bottom
+	speech.offset_left = (insets[0] - insets[2]) / 2.0
+	speech.offset_right = speech.offset_left
 
 func _on_points_changed(total: int) -> void:
 	points_label.text = "✿ %d" % total

@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/ui/VirtualJoystick.tscn" id="2"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/JournalScreen.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/ui/DailyDiscoveryScreen.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/ui/SeedPicker.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/ui/SpeechPanel.tscn" id="10"]
 [ext_resource type="PackedScene" path="res://scenes/ui/BasketScreen.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://scenes/ui/InventoryScreen.tscn" id="8"]
 [ext_resource type="Theme" path="res://scenes/ui/wriksha_theme.tres" id="9"]
@@ -138,6 +139,8 @@ text = "🎒"
 tooltip_text = "Inventory"
 
 [node name="SeedPicker" parent="." instance=ExtResource("6")]
+
+[node name="SpeechPanel" parent="." instance=ExtResource("10")]
 
 [node name="CollectionScreen" parent="." instance=ExtResource("3")]
 

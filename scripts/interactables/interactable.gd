@@ -21,7 +21,8 @@ class_name Interactable
 ##     reads it yet.
 ##   - set_highlighted() / update_proximity(): in-range presentation.
 ##   - set_tap_selected(): a tap chose this object — the same Indicator shows
-##     at once (even out of range) with a small acknowledging pulse.
+##     at once (even out of range) with a small acknowledging pulse;
+##     is_tap_selected() reads it back (M08.3).
 ##
 ## Object behaviour lives in subclasses: DiscoveryInteractable (collect a
 ## discovery), FarmPlot (the farming state machine). If the scene has a
@@ -47,7 +48,7 @@ const RARITY_INTENSITY := {
 ## the behaviours that need them. Values are explicit and never reused or
 ## renumbered (new ones are appended), so they stay stable if they are ever
 ## saved. Never spelled as strings anywhere.
-enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7, ENTER = 8, EXIT = 9 }
+enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7, ENTER = 8, EXIT = 9, TALK = 10 }
 
 @export var remove_on_harvest: bool = true
 
@@ -121,6 +122,12 @@ func set_tap_selected(active: bool) -> void:
 	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator
 	if active and indicator:
 		indicator.pulse(TAP_ACK_PULSE)
+
+## Whether a tap has chosen this object and the player is on the way (read
+## only — Player alone sets it, through set_tap_selected()). Lets an object
+## that moves on its own (an NPC, M08.3) hold still for the approach.
+func is_tap_selected() -> bool:
+	return _tap_selected
 
 func _refresh_indicator() -> void:
 	var indicator := get_node_or_null("Indicator") as DiscoveryIndicator

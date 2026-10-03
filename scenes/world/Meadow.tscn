@@ -1,4 +1,4 @@
-[gd_scene load_steps=52 format=3]
+[gd_scene load_steps=54 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
@@ -42,6 +42,8 @@
 [ext_resource type="Script" path="res://scripts/farming/milestone_reveal.gd" id="40"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/HousePlaceholder.tscn" id="41"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/NpcSpotPlaceholder.tscn" id="42"]
+[ext_resource type="PackedScene" path="res://scenes/npc/Npc.tscn" id="npc"]
+[ext_resource type="Resource" path="res://data/npcs/villager.tres" id="npc_villager"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -923,6 +925,9 @@ entry_id = "house_door"
 [node name="NpcSpot" parent="VerticalSlice" instance=ExtResource("42")]
 position = Vector3(-19.5, 0, 2.2)
 rotation_degrees = Vector3(0, -30, 0)
+
+[node name="Villager" parent="VerticalSlice/NpcSpot" instance=ExtResource("npc")]
+definition = ExtResource("npc_villager")
 
 [node name="ForestWest1" parent="VerticalSlice" instance=ExtResource("10")]
 position = Vector3(-29.06, 0, -26.92)

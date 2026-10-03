@@ -40,7 +40,8 @@ Checks:
      stands 0.5–1.5 m out from the door along its wall normal, facing out, clear of the house
      and inside the player's 2.2 m interaction range of the door;
    - `NpcSpot` instances NpcSpotPlaceholder.tscn at the NPC spot — a marker only, with no
-     collider (it never blocks the player or the navigation mesh);
+     collider (it never blocks the player or the navigation mesh); M08.3: the villager (Npc.tscn)
+     is its only child, standing exactly at the spot;
    - every forest-edge tree (an existing tree prop) stands in a forest zone, inside the
      bounds, its canopy clear of every existing object, the house, the trailhead and the
      planned paths; along each zone the trees leave no gap wider than 5 m between trunks (ends included);
@@ -258,6 +259,11 @@ assert rect_dist(ex, ez, cx, cz, w, d) >= 0.5 and math.dist((ex, ez), door_xz) <
 # the NPC spot
 par, attrs, body, props = placed["NpcSpot"]
 assert par == SLICE and inst_of(attrs) == "NpcSpotPlaceholder.tscn" and vec(props, "position")[0::2] == plan["npc"], "NpcSpot instances NpcSpotPlaceholder.tscn on the NPC spot"
+# M08.3: the villager stands at the NPC spot — the only node under it, no transform of its own
+under_spot = [(n, a, b) for n, (par, a, b, _) in placed.items() if par == "VerticalSlice/NpcSpot"]
+assert [n for n, _, _ in under_spot] == ["Villager"] and inst_of(under_spot[0][1]) == "Npc.tscn" \
+    and not re.search(r"^(position|rotation|rotation_degrees|scale|transform) = ", under_spot[0][2], re.M), \
+    f"the villager is the NPC spot's only child, at the spot itself ({[n for n, _, _ in under_spot]})"
 ntxt, nnodes = scene_nodes("scenes/world/props/NpcSpotPlaceholder.tscn")
 assert nnodes[0][1] == "Marker3D" and not re.search(r"Body3D|CollisionShape3D|Area3D|script = ", ntxt), "the NPC spot is a marker only — no collider, no behaviour"
 # the forest edge

@@ -121,8 +121,8 @@ The runtime audit (first real run of M07.2) found three blockers; each got one i
 ```slice-layout
 # existing Meadow (every node outside VerticalSlice and WorldRim) — unchanged by M07.2 and M07.3
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry) and WorldRim (M07.3) included
-scene_digest bb8a45a7729a9a0a
+# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot) and WorldRim (M07.3) included
+scene_digest 0cf6b12eab4b3441
 # existing Meadow nodes the plan relies on (checked against Meadow.tscn)
 existing PlayerSpawn 0.0 5.0
 existing Patch1 0.5 3.2
