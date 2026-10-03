@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="RequestDefinition" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/npc/request_definition.gd" id="1"]
+[ext_resource type="Resource" path="res://data/dialogues/villager_stones_offer.tres" id="2"]
+[ext_resource type="Resource" path="res://data/dialogues/villager_stones_pending.tres" id="3"]
+[ext_resource type="Resource" path="res://data/dialogues/villager_stones_handover.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+id = "villager_stones"
+npc_id = "villager"
+item_id = "river_stone"
+quantity = 2
+reward_points = 20
+offer_dialogue = ExtResource("2")
+pending_dialogue = ExtResource("3")
+handover_dialogue = ExtResource("4")

@@ -29,8 +29,8 @@ def code(s): return "\n".join(l.split("#")[0] for l in s.splitlines() if not l.l
 SCRIPTS = {os.path.relpath(p, REPO): code(open(p, encoding="utf-8").read()) for p in glob.glob(os.path.join(REPO, "scripts", "**", "*.gd"), recursive=True)}
 payers = sorted(f for f, s in SCRIPTS.items() if "PointsManager.add_points(" in s)
 assert payers == sorted(["scripts/autoload/discovery_manager.gd", "scripts/autoload/exploration_manager.gd", "scripts/autoload/daily_discovery_manager.gd",
-                         "scripts/autoload/farm_manager.gd", "scripts/farming/farm_plot.gd"]), payers
-assert sum(s.count("PointsManager.add_points(") for s in SCRIPTS.values()) == 9, "exactly the 9 audited pay sites"
+                         "scripts/autoload/farm_manager.gd", "scripts/farming/farm_plot.gd", "scripts/autoload/requests.gd"]), payers  # M08.6: a completed request
+assert sum(s.count("PointsManager.add_points(") for s in SCRIPTS.values()) == 10, "exactly the 10 audited pay sites"
 MK, BS = "scripts/autoload/market.gd", "scripts/ui/basket_screen.gd"
 wallet_users = sorted(f for f, s in SCRIPTS.items() if re.search(r"\bWallet\.", s))
 assert wallet_users == sorted([BS, MK, "scripts/autoload/save_manager.gd"]), wallet_users

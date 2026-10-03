@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="DialogueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/npc/dialogue_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "villager_stones_pending"
+lines = PackedStringArray("Still no stones for my doorstep, I am afraid.", "The pond keeps the smoothest ones. Two would be enough.")

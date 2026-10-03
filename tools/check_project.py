@@ -942,7 +942,7 @@ if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D"
 # M06.2 (D-25) added Market (selling produce), after Inventory and Wallet, before GameState (which saves on a sale).
 # M08.1 (D-34) added AreaRouter (travel requests between areas, the current area id; never saved), last.
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
+             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "Requests", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
              "AreaRouter"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
@@ -965,12 +965,14 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
           # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold;
-          #  and by M08.5: it also saves when an NPC's friendship rises, Relationships.friendship_changed.)
-          # (SaveManager re-pinned deliberately by M08.5: the relationships section, save v6 — D-17, D-38.)
+          #  by M08.5: it also saves when an NPC's friendship rises, Relationships.friendship_changed;
+          #  and by M08.6: it also saves when a request is accepted or completed.)
+          # (SaveManager re-pinned deliberately by M08.5: the relationships section, save v6 — D-17, D-38;
+          #  and by M08.6: the requests section, save v7 — D-17, D-39.)
           # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
           #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
           "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
-          "scripts/autoload/save_manager.gd": "6b8f767431bc748e", "scripts/autoload/game_state.gd": "18d296a1ab517f5a",
+          "scripts/autoload/save_manager.gd": "7eaa7cb4b5b99d26", "scripts/autoload/game_state.gd": "a8d937cfd35b6981",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
           #  farm_manager.gd by M05.3: milestone bonuses from reward data;
@@ -1449,8 +1451,8 @@ for f, s2 in scripts.items():
         err(f"{f}: creates an ItemStore — the player's items have one store, the Inventory's (O-14)")
     if f != "scripts/autoload/save_manager.gd" and re.search(r"Inventory\.(get_save_data|apply_save_data)\(|FarmManager\.apply_save_data\(", code):
         err(f"{f}: saves or loads the player's items or farm — only SaveManager does")
-    if f not in (FM, INV, "scripts/autoload/market.gd") and re.search(r"\bInventory\.(add|remove)\(", code):
-        err(f"{f}: changes the player's items — only FarmManager's seed/basket rules, Inventory's discovery rewards and the Market's sale do")
+    if f not in (FM, INV, "scripts/autoload/market.gd", "scripts/autoload/requests.gd") and re.search(r"\bInventory\.(add|remove)\(", code):
+        err(f"{f}: changes the player's items — only FarmManager's seed/basket rules, Inventory's discovery rewards, the Market's sale and a completed request (M08.6) do")
 
 # One owner (M04.3, O-14): the Inventory autoload holds the player's store;
 # FarmManager keeps no count of its own and changes the Inventory only where
@@ -1898,7 +1900,7 @@ if unused:
 PAY_SITES = {("scripts/autoload/discovery_manager.gd", "discover"): 1, ("scripts/farming/farm_plot.gd", "_run_harvest_sequence"): 1,
              ("scripts/autoload/farm_manager.gd", "_reach"): 1, ("scripts/autoload/daily_discovery_manager.gd", "_on_discovery_made"): 1,
              (EXF, "_on_discovery_made"): 1, (EXF, "mark_landmark_reached"): 1, (EXF, "mark_secret_location_found"): 2,
-             (EXF, "_maybe_award_curiosity_bonus"): 1}
+             (EXF, "_maybe_award_curiosity_bonus"): 1, ("scripts/autoload/requests.gd", "complete"): 1}  # M08.6 (D-39): a completed request, once
 sites = {}
 for f, s2 in scripts.items():
     if f.startswith("tools/"): continue
@@ -2933,8 +2935,11 @@ for path in sorted(glob.glob("data/npcs/*.tres")):
 sp4 = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", sp2_src, re.M | re.S)}
 if re.findall(r"^signal (.+)$", sp2_src, re.M) != ["conversation_ended(speaker: Node, completed: bool)"]:
     err(f"{SPEECH_GD}: the panel announces only conversation_ended(speaker, completed)")
-if not re.search(r"func open\(speaker: Node, speaker_name: String, lines: PackedStringArray\) -> bool:\s*if speaker == null or lines\.is_empty\(\):\s*return false\s*if speaker == _speaker and visible:\s*return true\s*_end\(false\)", sp4.get("open", "")) \
-   or "_index = 0" not in sp4.get("open", "") or "_lines = lines" not in sp4.get("open", ""):
+if not re.search(r"func open\(speaker: Node, speaker_name: String, lines: PackedStringArray, end_text: String = END_TEXT\) -> bool:\s*if speaker == null or lines\.is_empty\(\):\s*return false\s*if speaker == _speaker and visible:\s*return true\s*_end\(false\)", sp4.get("open", "")) \
+   or "_index = 0" not in sp4.get("open", "") or "_lines = lines" not in sp4.get("open", "") \
+   or not re.search(r"_end\(false\)(.|\n)*_end_text = end_text", sp4.get("open", "")) or "_end_text = END_TEXT" not in sp4.get("_end", "") \
+   or [fn for fn, b in sp4.items() if re.search(r"\b_end_text\s*=[^=]", b) and fn not in ("open", "_end")] \
+   or not re.search(r"^var _end_text: String = END_TEXT$", sp2_src, re.M):
     err(f"{SPEECH_GD}: open() starts a conversation at its first line, ends any other first, and is a no-op for the speaker already shown (no restart, no skip)")
 if not re.search(r"if _speaker == null:\s*return\s*if _index >= _lines\.size\(\) - 1:\s*_end\(true\)\s*return\s*_index \+= 1\s*_show_line\(\)", sp4.get("advance", "")):
     err(f"{SPEECH_GD}: advance() shows the next line, and past the last ends the conversation complete")
@@ -2948,7 +2953,7 @@ if not re.search(r"if _speaker == null:\s*visible = false\s*return", sp4.get("_e
    or not re.search(r"func close\(\) -> void:\s*_end\(false\)", sp4.get("close", "")) \
    or [fn for fn in ("open", "advance", "close") if "visible = false" in sp4.get(fn, "")]:
     err(f"{SPEECH_GD}: every conversation ends through _end() exactly once — complete only past the last line, early on the ✕, walking away or the speaker leaving")
-if 'next_button.text = END_TEXT if _index >= _lines.size() - 1 else NEXT_TEXT' not in sp4.get("_show_line", "") \
+if 'next_button.text = _end_text if _index >= _lines.size() - 1 else NEXT_TEXT' not in sp4.get("_show_line", "") \
    or 'const END_TEXT := "Goodbye"' not in sp2_src or 'const NEXT_TEXT := "Next ▸"' not in sp2_src or '"%d / %d" % [_index + 1, _lines.size()]' not in sp4.get("_show_line", ""):
     err(f"{SPEECH_GD}: the Next button reads Goodbye on the last line, and the progress shows the line out of the total")
 # M08.5 (D-38): exactly one listener — the speaking NpcTalk, connected once from interact(), acting only
@@ -3028,9 +3033,12 @@ for f, s2 in scripts.items():
         err(f"{f}: listens to friendship changes — only GameState does, to save")
 nt5 = code_only(scripts.get("scripts/npc/npc_talk.gd", ""))
 oc = code_only(func_body(scripts.get("scripts/npc/npc_talk.gd", ""), "_on_conversation_ended") or "")
+# (M08.6: the handler first acts on its own request step, then reports to Relationships exactly as before — every
+#  completed conversation of its own, by definition id; the requests section checks the request part.)
 if not re.search(r"if not _panel\.conversation_ended\.is_connected\(_on_conversation_ended\):\s*_panel\.conversation_ended\.connect\(_on_conversation_ended\)\s*"
-                 r"var npc := get_parent\(\) as Npc\s*return _panel\.open\(", code_only(func_body(scripts.get("scripts/npc/npc_talk.gd", ""), "interact") or "")) \
-   or not re.search(r"if speaker != self or not completed:\s*return\s*var npc := get_parent\(\) as Npc\s*if npc != null and npc\.definition != null:\s*"
+                 r"if _panel\.get_speaker\(\) == self and _panel\.visible:\s*return true\s*var npc := get_parent\(\) as Npc\s*", code_only(func_body(scripts.get("scripts/npc/npc_talk.gd", ""), "interact") or "")) \
+   or not re.search(r"^func _on_conversation_ended\(speaker: Node, completed: bool\) -> void:\s*if speaker != self:\s*return\s*", oc) \
+   or not re.search(r"if not completed:\s*return\s*(.|\n)*var npc := get_parent\(\) as Npc\s*if npc != null and npc\.definition != null:\s*"
                     r"Relationships\.record_completed_conversation\(npc\.definition\.id\)\s*$", oc) \
    or nt5.count("Relationships.") != 1 or len(re.findall(r"conversation_ended\.connect\(", nt5)) != 1:
     err("scripts/npc/npc_talk.gd: NpcTalk connects to the panel once, and reports only its own completed conversations, by its NPC's definition id")
@@ -3041,11 +3049,141 @@ sm6 = scripts.get("scripts/autoload/save_manager.gd", "")
 if '"relationships": Relationships.get_save_data(),' not in code_only(func_body(sm6, "save_game") or "") \
    or 'Relationships.apply_save_data(data.get("relationships", {}))' not in code_only(func_body(sm6, "load_game") or "") \
    or not re.search(r"^\t\t\t5:\s*pass\b", code_only(func_body(sm6, "_migrate") or ""), re.M) \
-   or not re.search(r'^\t"relationships": \[TYPE_DICTIONARY\],$', sm6, re.M) or const_val(sm6, "SAVE_VERSION") != 6:
+   or not re.search(r'^\t"relationships": \[TYPE_DICTIONARY\],$', sm6, re.M) or (const_val(sm6, "SAVE_VERSION") or 0) < 6:
     err("scripts/autoload/save_manager.gd: save v6 — the relationships section is saved and loaded as a dictionary; step 5 -> 6 (M08.5) rewrites nothing (absent = every NPC at 0)")
 if "Relationships.friendship_changed.connect(_save.unbind(2))" not in code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or ""):
     err("scripts/autoload/game_state.gd: a friendship rise is saved at once (GameState, friendship_changed)")
 notes.append(f"relationships (M08.5): friendship per NPC id 0..{const_val(rl_src, 'MAX_FRIENDSHIP')}, +1 per completed conversation once a day; save v6; one listener (NpcTalk), one saver (GameState)")
+
+# ------------------------------------------------------------ requests (M08.6, D-39)
+# One NPC request as data (RequestDefinition, data/requests/): the NPC voices a problem (offer), reminds
+# (pending) while the player holds too few of a single-quality item, and takes them (hand-over, last button
+# "Give"). The Requests autoload keeps only each request's state (absent / accepted / completed), saved in its
+# own section (save v7, D-17). A completed offer conversation accepts; a completed hand-over completes:
+# checked, recorded, then paid — accepted → items held → items removed → completed → reward_points once →
+# announced (GameState saves; the HUD shows the usual card). No quest log, tracker or marker.
+RQD, RQ = "scripts/npc/request_definition.gd", "scripts/autoload/requests.gd"
+rqd_src, rq_src = scripts.get(RQD, ""), scripts.get(RQ, "")
+rqf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", rq_src, re.M | re.S)}
+rq_code = code_only(rq_src)
+RQ_FIELDS = {"id": "String", "npc_id": "String", "item_id": "String", "quantity": "int", "reward_points": "int",
+             "offer_dialogue": "DialogueDefinition", "pending_dialogue": "DialogueDefinition", "handover_dialogue": "DialogueDefinition"}
+if not re.search(r"^extends Resource\s*\nclass_name RequestDefinition", rqd_src, re.M) \
+   or dict(re.findall(r"^@export var (\w+): (\w+)", rqd_src, re.M)) != RQ_FIELDS \
+   or re.search(r"^(func|var|const|signal|static) ", code_only(rqd_src), re.M):
+    err(f"{RQD}: RequestDefinition is exactly {list(RQ_FIELDS)} — no logic, no branches, conditions or chains")
+npc_ids_rq = {re.search(r'^id = "(\w+)"', open(f, encoding="utf-8").read(), re.M).group(1) for f in glob.glob("data/npcs/*.tres")}
+rq_files = sorted(glob.glob("data/requests/*.tres"))
+if len(rq_files) != 1:
+    err(f"data/requests: exactly one request in M08.6 (found {rq_files})")
+rq_npcs = []
+for path in rq_files:
+    txt = open(path, encoding="utf-8").read()
+    vals = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', txt, re.M))
+    ext = dict((m.group(2), m.group(1)) for m in re.finditer(r'\[ext_resource type="Resource" path="res://([^"]+)" id="([^"]+)"\]', txt))
+    item_path = f"data/items/{vals.get('item_id', '')}.tres"
+    item_txt = open(item_path, encoding="utf-8").read() if os.path.exists(item_path) else ""
+    q, r = vals.get("quantity", "1"), vals.get("reward_points", "0")
+    if 'script_class="RequestDefinition"' not in txt or vals.get("id") != os.path.basename(path)[:-5] or not re.fullmatch(r"[a-z][a-z0-9_]*", vals.get("id", "")) \
+       or vals.get("npc_id") not in npc_ids_rq or not item_txt or int((re.search(r"^quality_levels = (\d+)", item_txt, re.M) or re.search("()1", "1")).group(1) or 1) != 1 \
+       or not q.isdigit() or not 1 <= int(q) <= 9 or not r.isdigit() or int(r) < 1:
+        err(f"{path}: a RequestDefinition — lower_snake id = its file name, a real NPC, a real single-quality item, quantity 1-9, reward_points >= 1")
+    for key in ("offer_dialogue", "pending_dialogue", "handover_dialogue"):
+        ref = re.search(rf'^{key} = ExtResource\("([^"]+)"\)$', txt, re.M)
+        if not ref or not ext.get(ref.group(1), "").startswith("data/dialogues/") or not os.path.exists(ext.get(ref.group(1), "")):
+            err(f"{path}: {key} is a data/dialogues/ resource")
+    rq_npcs.append(vals.get("npc_id"))
+if len(rq_npcs) != len(set(rq_npcs)):
+    err("data/requests: at most one request per NPC")
+if not re.match(r"extends Node\n", rq_src) \
+   or re.findall(r"^signal (.+)$", rq_src, re.M) != ["request_accepted(request_id: String)", "request_completed(request_id: String, item_id: String, quantity: int, points: int)"] \
+   or re.findall(r"^var (\w+)", rq_src, re.M) != ["_definitions", "_states"] \
+   or dict(re.findall(r'^const (\w+) := "(\w*)"$', rq_src, re.M)) != {"ACCEPTED": "accepted", "COMPLETED": "completed", "STEP_OFFER": "offer", "STEP_PENDING": "pending", "STEP_HANDOVER": "handover"} \
+   or 'const REQUESTS_PATH := "res://data/requests/"' not in rq_src or const_val(rq_src, "MAX_QUANTITY") != 9 \
+   or [f for f in rqf if not f.startswith("_")] != ["conversation_for", "get_state", "accept", "complete", "get_save_data", "apply_save_data"]:
+    err(f"{RQ}: Requests is a Node with exactly request_accepted / request_completed(request_id, item_id, quantity, points), the definitions and "
+        "the states (accepted / completed), the offer / pending / hand-over steps and the API conversation_for, get_state, accept, complete, get_save_data, apply_save_data")
+cp = rqf.get("complete", "")
+steps = ["var definition: RequestDefinition = _definitions.get(request_id)", "if definition == null or _states.get(request_id, \"\") != ACCEPTED:", "return false",
+         "if not Inventory.has(definition.item_id, definition.quantity, 0):", "return false",
+         "if not Inventory.remove(definition.item_id, definition.quantity, 0):", "return false",
+         "_states[request_id] = COMPLETED", "PointsManager.add_points(definition.reward_points)",
+         "request_completed.emit(request_id, definition.item_id, definition.quantity, definition.reward_points)", "return true"]
+pos, ok = 0, True
+for st in steps:
+    k = cp.find(st, pos)
+    if k < 0: ok = False; break
+    pos = k + len(st)
+if not ok or cp.count("Inventory.remove(") != 1 or "Inventory.add(" in rq_code or rq_code.count("Inventory.remove(") != 1 or rq_code.count("PointsManager.add_points(") != 1:
+    err(f"{RQ}: complete() is checked, recorded, then paid — accepted → the items held → removed (all or nothing) → completed → reward_points once → announced")
+if not re.search(r"if not _definitions\.has\(request_id\) or _states\.has\(request_id\):\s*return false\s*_states\[request_id\] = ACCEPTED\s*request_accepted\.emit\(request_id\)\s*return true", rqf.get("accept", "")):
+    err(f"{RQ}: accept() accepts a known request only once, never one already accepted or completed")
+writers = {fn for fn, b in rqf.items() if re.search(r"\b_states(\[[^\]]+\]\s*=[^=]|\s*=[^=]|\.(clear|erase|merge|assign)\b)", b)}
+if writers != {"accept", "complete", "apply_save_data"} or rq_code.count("request_accepted.emit(") != 1 or rq_code.count("request_completed.emit(") != 1:
+    err(f"{RQ}: a request's state is written only by accept(), complete() and a load; each is announced once (found {sorted(writers)})")
+apq = rqf.get("apply_save_data", "")
+if not re.search(r"_states\.clear\(\)", apq) \
+   or not re.search(r"if typeof\(request_id\) != TYPE_STRING or not _definitions\.has\(request_id\):\s*push_warning\(.*?\)\n\s*continue", apq) \
+   or not re.search(r"if typeof\(state\) == TYPE_STRING and \(state == ACCEPTED or state == COMPLETED\):\s*_states\[request_id\] = state\s*else:\s*push_warning\(.*?\)\n\s*_states\[request_id\] = COMPLETED", apq) \
+   or re.search(r"\.emit\(|PointsManager|Inventory|accept\(|complete\(", apq):
+    err(f"{RQ}: a load keeps known requests' states, drops unknown ids with a warning, counts a malformed state as completed (never paid twice) and announces nothing")
+if "return _states.duplicate()" not in rqf.get("get_save_data", ""):
+    err(f"{RQ}: the save holds exactly each request's state")
+cf = rqf.get("conversation_for", "")
+if not re.search(r'if state == "":\s*return \{"request_id": request_id, "step": STEP_OFFER, "lines": definition\.offer_dialogue\.lines\}', cf) \
+   or not re.search(r'if state == ACCEPTED:\s*if Inventory\.has\(definition\.item_id, definition\.quantity, 0\):\s*return \{"request_id": request_id, "step": STEP_HANDOVER, "lines": definition\.handover_dialogue\.lines\}\s*'
+                    r'return \{"request_id": request_id, "step": STEP_PENDING, "lines": definition\.pending_dialogue\.lines\}', cf) \
+   or not cf.rstrip().endswith("return {}"):
+    err(f"{RQ}: conversation_for(): not offered → the offer; accepted with the items → the hand-over; accepted without → the pending reminder; completed → the NPC's usual dialogue")
+iv = rqf.get("_is_valid", "")
+if "item.quality_levels != 1" not in iv or "definition.quantity < 1 or definition.quantity > MAX_QUANTITY or definition.reward_points < 1" not in iv \
+   or "if other.npc_id == definition.npc_id or other.id == definition.id:" not in iv or "npc_ids.has(definition.npc_id)" not in iv:
+    err(f"{RQ}: a request is used only if its NPC and single-quality item exist, its quantity is 1..MAX_QUANTITY, it pays >= 1 point and its NPC has no other request")
+if re.search(r"Wallet|Market|Relationships|friendship|SaveManager|GameState|FarmManager|DiscoveryManager|ExplorationManager|AreaRouter|get_tree\(|get_node|\$\w|"
+             r"Player|InputManager|SpeechPanel|HUD", rq_code):
+    err(f"{RQ}: Requests touches only the Inventory (read; one removal) and PointsManager (one payment) — no coins, friendship, saving, nodes or UI")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == RQ: continue
+    code = code_only(s2)
+    if re.search(r"\bRequests\._|\bRequests\.(get_save_data|apply_save_data)\(", code) and f != "scripts/autoload/save_manager.gd":
+        err(f"{f}: reaches into Requests — only SaveManager saves/loads it")
+    if re.search(r"\bRequests\.(accept|complete|conversation_for)\(", code) and f != "scripts/npc/npc_talk.gd":
+        err(f"{f}: drives a request — only the speaking NpcTalk does (D-39)")
+    if re.search(r"request_accepted\.connect", code) and f != "scripts/autoload/game_state.gd":
+        err(f"{f}: listens to request acceptance — only GameState does, to save")
+    if re.search(r"request_completed\.connect", code) and f not in ("scripts/autoload/game_state.gd", "scripts/ui/hud.gd"):
+        err(f"{f}: listens to request completion — only GameState (to save) and the HUD (the card) do")
+for f in ("scripts/player/player.gd", "scripts/autoload/input_manager.gd", SPEECH_GD, "scripts/npc/npc.gd", RL, "scripts/autoload/inventory.gd", "scripts/autoload/market.gd", "scripts/autoload/wallet.gd"):
+    if re.search(r"\bRequests?\b|\brequest_\w+|\bGive\b", code_only(scripts.get(f, ""))):
+        err(f"{f}: knows about requests — only NpcTalk drives them, Requests keeps them (D-39)")
+ntq = scripts.get("scripts/npc/npc_talk.gd", "")
+ntq_f = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", ntq, re.M | re.S)}
+it, oc6 = ntq_f.get("interact", ""), ntq_f.get("_on_conversation_ended", "")
+if 'const GIVE_TEXT := "Give"' not in ntq \
+   or not re.search(r"if _panel\.get_speaker\(\) == self and _panel\.visible:\s*return true\s*var npc := get_parent\(\) as Npc\s*var request := Requests\.conversation_for\(npc\.definition\.id\)\s*"
+                    r'_request_id = request\.get\("request_id", ""\)\s*_request_step = request\.get\("step", ""\)\s*if request\.is_empty\(\):\s*'
+                    r"return _panel\.open\(self, npc\.definition\.display_name, npc\.definition\.dialogue\.lines\)\s*"
+                    r"var end_text := GIVE_TEXT if _request_step == Requests\.STEP_HANDOVER else SpeechPanel\.END_TEXT\s*"
+                    r"return _panel\.open\(self, npc\.definition\.display_name, request\.lines, end_text\)", it) \
+   or {fn for fn, b in ntq_f.items() if re.search(r"\b_request_(id|step)\s*=[^=]", b)} != {"interact", "_on_conversation_ended"} \
+   or not re.search(r'var request_id := _request_id\s*var step := _request_step\s*_request_id = ""\s*_request_step = ""\s*if not completed:\s*return\s*'
+                    r"if step == Requests\.STEP_OFFER:\s*Requests\.accept\(request_id\)\s*elif step == Requests\.STEP_HANDOVER:\s*Requests\.complete\(request_id\)\s*var npc", oc6) \
+   or code_only(ntq).count("Requests.accept(") != 1 or code_only(ntq).count("Requests.complete(") != 1:
+    err("scripts/npc/npc_talk.gd: NpcTalk locks the chosen conversation while it is open (re-taps never choose again), gives the hand-over its \"Give\" label, "
+        "and only a completed offer accepts / a completed hand-over completes — an early end does neither")
+if 'notification.show_message("✓ Request Complete", "%s ×%d" % [item_name, quantity], "+%d Wriksha Points" % points)' not in code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_on_request_completed") or "") \
+   or re.search(r"Requests\.(?!request_completed\.connect)", code_only(scripts.get("scripts/ui/hud.gd", ""))):
+    err("scripts/ui/hud.gd: a completed request shows the usual card — \"✓ Request Complete\", the items given, the points — and the HUD reads nothing else of requests")
+sm7 = scripts.get("scripts/autoload/save_manager.gd", "")
+if '"requests": Requests.get_save_data(),' not in code_only(func_body(sm7, "save_game") or "") \
+   or 'Requests.apply_save_data(data.get("requests", {}))' not in code_only(func_body(sm7, "load_game") or "") \
+   or not re.search(r"^\t\t\t6:\s*pass\b", code_only(func_body(sm7, "_migrate") or ""), re.M) \
+   or not re.search(r'^\t"requests": \[TYPE_DICTIONARY\],$', sm7, re.M) or const_val(sm7, "SAVE_VERSION") != 7:
+    err("scripts/autoload/save_manager.gd: save v7 — the requests section is saved and loaded as a dictionary; step 6 -> 7 (M08.6) rewrites nothing (absent = no request offered)")
+gs7 = code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or "")
+if "Requests.request_accepted.connect(_save.unbind(1))" not in gs7 or "Requests.request_completed.connect(_save.unbind(4))" not in gs7:
+    err("scripts/autoload/game_state.gd: an accepted and a completed request are saved at once (GameState)")
+notes.append(f"requests (M08.6): {len(rq_files)} request(s) {[os.path.basename(p)[:-5] for p in rq_files]}; offer → accept, hand-over → complete (checked, recorded, paid once); save v7")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

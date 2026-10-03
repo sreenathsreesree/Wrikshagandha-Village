@@ -79,7 +79,8 @@ REGISTER_SITES = {  # source -> the pay site(s) that pay it
     "discovery_collection": [(DM, "discover")], "discovery_thresholds": [(EX, "_on_discovery_made")],
     "landmark": [(EX, "mark_landmark_reached")], "secret_location": [(EX, "mark_secret_location_found")],
     "all_secret_locations": [(EX, "mark_secret_location_found")], "curiosity": [(EX, "_maybe_award_curiosity_bonus")],
-    "daily_discovery": [(DD, "_on_discovery_made")], "harvest": [(FP, "_run_harvest_sequence")], "farm_milestones": [(FM, "_reach")]}
+    "daily_discovery": [(DD, "_on_discovery_made")], "harvest": [(FP, "_run_harvest_sequence")], "farm_milestones": [(FM, "_reach")],
+    "requests": [("scripts/autoload/requests.gd", "complete")]}  # M08.6 (D-39): a completed request, once
 expected_sites = {}
 for sites in REGISTER_SITES.values():
     for s in sites: expected_sites[s] = expected_sites.get(s, 0) + 1
@@ -110,16 +111,22 @@ CLASS["harvest"] = "rate_limited_repeatable" if ('"stage_time_left"' in plot_cap
 claimed = "definition.respawn_seconds <= 0.0 and discovered_ids.has(id)" in dms.get("is_claimed", "") and "if is_claimed(id):\n\t\treturn false" in dms["discover"] \
     and "if DiscoveryManager.is_claimed(instance.discovery_id):" in F["scripts/interactables/discovery_spawn_point.gd"]["_spawn"]
 CLASS["discovery_collection"] = {d: ("once_ever" if (r <= 0 and claimed) else "repeatable") for d, (p, r) in DISC.items()}
+rqs = F["scripts/autoload/requests.gd"]
+CLASS["requests"] = "once_ever" if ('if definition == null or _states.get(request_id, "") != ACCEPTED:\n\t\treturn false' in rqs["complete"]
+                                     and rqs["complete"].find("_states[request_id] = COMPLETED") < rqs["complete"].find("PointsManager.add_points(")
+                                     and "return _states.duplicate()" in rqs["get_save_data"]) else "repeatable"
+REQUESTS = {v["id"]: int(v["reward_points"]) for v in map(_vals, glob.glob(os.path.join(REPO, "data", "requests", "*.tres")))}
 
 # ---------------------------------------------------------------- REGRESSION SNAPSHOT (deliberate; not configuration)
 SNAPSHOT = {
     "classes": {"landmark": "once_ever", "secret_location": "once_ever", "all_secret_locations": "once_ever", "curiosity": "once_ever",
                 "discovery_thresholds": "per_session_bounded", "daily_discovery": "per_day", "farm_milestones": "once_ever",
-                "harvest": "rate_limited_repeatable",
+                "harvest": "rate_limited_repeatable", "requests": "once_ever",
                 "discovery_collection": {"ancient_seed": "once_ever", **{d: "repeatable" for d in ("blue_mushroom", "golden_leaf", "healing_herb",
                                          "hidden_herb", "meadow_flower", "river_stone", "small_mushroom", "wild_mint")}}},
     "amounts": {"landmark": 15, "secret_location": 15, "all_secret_locations": 50, "curiosity": 20, "daily_discovery": 25,
-                "thresholds": {3: 20, 5: 40}, "farm_milestones": {"first_harvest": 10, "all_starter_crops": 40, "garden_complete": 30, "garden_in_bloom": 50}},
+                "thresholds": {3: 20, 5: 40}, "farm_milestones": {"first_harvest": 10, "all_starter_crops": 40, "garden_complete": 30, "garden_in_bloom": 50},
+                "requests": {"villager_stones": 20}},  # M08.6 (D-39)
     "discoveries": {"ancient_seed": (100, 0.0), "blue_mushroom": (32, 240.0), "golden_leaf": (60, 600.0), "healing_herb": (20, 120.0), "hidden_herb": (30, 240.0),
                     "meadow_flower": (10, 60.0), "river_stone": (8, 45.0), "small_mushroom": (12, 60.0), "wild_mint": (15, 90.0)},
     "crops": {"wild_carrot": (12, 30.0, 2), "meadow_herb": (15, 38.0, 2), "golden_sunflower": (20, 46.0, 1), "elderbloom": (30, 56.0, 0)},
@@ -134,7 +141,8 @@ SNAPSHOT = {
 assert CLASS == SNAPSHOT["classes"], f"a source changed classification: {CLASS}"
 now_amounts = {"landmark": RULES["landmark"][0], "secret_location": RULES["secret_location"][0], "all_secret_locations": RULES["all_secret_locations"][0],
                "curiosity": RULES["curiosity"][0], "daily_discovery": RULES["daily_discovery"][0],
-               "thresholds": {t: p for p, t in RULES.values() if t}, "farm_milestones": {m: RULES[m][0] for m in sorted(MILESTONE_RULES)}}
+               "thresholds": {t: p for p, t in RULES.values() if t}, "farm_milestones": {m: RULES[m][0] for m in sorted(MILESTONE_RULES)},
+               "requests": REQUESTS}
 assert now_amounts == SNAPSHOT["amounts"], f"an audited reward amount changed: {now_amounts}"
 assert set(RULES) == {"landmark", "secret_location", "all_secret_locations", "curiosity", "daily_discovery", "discoveries_3", "discoveries_5"} | MILESTONE_RULES
 assert DISC == SNAPSHOT["discoveries"], f"discovery points/respawn changed: {DISC}"
@@ -157,7 +165,8 @@ def max_threshold_total(n_first_ever):
 BOUNDED = {"landmark": len(LANDMARKS) * RULES["landmark"][0], "secret_location": len(SECRETS) * RULES["secret_location"][0],
            "all_secret_locations": RULES["all_secret_locations"][0], "curiosity": RULES["curiosity"][0],
            "farm_milestones": sum(RULES[m][0] for m in MILESTONE_RULES), "discovery_thresholds": max_threshold_total(len(DISC)),
-           "once_ever_discoveries": sum(p for d, (p, r) in DISC.items() if CLASS["discovery_collection"][d] == "once_ever")}
+           "once_ever_discoveries": sum(p for d, (p, r) in DISC.items() if CLASS["discovery_collection"][d] == "once_ever"),
+           "requests": sum(REQUESTS.values())}
 REPEATABLE = {d: p for d, (p, r) in DISC.items() if CLASS["discovery_collection"][d] == "repeatable"}
 natural = {d: DISC[d][0] * 3600.0 / DISC[d][1] for d in REPEATABLE}                 # points/hour, ignoring walking time
 relaunch_loop = (sum(REPEATABLE.values()), len([d for d in REPEATABLE]))            # points, collectibles per relaunch (all respawn at launch)
@@ -182,7 +191,7 @@ gs_ready = F[GS]["_ready"]
 TRIGGERS = set(re.findall(r"(\w+\.\w+)\.connect\(", gs_ready))
 assert TRIGGERS == {"DiscoveryManager.discovery_made", "FarmManager.crop_planted", "FarmManager.crop_harvested", "FarmManager.seed_found",
                     "FarmManager.milestone_reached", "Market.produce_sold", "InputManager.movement_mode_changed",
-                    "Relationships.friendship_changed"}, f"autosave triggers changed: {TRIGGERS}"  # M08.5: friendship pays nothing, saved at once
+                    "Relationships.friendship_changed", "Requests.request_accepted", "Requests.request_completed"}, f"autosave triggers changed: {TRIGGERS}"  # M08.5: friendship pays nothing, saved at once
 assert "NOTIFICATION_APPLICATION_PAUSED" in F[GS]["_notification"] and "NOTIFICATION_WM_CLOSE_REQUEST" in F[GS]["_notification"]
 AL = re.findall(r'^(\w+)="\*?res://', _src("project.godot").split("[autoload]", 1)[1].split("\n[", 1)[0], re.M)
 assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager", "Inventory", "ExplorationManager", "FarmManager")), \

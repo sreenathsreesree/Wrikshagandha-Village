@@ -8,7 +8,8 @@ class_name SpeechPanel
 ## ignores the mouse and the world stays playable (a tap on the sheet itself
 ## does nothing). It holds the conversation's state itself — who is
 ## speaking, their lines and which one is shown. Only the Next button moves
-## on (it reads "Goodbye" on the last line, which ends the conversation);
+## on (it reads "Goodbye" on the last line, which ends the conversation —
+## or the label open() was given, e.g. a request's "Give", M08.6);
 ## the ✕ ends it early, as do the speaker asking (the player walked out of
 ## range) and the speaker leaving the world (its area parked or freed).
 ## Every conversation ends exactly once, with conversation_ended — heard
@@ -31,6 +32,7 @@ const END_TEXT := "Goodbye"
 var _speaker: Node
 var _lines: PackedStringArray = PackedStringArray()
 var _index: int = 0
+var _end_text: String = END_TEXT
 
 func _ready() -> void:
 	add_to_group(GROUP)
@@ -39,9 +41,10 @@ func _ready() -> void:
 	close_button.pressed.connect(_on_close_pressed)
 
 ## Starts `speaker`'s conversation — `lines` from `speaker_name`, from the
-## first. Asking again while the same speaker is shown changes nothing (no
-## restart, no skip). Returns whether the panel is now showing this speaker.
-func open(speaker: Node, speaker_name: String, lines: PackedStringArray) -> bool:
+## first; the last line's button reads `end_text`. Asking again while the
+## same speaker is shown changes nothing (no restart, no skip, no new
+## label). Returns whether the panel is now showing this speaker.
+func open(speaker: Node, speaker_name: String, lines: PackedStringArray, end_text: String = END_TEXT) -> bool:
 	if speaker == null or lines.is_empty():
 		return false
 	if speaker == _speaker and visible:
@@ -51,6 +54,7 @@ func open(speaker: Node, speaker_name: String, lines: PackedStringArray) -> bool
 	_speaker.tree_exiting.connect(close)
 	_lines = lines
 	_index = 0
+	_end_text = end_text
 	name_label.text = speaker_name
 	_show_line()
 	visible = true
@@ -91,7 +95,7 @@ func get_line_index() -> int:
 func _show_line() -> void:
 	line_label.text = _lines[_index]
 	progress_label.text = "%d / %d" % [_index + 1, _lines.size()]
-	next_button.text = END_TEXT if _index >= _lines.size() - 1 else NEXT_TEXT
+	next_button.text = _end_text if _index >= _lines.size() - 1 else NEXT_TEXT
 
 ## The one way a conversation ends: once, announced, then hidden.
 func _end(completed: bool) -> void:
@@ -104,6 +108,7 @@ func _end(completed: bool) -> void:
 	_speaker = null
 	_lines = PackedStringArray()
 	_index = 0
+	_end_text = END_TEXT
 	visible = false
 	conversation_ended.emit(speaker, completed)
 

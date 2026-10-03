@@ -66,6 +66,7 @@ func _ready() -> void:
 	FarmManager.produce_changed.connect(_update_basket_button)
 	Inventory.items_changed.connect(_update_basket_button)
 	Market.produce_sold.connect(_on_produce_sold)
+	Requests.request_completed.connect(_on_request_completed)
 
 	collection_button.pressed.connect(collection_screen.open)
 	journal_button.pressed.connect(journal_screen.open)
@@ -185,6 +186,15 @@ func _on_produce_sold(item_id: String, quality: int, quantity: int, coins: int) 
 	var item := Inventory.get_definition(item_id)
 	var item_name := item.display_name if item != null else item_id
 	notification.show_message(item_name.to_upper(), "%s ×%d" % [FarmManager.get_quality_name(quality), quantity], "+%d Coins" % coins)
+
+## A request completed (M08.6): the items given and the points earned, on
+## the same card as every other reward — no tracker, log or marker.
+func _on_request_completed(_request_id: String, item_id: String, quantity: int, points: int) -> void:
+	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()
+	notification_root.add_child(notification)
+	var item := Inventory.get_definition(item_id)
+	var item_name := item.display_name if item != null else item_id
+	notification.show_message("✓ Request Complete", "%s ×%d" % [item_name, quantity], "+%d Wriksha Points" % points)
 
 func _on_landmark_reached(landmark_id: String, bonus_points: int) -> void:
 	var notification: DiscoveryNotification = DiscoveryNotificationScene.instantiate()

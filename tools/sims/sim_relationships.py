@@ -23,9 +23,9 @@ for rule in ("if not _known_ids.has(npc_id):\n\t\tpush_warning", "if _last_gain_
              "if friendship >= MAX_FRIENDSHIP:\n\t\treturn false", "_friendship[npc_id] = friendship + 1\n\t_last_gain_date[npc_id] = today",
              "_friendship[npc_id] = clampi(int(value), 0, MAX_FRIENDSHIP)", "if typeof(npc_id) != TYPE_STRING or not _known_ids.has(npc_id):"):
     assert rule in RL, f"relationships.gd rule: {rule!r}"
-assert "if speaker != self or not completed:\n\t\treturn" in NT and "Relationships.record_completed_conversation(npc.definition.id)" in NT
+assert "if speaker != self:\n\t\treturn" in NT and "if not completed:\n\t\treturn" in NT and "Relationships.record_completed_conversation(npc.definition.id)" in NT  # M08.6: own, completed
 assert "conversation_ended.emit(speaker, completed)" in SP and "if _index >= _lines.size() - 1:\n\t\t_end(true)" in SP
-assert re.search(r"^\t\t\t5:\s*pass", SM, re.M) and '"relationships": Relationships.get_save_data(),' in SM and SAVE_VERSION == 6
+assert re.search(r"^\t\t\t5:\s*pass", SM, re.M) and '"relationships": Relationships.get_save_data(),' in SM and SAVE_VERSION >= 6  # v6 = M08.5; M08.6 made it 7
 assert "Relationships.friendship_changed.connect(_save.unbind(2))" in GS
 today_body = lambda s: re.search(r"func _today_string\(\) -> String:\n((?:\t.*\n?)+)", s).group(1)
 assert today_body(RL) == today_body(DD), "the same system date as DailyDiscoveryManager"

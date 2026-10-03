@@ -33,9 +33,12 @@ extends Node
 ## 6 = M08.5: a "relationships" section (friendship per NPC id and the day
 ## it last rose); older saves have none — every NPC starts at 0, nothing to
 ## rewrite.
+## 7 = M08.6: a "requests" section (each request's state, accepted or
+## completed); older saves have none — no request offered yet, nothing to
+## rewrite.
 
 const SAVE_PATH := "user://save.json"
-const SAVE_VERSION := 6
+const SAVE_VERSION := 7
 const VERSION_KEY := "save_version"
 ## Every section and the JSON types it may have; anything else is ignored.
 const SECTION_TYPES := {
@@ -49,6 +52,7 @@ const SECTION_TYPES := {
 	"wallet": [TYPE_DICTIONARY],
 	"exploration": [TYPE_DICTIONARY],
 	"relationships": [TYPE_DICTIONARY],
+	"requests": [TYPE_DICTIONARY],
 }
 
 ## Set when the file on disk is newer than this build: saving is refused for
@@ -71,6 +75,7 @@ func save_game() -> void:
 		"wallet": Wallet.get_save_data(),
 		"exploration": ExplorationManager.get_save_data(),
 		"relationships": Relationships.get_save_data(),
+		"requests": Requests.get_save_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -114,6 +119,7 @@ func load_game() -> bool:
 	Wallet.apply_save_data(data.get("wallet", {}))
 	ExplorationManager.apply_save_data(data.get("exploration", {}))
 	Relationships.apply_save_data(data.get("relationships", {}))
+	Requests.apply_save_data(data.get("requests", {}))
 	return true
 
 func has_save_file() -> bool:
@@ -152,6 +158,8 @@ func _migrate(save: Dictionary, from_version: int) -> Dictionary:
 				pass  # M05.2: a new "exploration" section; absent = nothing reached yet
 			5:
 				pass  # M08.5: a new "relationships" section; absent = every NPC at 0
+			6:
+				pass  # M08.6: a new "requests" section; absent = no request offered yet
 			_:
 				push_warning("SaveManager: no migration from save_version %d" % version)
 				return {}

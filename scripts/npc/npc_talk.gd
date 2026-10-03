@@ -10,8 +10,18 @@ class_name NpcTalk
 ## the same way a farm plot closes its seed picker. A conversation of its
 ## own that ends completed (Goodbye) is reported to Relationships by the
 ## NPC's id (M08.5); one ended early never is.
+##
+## Requests (M08.6): if the NPC has a request, Requests chooses which whole
+## conversation to open — the offer, the pending reminder or the hand-over
+## (whose last button reads "Give") — otherwise its usual dialogue. The
+## choice is locked while that conversation is open; a completed offer
+## accepts the request, a completed hand-over completes it.
+
+const GIVE_TEXT := "Give"
 
 var _panel: SpeechPanel
+var _request_id: String = ""
+var _request_step: String = ""
 
 func _ready() -> void:
 	remove_on_harvest = false
@@ -30,8 +40,16 @@ func interact() -> bool:
 		return false
 	if not _panel.conversation_ended.is_connected(_on_conversation_ended):
 		_panel.conversation_ended.connect(_on_conversation_ended)
+	if _panel.get_speaker() == self and _panel.visible:
+		return true
 	var npc := get_parent() as Npc
-	return _panel.open(self, npc.definition.display_name, npc.definition.dialogue.lines)
+	var request := Requests.conversation_for(npc.definition.id)
+	_request_id = request.get("request_id", "")
+	_request_step = request.get("step", "")
+	if request.is_empty():
+		return _panel.open(self, npc.definition.display_name, npc.definition.dialogue.lines)
+	var end_text := GIVE_TEXT if _request_step == Requests.STEP_HANDOVER else SpeechPanel.END_TEXT
+	return _panel.open(self, npc.definition.display_name, request.lines, end_text)
 
 func set_highlighted(active: bool) -> void:
 	super(active)
@@ -39,8 +57,18 @@ func set_highlighted(active: bool) -> void:
 		_panel.close_for(self)
 
 func _on_conversation_ended(speaker: Node, completed: bool) -> void:
-	if speaker != self or not completed:
+	if speaker != self:
 		return
+	var request_id := _request_id
+	var step := _request_step
+	_request_id = ""
+	_request_step = ""
+	if not completed:
+		return
+	if step == Requests.STEP_OFFER:
+		Requests.accept(request_id)
+	elif step == Requests.STEP_HANDOVER:
+		Requests.complete(request_id)
 	var npc := get_parent() as Npc
 	if npc != null and npc.definition != null:
 		Relationships.record_completed_conversation(npc.definition.id)
