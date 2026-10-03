@@ -1,0 +1,42 @@
+[gd_scene load_steps=7 format=3]
+
+[sub_resource type="StandardMaterial3D" id="Mat_rug_outer"]
+albedo_color = Color(0.66, 0.32, 0.22, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_rug_band"]
+albedo_color = Color(0.86, 0.66, 0.36, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Mat_rug_inner"]
+albedo_color = Color(0.5, 0.24, 0.2, 1)
+roughness = 1.0
+
+[sub_resource type="BoxMesh" id="Mesh_0"]
+size = Vector3(2.8, 0.01, 1.8)
+
+[sub_resource type="BoxMesh" id="Mesh_1"]
+size = Vector3(2.5, 0.012, 1.5)
+
+[sub_resource type="BoxMesh" id="Mesh_2"]
+size = Vector3(2.3, 0.014, 1.3)
+
+[node name="Rug" type="Node3D"]
+
+[node name="Outer" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.005, 0)
+mesh = SubResource("Mesh_0")
+surface_material_override/0 = SubResource("Mat_rug_outer")
+cast_shadow = 0
+
+[node name="Band" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.006, 0)
+mesh = SubResource("Mesh_1")
+surface_material_override/0 = SubResource("Mat_rug_band")
+cast_shadow = 0
+
+[node name="Inner" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.007, 0)
+mesh = SubResource("Mesh_2")
+surface_material_override/0 = SubResource("Mat_rug_inner")
+cast_shadow = 0

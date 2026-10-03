@@ -1,16 +1,25 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=30 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/game_area.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
 [ext_resource type="Script" path="res://scripts/world/area_camera_bounds.gd" id="camera_bounds"]
+[ext_resource type="Script" path="res://scripts/world/home_slot.gd" id="slot"]
 [ext_resource type="PackedScene" path="res://scenes/world/props/AreaDoor.tscn" id="door"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Bed.tscn" id="bed"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Hearth.tscn" id="hearth"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Shelves.tscn" id="shelves"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Desk.tscn" id="desk"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Stool.tscn" id="stool"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Chest.tscn" id="chest"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/Rug.tscn" id="rug"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/home/WindowLight.tscn" id="windowlight"]
 
 [sub_resource type="Environment" id="Environment_home"]
 background_mode = 1
 background_color = Color(0.1, 0.08, 0.07, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.95, 0.85, 0.7, 1)
-ambient_light_energy = 0.55
+ambient_light_color = Color(0.95, 0.82, 0.66, 1)
+ambient_light_energy = 0.5
 
 [sub_resource type="NavigationMesh" id="NavigationMesh_home"]
 geometry_parsed_geometry_type = 1
@@ -43,7 +52,7 @@ size = Vector3(0.2, 2.6, 6.4)
 size = Vector3(3.6, 0.4, 0.2)
 
 [sub_resource type="StandardMaterial3D" id="Material_wall"]
-albedo_color = Color(0.82, 0.74, 0.6, 1)
+albedo_color = Color(0.86, 0.76, 0.6, 1)
 roughness = 0.95
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_wall_x"]
@@ -52,11 +61,21 @@ size = Vector3(8.4, 2.6, 0.2)
 [sub_resource type="BoxShape3D" id="BoxShape3D_wall_z"]
 size = Vector3(0.2, 2.6, 6.4)
 
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall_south"]
+size = Vector3(8.4, 0.6, 0.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_post"]
+size = Vector3(0.16, 0.55, 0.26)
+
+[sub_resource type="StandardMaterial3D" id="Material_post"]
+albedo_color = Color(0.4, 0.26, 0.16, 1)
+roughness = 0.9
+
 [sub_resource type="BoxMesh" id="BoxMesh_mat"]
 size = Vector3(1.2, 0.03, 0.6)
 
 [sub_resource type="StandardMaterial3D" id="Material_mat"]
-albedo_color = Color(0.4, 0.26, 0.16, 1)
+albedo_color = Color(0.62, 0.5, 0.3, 1)
 roughness = 1.0
 
 [node name="HomeInterior" type="Node3D" groups=["navigation_source"]]
@@ -69,13 +88,14 @@ environment = SubResource("Environment_home")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 position = Vector3(0, 6, 0)
 rotation_degrees = Vector3(-60, 30, 0)
-light_color = Color(1, 0.93, 0.8, 1)
-light_energy = 0.5
+light_color = Color(1, 0.92, 0.78, 1)
+light_energy = 0.45
+shadow_enabled = true
 
 [node name="RoomLight" type="OmniLight3D" parent="."]
 position = Vector3(0, 2.3, 0)
-light_color = Color(1, 0.85, 0.6, 1)
-light_energy = 1.2
+light_color = Color(1, 0.84, 0.6, 1)
+light_energy = 1.0
 omni_range = 7.0
 
 [node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
@@ -130,13 +150,81 @@ mesh = SubResource("BoxMesh_wall_low")
 surface_material_override/0 = SubResource("Material_wall")
 
 [node name="SouthShape" type="CollisionShape3D" parent="Room"]
-position = Vector3(0, 1.3, 3.1)
-shape = SubResource("BoxShape3D_wall_x")
+position = Vector3(0, 0.3, 3.1)
+shape = SubResource("BoxShape3D_wall_south")
+
+[node name="DoorPostWest" type="MeshInstance3D" parent="Room"]
+position = Vector3(-0.58, 0.275, 3.1)
+mesh = SubResource("BoxMesh_post")
+surface_material_override/0 = SubResource("Material_post")
+
+[node name="DoorPostEast" type="MeshInstance3D" parent="Room"]
+position = Vector3(0.58, 0.275, 3.1)
+mesh = SubResource("BoxMesh_post")
+surface_material_override/0 = SubResource("Material_post")
 
 [node name="DoorMat" type="MeshInstance3D" parent="Room"]
 position = Vector3(0, 0.015, 2.6)
 mesh = SubResource("BoxMesh_mat")
 surface_material_override/0 = SubResource("Material_mat")
+
+[node name="Furniture" type="Node3D" parent="."]
+
+[node name="Bed" parent="Furniture" instance=ExtResource("bed")]
+position = Vector3(2.95, 0, -2)
+
+[node name="Hearth" parent="Furniture" instance=ExtResource("hearth")]
+position = Vector3(0, 0, -2.6)
+
+[node name="Shelves" parent="Furniture" instance=ExtResource("shelves")]
+position = Vector3(-2.6, 0, -2.8)
+
+[node name="Desk" parent="Furniture" instance=ExtResource("desk")]
+position = Vector3(-3.6, 0, 0)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="Stool" parent="Furniture" instance=ExtResource("stool")]
+position = Vector3(-2.95, 0, 0.35)
+
+[node name="Chest" parent="Furniture" instance=ExtResource("chest")]
+position = Vector3(3.7, 0, 0.95)
+rotation_degrees = Vector3(0, -90, 0)
+
+[node name="Rug" parent="Furniture" instance=ExtResource("rug")]
+position = Vector3(0.2, 0, -0.5)
+
+[node name="WindowLight" parent="Furniture" instance=ExtResource("windowlight")]
+position = Vector3(3.98, 0, -0.45)
+rotation_degrees = Vector3(0, -90, 0)
+
+[node name="HomeSlots" type="Node3D" parent="."]
+
+[node name="BedSlot" type="Marker3D" parent="HomeSlots"]
+position = Vector3(2.95, 0.1, -0.4)
+script = ExtResource("slot")
+slot_id = "bed"
+
+[node name="HearthSlot" type="Marker3D" parent="HomeSlots"]
+position = Vector3(0, 0.1, -1.6)
+script = ExtResource("slot")
+slot_id = "hearth"
+
+[node name="ShelvesSlot" type="Marker3D" parent="HomeSlots"]
+position = Vector3(-2.6, 0.1, -2)
+script = ExtResource("slot")
+slot_id = "shelves"
+
+[node name="DeskSlot" type="Marker3D" parent="HomeSlots"]
+position = Vector3(-2.4, 0.1, -0.3)
+rotation_degrees = Vector3(0, 90, 0)
+script = ExtResource("slot")
+slot_id = "desk"
+
+[node name="ChestSlot" type="Marker3D" parent="HomeSlots"]
+position = Vector3(2.75, 0.1, 0.95)
+rotation_degrees = Vector3(0, -90, 0)
+script = ExtResource("slot")
+slot_id = "chest"
 
 [node name="HomeDoorEntry" type="Marker3D" parent="."]
 position = Vector3(0, 0.1, 1.2)

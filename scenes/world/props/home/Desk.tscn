@@ -1,0 +1,135 @@
+[gd_scene load_steps=16 format=3]
+
+[sub_resource type="StandardMaterial3D" id="Mat_wood_light"]
+albedo_color = Color(0.66, 0.48, 0.3, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="Mat_wood"]
+albedo_color = Color(0.52, 0.34, 0.2, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="Mat_cover"]
+albedo_color = Color(0.5, 0.2, 0.16, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_page"]
+albedo_color = Color(0.96, 0.93, 0.84, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="Mat_candle"]
+albedo_color = Color(0.95, 0.9, 0.78, 1)
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_flame"]
+albedo_color = Color(1, 0.8, 0.4, 1)
+roughness = 0.5
+emission_enabled = true
+emission = Color(1, 0.75, 0.35, 1)
+emission_energy_multiplier = 2.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_metal"]
+albedo_color = Color(0.25, 0.24, 0.23, 1)
+roughness = 0.5
+
+[sub_resource type="BoxMesh" id="Mesh_0"]
+size = Vector3(1.4, 0.05, 0.8)
+
+[sub_resource type="BoxMesh" id="Mesh_1"]
+size = Vector3(0.06, 0.73, 0.06)
+
+[sub_resource type="BoxMesh" id="Mesh_2"]
+size = Vector3(0.5, 0.015, 0.33)
+
+[sub_resource type="BoxMesh" id="Mesh_3"]
+size = Vector3(0.23, 0.02, 0.3)
+
+[sub_resource type="CylinderMesh" id="Mesh_4"]
+top_radius = 0.03
+bottom_radius = 0.03
+height = 0.12
+radial_segments = 12
+
+[sub_resource type="SphereMesh" id="Mesh_5"]
+radius = 0.02
+height = 0.05
+radial_segments = 10
+rings = 5
+
+[sub_resource type="CylinderMesh" id="Mesh_6"]
+top_radius = 0.035
+bottom_radius = 0.035
+height = 0.06
+radial_segments = 12
+
+[sub_resource type="BoxShape3D" id="Shape_0"]
+size = Vector3(1.4, 0.8, 0.8)
+
+[node name="Desk" type="StaticBody3D"]
+
+[node name="Top" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.75, 0)
+mesh = SubResource("Mesh_0")
+surface_material_override/0 = SubResource("Mat_wood_light")
+
+[node name="LegA" type="MeshInstance3D" parent="."]
+position = Vector3(-0.64, 0.365, -0.34)
+mesh = SubResource("Mesh_1")
+surface_material_override/0 = SubResource("Mat_wood")
+
+[node name="LegB" type="MeshInstance3D" parent="."]
+position = Vector3(0.64, 0.365, -0.34)
+mesh = SubResource("Mesh_1")
+surface_material_override/0 = SubResource("Mat_wood")
+
+[node name="LegC" type="MeshInstance3D" parent="."]
+position = Vector3(-0.64, 0.365, 0.34)
+mesh = SubResource("Mesh_1")
+surface_material_override/0 = SubResource("Mat_wood")
+
+[node name="LegD" type="MeshInstance3D" parent="."]
+position = Vector3(0.64, 0.365, 0.34)
+mesh = SubResource("Mesh_1")
+surface_material_override/0 = SubResource("Mat_wood")
+
+[node name="JournalCover" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.783, 0.08)
+mesh = SubResource("Mesh_2")
+surface_material_override/0 = SubResource("Mat_cover")
+
+[node name="JournalLeft" type="MeshInstance3D" parent="."]
+position = Vector3(-0.12, 0.795, 0.08)
+rotation_degrees = Vector3(0, 0, 3)
+mesh = SubResource("Mesh_3")
+surface_material_override/0 = SubResource("Mat_page")
+
+[node name="JournalRight" type="MeshInstance3D" parent="."]
+position = Vector3(0.12, 0.795, 0.08)
+rotation_degrees = Vector3(0, 0, -3)
+mesh = SubResource("Mesh_3")
+surface_material_override/0 = SubResource("Mat_page")
+
+[node name="Candle" type="MeshInstance3D" parent="."]
+position = Vector3(0.52, 0.835, -0.22)
+mesh = SubResource("Mesh_4")
+surface_material_override/0 = SubResource("Mat_candle")
+
+[node name="Flame" type="MeshInstance3D" parent="."]
+position = Vector3(0.52, 0.915, -0.22)
+mesh = SubResource("Mesh_5")
+surface_material_override/0 = SubResource("Mat_flame")
+
+[node name="InkPot" type="MeshInstance3D" parent="."]
+position = Vector3(0.36, 0.805, -0.2)
+mesh = SubResource("Mesh_6")
+surface_material_override/0 = SubResource("Mat_metal")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.4, 0)
+shape = SubResource("Shape_0")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+height = 1.2
+vertices = PackedVector3Array(-0.7, 0, -0.4, 0.7, 0, -0.4, 0.7, 0, 0.4, -0.7, 0, 0.4)
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+avoidance_enabled = false

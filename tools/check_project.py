@@ -2688,6 +2688,78 @@ if not re.search(r'\[node name="Veil" type="ColorRect" parent="\."\]\nvisible = 
 notes.append(f"area transitions (M08.1): areas {sorted(area_defs)} from data/areas; doors {len(doors)} (ENTER/EXIT, tap only); "
              f"entries {area_entries}; Meadow parked while left; AreaRouter never saved")
 
+# ------------------------------------------------------------ home interior (M08.2)
+# The real home on the M08.1 base: a furnished 8 x 6 m room, every piece a placeholder prop scene
+# in scenes/world/props/home/ with no script and nothing to interact with (the exit door stays the
+# room's only Interactable); solid pieces are StaticBody3D props with one box collider and one carving
+# NavigationObstacle3D (the M07.3 pattern: no furniture top bakes as a walkable island); flat pieces
+# (the rug, the window light) have no collider. HomeSlot markers reserve where later systems will
+# stand the player (bed, chest, desk, hearth, shelves) — data only, read by nothing yet; no rest,
+# storage, crafting, cooking or NPC system exists. Warm light from a few lamps, no omni shadows.
+# Geometry (inside the room, no overlaps, carve = collider, reachability, slots facing their
+# furniture, camera framing, tap reachability over the low wall) is sim_home_layout's.
+SLOT_GD, HOME_PROPS = "scripts/world/home_slot.gd", "scenes/world/props/home/"
+SLOT_IDS = ["bed", "chest", "desk", "hearth", "shelves"]
+FURNITURE_SOLID = ["Bed", "Chest", "Desk", "Hearth", "Shelves", "Stool"]
+FURNITURE_FLAT = ["Rug", "WindowLight"]
+sl_src = scripts.get(SLOT_GD, "")
+if not re.search(r"^extends Marker3D\s*\nclass_name HomeSlot", sl_src, re.M) or 'const GROUP := &"home_slot"' not in sl_src \
+   or '@export var slot_id: String = ""' not in sl_src or not re.search(r"func _enter_tree\(\) -> void:\s*add_to_group\(GROUP\)", sl_src) \
+   or re.findall(r"^func (\w+)\(", sl_src, re.M) != ["_enter_tree"]:
+    err(f"{SLOT_GD}: HomeSlot is a Marker3D with a slot_id that joins the home_slot group — data only")
+for f, s2 in scripts.items():
+    if f != SLOT_GD and not f.startswith("tools/") and re.search(r"\bHomeSlot\b|home_slot|slot_id", code_only(s2)):
+        err(f"{f}: reads the home slots — nothing uses them until a milestone adds rest, storage or crafting")
+_, hsecs, hext, _ = load_scene_info(HOME_SCENE)
+home_scripts = sorted({script_for_ext(hext, i) for k, a, b in hsecs for i in re.findall(r'script = ExtResource\("([^"]+)"\)', b)})
+if home_scripts != sorted([GAME_AREA_GD, ENTRY_GD, CB_GD, SLOT_GD]):
+    err(f"{HOME_SCENE}: the home uses only GameArea, AreaEntry, AreaCameraBounds and HomeSlot scripts (found {home_scripts})")
+furniture, slot_ids, home_instances = [], [], []
+for k, a, b in hsecs:
+    if k != "node": continue
+    par = a.get("parent", "").strip('"')
+    if "instance" in a:
+        inst = script_for_ext(hext, re.search(r'ExtResource\("([^"]+)"\)', a["instance"]).group(1))
+        home_instances.append(inst)
+        if par == "Furniture":
+            furniture.append((a["name"].strip('"'), inst))
+    if par == "HomeSlots":
+        sid = re.search(r'^slot_id = "([^"]*)"', b, re.M)
+        slot_ids.append(sid.group(1) if sid else "")
+if sorted(n for n, _ in furniture) != sorted(FURNITURE_SOLID + FURNITURE_FLAT) or any(not i.startswith(HOME_PROPS) for _, i in furniture) \
+   or sorted(set(home_instances) - {i for _, i in furniture}) != [DOOR_SCENE] or home_instances.count(DOOR_SCENE) != 1:
+    err(f"{HOME_SCENE}: the furniture is {sorted(FURNITURE_SOLID + FURNITURE_FLAT)} from {HOME_PROPS}, and the exit door the only other instance (found {furniture})")
+if sorted(slot_ids) != SLOT_IDS:
+    err(f"{HOME_SCENE}: HomeSlots are exactly {SLOT_IDS} (found {sorted(slot_ids)})")
+for name, inst in furniture:
+    if not os.path.exists(inst): continue
+    ptxt = open(inst, encoding="utf-8").read()
+    if 'type="Script"' in ptxt or re.search(r"^script = ", ptxt, re.M) or re.search(r'type="Area3D"|instance=', ptxt):
+        err(f"{inst}: furniture is a placeholder with no script, no Area3D and no instanced scene — nothing to interact with yet")
+    root = re.search(r'^\[node name="[^"]+" type="(\w+)"\]', ptxt, re.M)
+    obstacles = re.findall(r'\[node name="[^"]+" type="NavigationObstacle3D"[^\]]*\]\n(.*?)(?=\n\[|\Z)', ptxt, re.S)
+    if name in FURNITURE_SOLID:
+        if not root or root.group(1) != "StaticBody3D" or ptxt.count('type="CollisionShape3D"') != 1 or len(obstacles) != 1 \
+           or not all(k in obstacles[0] for k in ("affect_navigation_mesh = true", "carve_navigation_mesh = true", "avoidance_enabled = false")):
+            err(f"{inst}: a solid piece is a StaticBody3D with one collider and one carving NavigationObstacle3D (affect + carve, no avoidance)")
+    elif re.search(r"Body3D|CollisionShape3D|NavigationObstacle3D", ptxt):
+        err(f"{inst}: a flat piece has no collider or obstacle — it is walked over")
+hs = open(HOME_SCENE, encoding="utf-8").read()
+if not re.search(r'\[node name="SouthShape" type="CollisionShape3D" parent="Room"\]\n[^\[]*shape = SubResource\("BoxShape3D_wall_south"\)', hs) \
+   or not re.search(r'\[node name="(SouthWallWest|SouthWallEast)" type="MeshInstance3D" parent="Room"\]\n[^\[]*mesh = SubResource\("BoxMesh_wall_low"\)', hs):
+    err(f"{HOME_SCENE}: the camera-side wall is a low mesh with its own low collider (sim_home_layout checks its height against the capsule and the tap snap)")
+lights = []
+for path in [HOME_SCENE] + [i for _, i in furniture if os.path.exists(i)]:
+    for kind, body in re.findall(r'\[node name="[^"]+" type="(OmniLight3D|SpotLight3D|DirectionalLight3D)"[^\]]*\]\n(.*?)(?=\n\[|\Z)', open(path, encoding="utf-8").read(), re.S):
+        col = re.search(r"light_color = Color\(([^)]*)\)", body)
+        rgb = [float(v) for v in col.group(1).split(",")[:3]] if col else [1.0, 1.0, 1.0]
+        lights.append((path, kind, rgb, "shadow_enabled = true" in body))
+omni = [l for l in lights if l[1] != "DirectionalLight3D"]
+if len(omni) > 3 or [l for l in omni if l[3]] or [l for l in lights if not (l[2][0] >= l[2][1] >= l[2][2] and l[2][0] > l[2][2])]:
+    err(f"{HOME_SCENE}: the home is lit warm (every light's colour red >= green >= blue), by at most 3 lamps without shadows (found {[(os.path.basename(p), k, c, sh) for p, k, c, sh in lights]})")
+notes.append(f"home interior (M08.2): furniture {sorted(n for n, _ in furniture)} (no scripts, nothing interactive; {len(FURNITURE_SOLID)} carving solids); "
+             f"slots {sorted(slot_ids)} read by nothing; {len(lights)} warm lights")
+
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
 # carries save_version; a load validates it (absent = 0, malformed rejected,

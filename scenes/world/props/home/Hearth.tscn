@@ -1,0 +1,97 @@
+[gd_scene load_steps=13 format=3]
+
+[sub_resource type="StandardMaterial3D" id="Mat_stone"]
+albedo_color = Color(0.6, 0.56, 0.5, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="Mat_stone_dark"]
+albedo_color = Color(0.42, 0.39, 0.35, 1)
+roughness = 0.95
+
+[sub_resource type="StandardMaterial3D" id="Mat_ember"]
+albedo_color = Color(1, 0.5, 0.15, 1)
+roughness = 0.6
+emission_enabled = true
+emission = Color(1, 0.45, 0.12, 1)
+emission_energy_multiplier = 2.2
+
+[sub_resource type="StandardMaterial3D" id="Mat_wood"]
+albedo_color = Color(0.52, 0.34, 0.2, 1)
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="Mat_metal"]
+albedo_color = Color(0.25, 0.24, 0.23, 1)
+roughness = 0.5
+
+[sub_resource type="BoxMesh" id="Mesh_0"]
+size = Vector3(1.4, 0.9, 0.8)
+
+[sub_resource type="BoxMesh" id="Mesh_1"]
+size = Vector3(0.7, 0.45, 0.04)
+
+[sub_resource type="BoxMesh" id="Mesh_2"]
+size = Vector3(0.5, 0.1, 0.06)
+
+[sub_resource type="BoxMesh" id="Mesh_3"]
+size = Vector3(1.6, 0.08, 0.9)
+
+[sub_resource type="BoxMesh" id="Mesh_4"]
+size = Vector3(0.8, 1.7, 0.6)
+
+[sub_resource type="CylinderMesh" id="Mesh_5"]
+top_radius = 0.12
+bottom_radius = 0.12
+height = 0.18
+radial_segments = 12
+
+[sub_resource type="BoxShape3D" id="Shape_0"]
+size = Vector3(1.4, 1, 0.8)
+
+[node name="Hearth" type="StaticBody3D"]
+
+[node name="Base" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.45, 0)
+mesh = SubResource("Mesh_0")
+surface_material_override/0 = SubResource("Mat_stone")
+
+[node name="Firebox" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.36, 0.4)
+mesh = SubResource("Mesh_1")
+surface_material_override/0 = SubResource("Mat_stone_dark")
+
+[node name="Embers" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.2, 0.42)
+mesh = SubResource("Mesh_2")
+surface_material_override/0 = SubResource("Mat_ember")
+
+[node name="Mantel" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.94, 0)
+mesh = SubResource("Mesh_3")
+surface_material_override/0 = SubResource("Mat_wood")
+
+[node name="Chimney" type="MeshInstance3D" parent="."]
+position = Vector3(0, 1.83, -0.1)
+mesh = SubResource("Mesh_4")
+surface_material_override/0 = SubResource("Mat_stone")
+
+[node name="Kettle" type="MeshInstance3D" parent="."]
+position = Vector3(0.48, 1.07, 0.1)
+mesh = SubResource("Mesh_5")
+surface_material_override/0 = SubResource("Mat_metal")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.5, 0)
+shape = SubResource("Shape_0")
+
+[node name="NavigationObstacle3D" type="NavigationObstacle3D" parent="."]
+height = 3
+vertices = PackedVector3Array(-0.7, 0, -0.4, 0.7, 0, -0.4, 0.7, 0, 0.4, -0.7, 0, 0.4)
+affect_navigation_mesh = true
+carve_navigation_mesh = true
+avoidance_enabled = false
+
+[node name="FireLight" type="OmniLight3D" parent="."]
+position = Vector3(0, 0.5, 0.75)
+light_color = Color(1, 0.62, 0.3, 1)
+light_energy = 0.75
+omni_range = 3.5

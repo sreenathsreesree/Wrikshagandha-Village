@@ -42,11 +42,15 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 │   └── SeedPicker, CollectionScreen, JournalScreen, DailyDiscoveryScreen, BasketScreen
 └── TransitionFade (CanvasLayer 10)  scenes/ui/TransitionFade.tscn  (shell, M08.1) — the veil between areas
 
-HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in for the Meadow (M08.1; bare, M08.2 builds on it)
-├── WorldEnvironment, DirectionalLight3D, RoomLight, NavigationRegion3D
-├── Room (StaticBody3D: floor, three walls, a low camera-side wall with full-height collision)
+HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in for the Meadow (M08.1; furnished by M08.2)
+├── WorldEnvironment (warm ambient), DirectionalLight3D, RoomLight (warm lamp), NavigationRegion3D
+├── Room (StaticBody3D: 8 × 6 m floor, three walls, a low camera-side wall — 0.4 m mesh, 0.6 m collider — door posts, mat)
+├── Furniture                        placeholder props from scenes/world/props/home/ (no scripts, nothing interactive):
+│                                    Bed, Hearth (+ FireLight), Shelves, Desk (open journal, candle), Stool, Chest — StaticBody3D + carving
+│                                    NavigationObstacle3D each; Rug, WindowLight (window + light patch) — flat, no collider
+├── HomeSlots                        HomeSlot markers bed / hearth / shelves / desk / chest (scripts/world/home_slot.gd; data only, read by nothing yet)
 ├── HomeDoorEntry                    AreaEntry "home_door"
-├── ExitDoor                         AreaDoor (EXIT → meadow / house_door)
+├── ExitDoor                         AreaDoor (EXIT → meadow / house_door) — the room's only Interactable
 └── CameraBounds                     AreaCameraBounds 3 × 2 m (D-32)
 ```
 - **Current:**
@@ -257,6 +261,7 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - `_swap_area()` (Main is the only place that does this): reuse a parked instance of the target scene if there is one, else instantiate; close the seed picker; `FarmManager.release_plots_in(old)`; `remove_child(old)`; park it if its definition keeps it alive (D-33), else `free()`; add the next area first; a restored area's plots are re-registered (`FarmManager.register_plot`, which restores their captured state — D-31), a fresh one gets `attach_player()`; place the player on the entry; camera bounds, then the area's camera distance (D-32: a fixed distance from data, the player's own zoom kept and given back), snap; `AreaRouter.notify_arrived()`.
   - Parked = out of the tree, the same instance: no `_process`, no Timer, no `_ready` again — the day, discovery respawns, events and wildlife wait; collected discoveries never respawn early. Thirst (a clock) is held by capture/re-register; growth (a Timer) pauses by itself. `FarmPlot.restore()` replaces a crop visual the live plot already shows.
   - Not saved (D-34): a relaunch from inside starts at `meadow_start`; a save made indoors already holds the captured plots. `load_area()` remains the debugger's plain swap (no fade).
+  - **The home interior (M08.2):** a furnished 8 × 6 m room. Furniture pieces are placeholder prop scenes (`scenes/world/props/home/`) placed in the editor: no scripts, nothing to tap but the exit door; solid pieces carve the baked navigation mesh exactly over their collider (the M07.3 pattern — no walkable island on a bed or desk top; a tap there does nothing, a tap on a low piece walks up to its front). `HomeSlot` markers (`slot_id`, group `home_slot`) reserve where later systems will stand the player — bed, hearth, shelves, desk, chest — each on reachable floor in front of its furniture, facing it; nothing reads them yet (no rest, storage, crafting or cooking). The camera-side wall is low so the room reads from the camera; its collider is **0.6 m** — tall enough that the player's 0.32 m capsule can never step over it, and low enough that a tap whose ray lands on it is within InputManager's walkable snap (0.6 m up, 1 m across) and still walks to the floor beside it (a full-height invisible collider, as in M08.1, swallowed taps on the south part of the room). Warm light: ambient, one room lamp, the hearth's fire light (no omni shadows), the window's emissive pane and light patch. `tools/sims/sim_home_layout.py` checks the layout, reachability, slots and the camera framing (16:9, 20:9, 4:3).
   - Note for later interiors: the parked Meadow's WorldSimulation stays connected to `FarmManager.garden_interest_changed`; in M08.1 nothing can change garden interest indoors (no plots there). An interior that can must make that relay tree-safe first.
 - A persistent shell with swappable areas (M03.1–M03.2). Named entry markers (`AreaEntry`). Per-area navigation mesh. Per-area camera bounds (`AreaCameraBounds`, M03.4). Farm plots survive reloads (M03.3).
 - World content is always placed in the editor. Places, elements and (later) NPCs are data resources referenced by id.
