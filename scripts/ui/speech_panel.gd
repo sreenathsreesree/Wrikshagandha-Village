@@ -11,8 +11,9 @@ class_name SpeechPanel
 ## on (it reads "Goodbye" on the last line, which ends the conversation);
 ## the ✕ ends it early, as do the speaker asking (the player walked out of
 ## range) and the speaker leaving the world (its area parked or freed).
-## Every conversation ends exactly once, with conversation_ended — the hook
-## a later milestone (relationships) listens to; nothing does yet.
+## Every conversation ends exactly once, with conversation_ended — heard
+## by the speaking NpcTalk, which reports a completed one to Relationships
+## (M08.5); the panel itself knows nothing of friendship.
 
 signal conversation_ended(speaker: Node, completed: bool)
 

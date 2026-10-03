@@ -181,7 +181,8 @@ assert plots_left >= 0 and sum(min(seed_cap[c], PLOTS) for c in CROPS) >= 1, "ha
 gs_ready = F[GS]["_ready"]
 TRIGGERS = set(re.findall(r"(\w+\.\w+)\.connect\(", gs_ready))
 assert TRIGGERS == {"DiscoveryManager.discovery_made", "FarmManager.crop_planted", "FarmManager.crop_harvested", "FarmManager.seed_found",
-                    "FarmManager.milestone_reached", "Market.produce_sold", "InputManager.movement_mode_changed"}, f"autosave triggers changed: {TRIGGERS}"
+                    "FarmManager.milestone_reached", "Market.produce_sold", "InputManager.movement_mode_changed",
+                    "Relationships.friendship_changed"}, f"autosave triggers changed: {TRIGGERS}"  # M08.5: friendship pays nothing, saved at once
 assert "NOTIFICATION_APPLICATION_PAUSED" in F[GS]["_notification"] and "NOTIFICATION_WM_CLOSE_REQUEST" in F[GS]["_notification"]
 AL = re.findall(r'^(\w+)="\*?res://', _src("project.godot").split("[autoload]", 1)[1].split("\n[", 1)[0], re.M)
 assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager", "Inventory", "ExplorationManager", "FarmManager")), \

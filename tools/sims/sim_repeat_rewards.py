@@ -45,7 +45,7 @@ assert "return value if typeof(value) == TYPE_BOOL else true" in EX["_was_paid"]
 assert '_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")' in EX["apply_save_data"]
 SMS = _src("scripts", "autoload", "save_manager.gd")
 assert '"exploration": ExplorationManager.get_save_data(),' in SMS and re.search(r"^\t\t\t4:\s*pass", SMS, re.M)
-assert int(re.search(r"^const SAVE_VERSION := (\d+)", SMS, re.M).group(1)) == 5
+assert int(re.search(r"^const SAVE_VERSION := (\d+)", SMS, re.M).group(1)) >= 5  # v5 = M05.2 (exploration); later sections bump it (M08.5: v6)
 
 # ---------------------------------------------------------------- 2. ports
 class World:

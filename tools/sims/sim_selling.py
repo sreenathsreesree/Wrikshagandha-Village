@@ -239,7 +239,7 @@ assert g.sell(PRODUCE[0], 2, 1) == TABLE[PRODUCE[0]][2] and g.sell(PRODUCE[0], 2
 assert g.wallet.balance == TABLE[PRODUCE[0]][2] and g.points == 18
 
 # ---------------------------------------------------------------- 4. saves
-assert SAVE_VERSION == 5 and SAVES_ON_SALE, "SAVE_VERSION stays 5; GameState saves on produce_sold"
+assert SAVE_VERSION >= 5 and SAVES_ON_SALE, "selling added no save section (v5 at M06.2; M08.5 later made it 6); GameState saves on produce_sold"
 g = fresh({(i, q): 5 for i in PRODUCE for q in range(len(PERCENTS))}); g.points = 123
 for i in PRODUCE: g.sell(i, 2, 2)
 g2 = Game.load(g.disk)

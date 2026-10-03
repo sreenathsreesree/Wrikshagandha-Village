@@ -942,7 +942,7 @@ if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D"
 # M06.2 (D-25) added Market (selling produce), after Inventory and Wallet, before GameState (which saves on a sale).
 # M08.1 (D-34) added AreaRouter (travel requests between areas, the current area id; never saved), last.
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
+             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
              "AreaRouter"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
@@ -964,11 +964,13 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
-          # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold.)
+          # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold;
+          #  and by M08.5: it also saves when an NPC's friendship rises, Relationships.friendship_changed.)
+          # (SaveManager re-pinned deliberately by M08.5: the relationships section, save v6 — D-17, D-38.)
           # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
           #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
           "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
-          "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "d518671dbcca5ee7",
+          "scripts/autoload/save_manager.gd": "6b8f767431bc748e", "scripts/autoload/game_state.gd": "18d296a1ab517f5a",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
           #  farm_manager.gd by M05.3: milestone bonuses from reward data;
@@ -2949,15 +2951,101 @@ if not re.search(r"if _speaker == null:\s*visible = false\s*return", sp4.get("_e
 if 'next_button.text = END_TEXT if _index >= _lines.size() - 1 else NEXT_TEXT' not in sp4.get("_show_line", "") \
    or 'const END_TEXT := "Goodbye"' not in sp2_src or 'const NEXT_TEXT := "Next ▸"' not in sp2_src or '"%d / %d" % [_index + 1, _lines.size()]' not in sp4.get("_show_line", ""):
     err(f"{SPEECH_GD}: the Next button reads Goodbye on the last line, and the progress shows the line out of the total")
+# M08.5 (D-38): exactly one listener — the speaking NpcTalk, connected once from interact(), acting only
+# on its own completed conversations (relationships section below).
 listeners = [f for f, s2 in scripts.items() if re.search(r"conversation_ended\.connect", code_only(s2))]
-if listeners:
-    err(f"conversation_ended has no listener until relationships (M08.5) — found {listeners}")
+if listeners != ["scripts/npc/npc_talk.gd"]:
+    err(f"conversation_ended has exactly one listener, NpcTalk (M08.5) — found {listeners}")
 SPN3, _ = scene_nodes(SPEECH_SCENE)
 nb = SPN3.get("Panel/VBoxContainer/Row/NextButton", ("", ""))
 if 'type="Button"' not in nb[0] or prop(nb[1], "theme_type_variation") != '&"PrimaryButton"' or prop(nb[1], "focus_mode") != "0" \
    or prop(SPN3.get("Panel", ("", ""))[1], "custom_minimum_size") is None:
     err(f"{SPEECH_SCENE}: the Next button is a primary, never-focused button (its 120 px minimum is checked with the other UI buttons)")
 notes.append(f"dialogue (M08.4): dialogues {sorted(dialogues)} ({[len(v) for v in dialogues.values()]} lines) from data/dialogues; Next-only progression, one end per conversation, no listener yet")
+
+# ------------------------------------------------------------ relationships (M08.5, D-38)
+# Friendship per NPC id — one whole number, 0..MAX_FRIENDSHIP — held by the Relationships autoload (outside
+# every area, so it outlives the parked Meadow), saved in its own section (save v6, D-17). A completed
+# conversation (conversation_ended with completed = true, heard by the speaking NpcTalk) earns +1, at most
+# once per system-calendar day per NPC (DailyDiscoveryManager's date); an early end never does. Nothing is
+# shown and nothing reads it but the save; Player, InputManager and the panel know nothing of it.
+RL = "scripts/autoload/relationships.gd"
+rl_src = scripts.get(RL, "")
+rlf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", rl_src, re.M | re.S)}
+rl_code = code_only(rl_src)
+if not re.match(r"extends Node\n", rl_src) or re.findall(r"^signal (.+)$", rl_src, re.M) != ["friendship_changed(npc_id: String, friendship: int)"] \
+   or const_val(rl_src, "MAX_FRIENDSHIP") != 10 or 'const NPCS_PATH := "res://data/npcs/"' not in rl_src \
+   or re.findall(r"^var (\w+)", rl_src, re.M) != ["_friendship", "_last_gain_date", "_known_ids"] \
+   or [f for f in rlf if not f.startswith("_")] != ["get_friendship", "record_completed_conversation", "get_save_data", "apply_save_data"]:
+    err(f"{RL}: Relationships is a Node with exactly friendship_changed(npc_id, friendship), MAX_FRIENDSHIP 10, the NPC data folder, "
+        "the friendship / last-gain-date / known-id state and the API get_friendship, record_completed_conversation, get_save_data, apply_save_data")
+if not re.search(r"for path in ResourceDirectory\.list_tres_paths\(NPCS_PATH\):\s*var definition := load\(path\) as NpcDefinition\s*"
+                 r'if definition != null and definition\.id != "":\s*_known_ids\.append\(definition\.id\)', rlf.get("_ready", "")):
+    err(f"{RL}: the known NPCs are the NpcDefinition ids in data/npcs/ — friendship is keyed by that stable id")
+rc = rlf.get("record_completed_conversation", "")
+steps = ["if not _known_ids.has(npc_id):", "return false", "var today := _today_string()", "if _last_gain_date.get(npc_id, \"\") == today:", "return false",
+         "var friendship := get_friendship(npc_id)", "if friendship >= MAX_FRIENDSHIP:", "return false", "_friendship[npc_id] = friendship + 1",
+         "_last_gain_date[npc_id] = today", "friendship_changed.emit(npc_id, friendship + 1)", "return true"]
+pos, ok = 0, True
+for st in steps:
+    k = rc.find(st, pos)
+    if k < 0: ok = False; break
+    pos = k + len(st)
+if not ok:
+    err(f"{RL}: a completed conversation: unknown NPC → nothing; already earned today → nothing; at the maximum → nothing; else +1, today recorded, announced")
+if rl_code.count("friendship_changed.emit(") != 1 or "friendship_changed.emit(" in rlf.get("apply_save_data", ""):
+    err(f"{RL}: friendship_changed is announced only by a +1 — never by a load")
+for var in ("_friendship", "_last_gain_date"):
+    writers = {fn for fn, b in rlf.items() if re.search(rf"\b{var}(\[[^\]]+\]\s*=[^=]|\s*=[^=]|\.(clear|erase|merge|assign)\b)", b)}
+    if writers != {"record_completed_conversation", "apply_save_data"}:
+        err(f"{RL}: {var} is written only by a +1 and on load (found {sorted(writers)})")
+dd_today = func_body(scripts.get("scripts/autoload/daily_discovery_manager.gd", ""), "_today_string") or ""
+if not dd_today or code_only(dd_today).split("\n", 1)[1:] != code_only(func_body(rl_src, "_today_string") or "").split("\n", 1)[1:]:
+    err(f"{RL}: the day is the system date exactly as DailyDiscoveryManager reads it")
+ap = rlf.get("apply_save_data", "")
+if not re.search(r"_friendship\.clear\(\)\s*_last_gain_date\.clear\(\)", ap) \
+   or not re.search(r"if typeof\(npc_id\) != TYPE_STRING or not _known_ids\.has\(npc_id\):\s*push_warning\(.*?\)\n\s*continue", ap) \
+   or not re.search(r"if typeof\(entry\) != TYPE_DICTIONARY:\s*push_warning\(.*?\)\n\s*continue", ap) \
+   or not re.search(r"if typeof\(value\) != TYPE_INT and typeof\(value\) != TYPE_FLOAT:\s*push_warning\(.*?\)\n\s*continue", ap) \
+   or "_friendship[npc_id] = clampi(int(value), 0, MAX_FRIENDSHIP)" not in ap \
+   or re.search(r"record_completed_conversation|\.emit\(|SaveManager|PointsManager", ap):
+    err(f"{RL}: a load keeps only known NPC ids, drops malformed records with a warning, clamps friendship to 0..MAX_FRIENDSHIP and announces nothing")
+if not re.search(r'data\[npc_id\] = \{"friendship": _friendship\[npc_id\], "last_gain_date": _last_gain_date\.get\(npc_id, ""\)\}', rlf.get("get_save_data", "")):
+    err(f"{RL}: the save holds exactly each NPC's friendship and the day it last rose")
+if re.search(r"PointsManager|Wallet|Inventory|FarmManager|DiscoveryManager|ExplorationManager|Market|SaveManager|AreaRouter|GameState|get_tree\(|get_node|"
+             r"\$\w|Player|InputManager|SpeechPanel|DialogueDefinition", rl_code):
+    err(f"{RL}: Relationships only holds friendship — it touches no other system, saves nothing itself, holds no node and knows no dialogue")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == RL: continue
+    code = code_only(s2)
+    if re.search(r"\bRelationships\._|\bRelationships\.(get_save_data|apply_save_data)\(", code) and f != "scripts/autoload/save_manager.gd":
+        err(f"{f}: reaches into Relationships — only SaveManager saves/loads it")
+    if re.search(r"\bRelationships\.record_completed_conversation\(", code) and f != "scripts/npc/npc_talk.gd":
+        err(f"{f}: changes friendship — only the speaking NpcTalk reports a completed conversation (D-38)")
+    if re.search(r"\bRelationships\.get_friendship\(|\bfriendship\b", code) and f not in ("scripts/npc/npc_talk.gd",):
+        err(f"{f}: reads or shows friendship — nothing does yet (no meter, toast, number, dialogue change or reward, D-38)")
+    if re.search(r"friendship_changed\.connect", code) and f != "scripts/autoload/game_state.gd":
+        err(f"{f}: listens to friendship changes — only GameState does, to save")
+nt5 = code_only(scripts.get("scripts/npc/npc_talk.gd", ""))
+oc = code_only(func_body(scripts.get("scripts/npc/npc_talk.gd", ""), "_on_conversation_ended") or "")
+if not re.search(r"if not _panel\.conversation_ended\.is_connected\(_on_conversation_ended\):\s*_panel\.conversation_ended\.connect\(_on_conversation_ended\)\s*"
+                 r"var npc := get_parent\(\) as Npc\s*return _panel\.open\(", code_only(func_body(scripts.get("scripts/npc/npc_talk.gd", ""), "interact") or "")) \
+   or not re.search(r"if speaker != self or not completed:\s*return\s*var npc := get_parent\(\) as Npc\s*if npc != null and npc\.definition != null:\s*"
+                    r"Relationships\.record_completed_conversation\(npc\.definition\.id\)\s*$", oc) \
+   or nt5.count("Relationships.") != 1 or len(re.findall(r"conversation_ended\.connect\(", nt5)) != 1:
+    err("scripts/npc/npc_talk.gd: NpcTalk connects to the panel once, and reports only its own completed conversations, by its NPC's definition id")
+for f in ("scripts/player/player.gd", "scripts/autoload/input_manager.gd", SPEECH_GD, "scripts/npc/npc.gd", "scripts/ui/hud.gd"):
+    if re.search(r"Relationships|friendship", code_only(scripts.get(f, ""))):
+        err(f"{f}: knows about relationships — only NpcTalk reports to Relationships (D-38)")
+sm6 = scripts.get("scripts/autoload/save_manager.gd", "")
+if '"relationships": Relationships.get_save_data(),' not in code_only(func_body(sm6, "save_game") or "") \
+   or 'Relationships.apply_save_data(data.get("relationships", {}))' not in code_only(func_body(sm6, "load_game") or "") \
+   or not re.search(r"^\t\t\t5:\s*pass\b", code_only(func_body(sm6, "_migrate") or ""), re.M) \
+   or not re.search(r'^\t"relationships": \[TYPE_DICTIONARY\],$', sm6, re.M) or const_val(sm6, "SAVE_VERSION") != 6:
+    err("scripts/autoload/save_manager.gd: save v6 — the relationships section is saved and loaded as a dictionary; step 5 -> 6 (M08.5) rewrites nothing (absent = every NPC at 0)")
+if "Relationships.friendship_changed.connect(_save.unbind(2))" not in code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or ""):
+    err("scripts/autoload/game_state.gd: a friendship rise is saved at once (GameState, friendship_changed)")
+notes.append(f"relationships (M08.5): friendship per NPC id 0..{const_val(rl_src, 'MAX_FRIENDSHIP')}, +1 per completed conversation once a day; save v6; one listener (NpcTalk), one saver (GameState)")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

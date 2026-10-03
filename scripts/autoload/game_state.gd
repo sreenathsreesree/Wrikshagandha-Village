@@ -3,10 +3,10 @@ extends Node
 ## Thin orchestrator: loads the save on boot and autosaves whenever the
 ## player makes a new discovery, after each farming moment (plant, harvest,
 ## found seed, farm milestone), after each sale (M06.2: the Inventory and
-## the Wallet saved together), and when the app is backgrounded or closed
-## (which also captures watering and growth progress). Game-flow state
-## (pause, current scene, future run-level flags) belongs here, not in the
-## individual systems.
+## the Wallet saved together), when an NPC's friendship rises (M08.5), and
+## when the app is backgrounded or closed (which also captures watering
+## and growth progress). Game-flow state (pause, current scene, future
+## run-level flags) belongs here, not in the individual systems.
 
 func _ready() -> void:
 	SaveManager.load_game()
@@ -16,6 +16,7 @@ func _ready() -> void:
 	FarmManager.seed_found.connect(_save.unbind(2))
 	FarmManager.milestone_reached.connect(_save.unbind(3))
 	Market.produce_sold.connect(_save.unbind(4))
+	Relationships.friendship_changed.connect(_save.unbind(2))
 	InputManager.movement_mode_changed.connect(_save.unbind(1))
 
 func _notification(what: int) -> void:

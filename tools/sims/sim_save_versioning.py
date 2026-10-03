@@ -51,7 +51,8 @@ def step_1(data):  # SaveManager._move_holdings_to_items (M04.2)
     data["items"] = items
 assert re.search(r"^\t\t\t2:\s*pass", _body("_migrate"), re.M)
 assert re.search(r"^\t\t\t3:\s*pass", _body("_migrate"), re.M) and re.search(r"^\t\t\t4:\s*pass", _body("_migrate"), re.M)
-STEP_PORTS = {0: lambda data: None, 1: step_1, 2: lambda data: None, 3: lambda data: None, 4: lambda data: None}  # 2 -> 3, 3 -> 4, 4 -> 5: nothing to rewrite
+assert re.search(r"^\t\t\t5:\s*pass", _body("_migrate"), re.M)  # M08.5: the relationships section, absent = every NPC at 0
+STEP_PORTS = {0: lambda data: None, 1: step_1, 2: lambda data: None, 3: lambda data: None, 4: lambda data: None, 5: lambda data: None}  # 2 -> 3 ... 5 -> 6: nothing to rewrite
 LG = _body("load_game")
 assert LG.find("read_version(parsed)") < LG.find("if version > SAVE_VERSION:") < LG.find("_migrate(parsed, version)") \
     < LG.find("_valid_sections(data)") < LG.find("PointsManager.set_points(")
@@ -73,7 +74,7 @@ def gd_type(v):
     if isinstance(v, bool): return bool
     return type(v)
 class Systems:  # the six sections' owners, with typed apply functions
-    def __init__(s): s.state = {"points": 0, "discovered_ids": [], "journal_entries": {}, "daily_discovery": {}, "farm": {}, "settings": {}, "items": {}, "wallet": {}, "exploration": {}}
+    def __init__(s): s.state = {"points": 0, "discovered_ids": [], "journal_entries": {}, "daily_discovery": {}, "farm": {}, "settings": {}, "items": {}, "wallet": {}, "exploration": {}, "relationships": {}}
     def apply(s, key, value):
         want = {"points": (int, float), "discovered_ids": (list,)}.get(key, (dict,))
         if gd_type(value) not in want: raise TypeError(f"{key}: wrong type reached the system")
@@ -131,7 +132,8 @@ def full_state():
                                   farm=copy.deepcopy(FARM), settings={"movement_mode": "tap_to_move"},
                                   items={"wild_carrot_seed": [2], "wild_carrot": [1, 0, 1]},
                                   wallet={"ledger": [{"amount": 50, "reason": "test_credit"}, {"amount": -20, "reason": "test_debit"}]},
-                                  exploration={"landmarks": ["overlook"], "secrets": ["stone_ring"], "all_secrets_bonus": False, "curiosity_bonus": True})
+                                  exploration={"landmarks": ["overlook"], "secrets": ["stone_ring"], "all_secrets_bonus": False, "curiosity_bonus": True},
+                                  relationships={"villager": {"friendship": 3, "last_gain_date": "2026-10-03"}})
     return s
 def roundtrip_equal(a, b): return godot_json(json.dumps(a)) == godot_json(json.dumps(b))
 
