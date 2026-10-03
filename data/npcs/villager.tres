@@ -1,10 +1,11 @@
-[gd_resource type="Resource" script_class="NpcDefinition" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="NpcDefinition" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/npc/npc_definition.gd" id="1"]
+[ext_resource type="Resource" path="res://data/dialogues/villager_hello.tres" id="2"]
 
 [resource]
 script = ExtResource("1")
 id = "villager"
 display_name = "Villager"
-greeting = "Oh, hello! It's a calm day in the meadow, isn't it?"
+dialogue = ExtResource("2")
 wander_radius = 2.0

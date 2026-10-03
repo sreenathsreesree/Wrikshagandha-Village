@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="DialogueDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/npc/dialogue_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "villager_hello"
+lines = PackedStringArray("Oh, hello! It's a calm day in the meadow, isn't it?", "The flowers by the path open a little more every morning.", "Take your time out here. The meadow likes a slow walker.")

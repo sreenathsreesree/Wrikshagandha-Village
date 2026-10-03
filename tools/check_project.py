@@ -2790,7 +2790,8 @@ notes.append(f"home interior (M08.2): furniture {sorted(n for n, _ in furniture)
 # parked). No autoload: nothing global is needed for one greeting (sim_npc models the approach).
 NPC_DEF_GD, NPC_GD, NPC_TALK_GD, NPC_SCENE = "scripts/npc/npc_definition.gd", "scripts/npc/npc.gd", "scripts/npc/npc_talk.gd", "scenes/npc/Npc.tscn"
 SPEECH_GD, SPEECH_SCENE = "scripts/ui/speech_panel.gd", "scenes/ui/SpeechPanel.tscn"
-NPC_DEF_FIELDS = [("id", "String"), ("display_name", "String"), ("greeting", "String"), ("wander_radius", "float")]
+# (M08.4 deliberately replaced the single greeting with a DialogueDefinition — a short sequence of lines.)
+NPC_DEF_FIELDS = [("id", "String"), ("display_name", "String"), ("dialogue", "DialogueDefinition"), ("wander_radius", "float")]
 nd_src, np_src, nt_src, sp2_src = (scripts.get(f, "") for f in (NPC_DEF_GD, NPC_GD, NPC_TALK_GD, SPEECH_GD))
 if not re.search(r"^extends Resource\s*\nclass_name NpcDefinition", nd_src, re.M) or re.search(r"^func ", nd_src, re.M) \
    or re.findall(r"^@export(?:_multiline)? var (\w+): (\w+)", nd_src, re.M) != NPC_DEF_FIELDS:
@@ -2801,8 +2802,8 @@ for path in sorted(glob.glob("data/npcs/*.tres")):
     fields = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', txt.split("[resource]", 1)[-1], re.M))
     nid = fields.get("id", "")
     if 'path="res://scripts/npc/npc_definition.gd"' not in txt or nid != os.path.basename(path)[:-5] or not re.fullmatch(r"[a-z][a-z0-9_]*", nid) \
-       or not fields.get("display_name") or not fields.get("greeting") or not (0.0 < float(fields.get("wander_radius", "0") or 0) <= 3.0):
-        err(f"{path}: an NpcDefinition with a lower_snake id equal to its file name, a name, a greeting and a wander radius in (0, 3] m")
+       or not fields.get("display_name") or not re.search(r'^dialogue = ExtResource\("[^"]+"\)$', txt, re.M) or not (0.0 < float(fields.get("wander_radius", "0") or 0) <= 3.0):
+        err(f"{path}: an NpcDefinition with a lower_snake id equal to its file name, a name, a dialogue and a wander radius in (0, 3] m")
     if re.search(r"rishi", txt, re.I):
         err(f"{path}: an NPC is never a Rishi until R-01..R-07 are decided")
     npc_defs[nid] = fields
@@ -2857,10 +2858,10 @@ if not ns_root or "collision_layer" in ns_root.group(1) or "collision_mask" in n
 # NpcTalk: TALK through the normal contract; greeting from data into the SpeechPanel; walking away closes.
 nt_fn = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", nt_src, re.M | re.S)}
 if not re.search(r"^extends Interactable\s*\nclass_name NpcTalk", nt_src, re.M) or "remove_on_harvest = false" not in nt_fn.get("_ready", "") \
-   or not re.search(r'_panel = get_tree\(\)\.get_first_node_in_group\(SpeechPanel\.GROUP\) as SpeechPanel.*return _panel\.open\(self, npc\.definition\.display_name, npc\.definition\.greeting\)', nt_fn.get("interact", ""), re.S) \
+   or not re.search(r'_panel = get_tree\(\)\.get_first_node_in_group\(SpeechPanel\.GROUP\) as SpeechPanel.*return _panel\.open\(self, npc\.definition\.display_name, npc\.definition\.dialogue\.lines\)', nt_fn.get("interact", ""), re.S) \
    or not re.search(r"super\(active\)\s*if not active and _panel != null:\s*_panel\.close_for\(self\)", nt_fn.get("set_highlighted", "")) \
-   or "return npc.definition.greeting" not in nt_fn.get("_greeting", ""):
-    err(f"{NPC_TALK_GD}: TALK shows the definition's greeting in the SpeechPanel, and leaving interaction range closes it")
+   or "return npc.definition.dialogue.lines" not in nt_fn.get("_lines", "") or "if not _lines().is_empty():" not in nt_fn.get("_get_interaction_verbs", ""):
+    err(f"{NPC_TALK_GD}: TALK starts the definition's dialogue in the SpeechPanel (offered only while it has lines), and leaving interaction range closes it")
 if VERBS.get("TALK") != 10 or {k: v for k, v in VERBS.items() if k != "TALK"} != {"COLLECT": 1, "PLANT": 2, "WATER": 3, "HARVEST": 4, "INSPECT": 5, "OPEN": 6, "READ": 7, "ENTER": 8, "EXIT": 9}:
     err(f"{BASE}: TALK is appended as 10 and every earlier verb keeps its value (found {VERBS})")
 # Placement: exactly one NPC, standing at the NpcSpot marker, with a definition from data/npcs.
@@ -2896,6 +2897,67 @@ if "ConversationManager" in cfg or any(re.search(r"\bConversation\w*\b", code_on
     err("M08.3 keeps the conversation in the SpeechPanel — no global conversation state")
 notes.append(f"NPC framework (M08.3): npcs {sorted(npc_defs)} from data/npcs; one placed at NpcSpot; notice {consts['NOTICE_DISTANCE']} m > reach {reach + talk_r:.1f} m; "
              f"TALK = {VERBS.get('TALK')}; speech panel in the HUD (shared theme, safe area, 120 px ✕); no autoload, no saved state")
+
+# ------------------------------------------------------------ dialogue (M08.4, D-37)
+# A short, linear conversation as data: one DialogueDefinition per data/dialogues/*.tres (id, ordered lines;
+# no branches, conditions or outcomes), referred to from an NpcDefinition. The M08.3 SpeechPanel was extended,
+# not replaced: it keeps the conversation (speaker, lines, index); only its Next button moves on — "Goodbye" on
+# the last line ends it complete; the ✕, walking out of range (close_for) and the speaker leaving the tree end
+# it early; every conversation ends exactly once with conversation_ended(speaker, completed), which nothing
+# listens to yet (M08.5's hook). Re-tapping the NPC never restarts or skips. No save state, no global manager.
+DLG_GD = "scripts/npc/dialogue_definition.gd"
+dl_src = scripts.get(DLG_GD, "")
+if not re.search(r"^extends Resource\s*\nclass_name DialogueDefinition", dl_src, re.M) or re.search(r"^func ", dl_src, re.M) \
+   or re.findall(r"^@export(?:_multiline)? var (\w+): (\w+)", dl_src, re.M) != [("id", "String"), ("lines", "PackedStringArray")]:
+    err(f"{DLG_GD}: DialogueDefinition is exactly an id and ordered lines — no branches, conditions or outcomes yet, no logic")
+dialogues = {}
+for path in sorted(glob.glob("data/dialogues/*.tres")):
+    txt = open(path, encoding="utf-8").read()
+    did = re.search(r'^id = "([^"]*)"$', txt, re.M)
+    lines_m = re.search(r'^lines = PackedStringArray\((.*)\)$', txt, re.M)
+    lines = re.findall(r'"((?:[^"\\]|\\.)*)"', lines_m.group(1)) if lines_m else []
+    if 'path="res://scripts/npc/dialogue_definition.gd"' not in txt or not did or did.group(1) != os.path.basename(path)[:-5] \
+       or not re.fullmatch(r"[a-z][a-z0-9_]*", did.group(1)) or not (2 <= len(lines) <= 8) or any(not l.strip() or len(l) > 120 for l in lines):
+        err(f"{path}: a DialogueDefinition with a lower_snake id equal to its file name and 2-8 non-empty lines of at most 120 characters (they fit the panel)")
+    if re.search(r"rishi", txt, re.I):
+        err(f"{path}: dialogue never names a Rishi until R-01..R-07 are decided")
+    dialogues[did.group(1) if did else path] = lines
+for path in sorted(glob.glob("data/npcs/*.tres")):
+    txt = open(path, encoding="utf-8").read()
+    ref = re.search(r'^dialogue = ExtResource\("([^"]+)"\)$', txt, re.M)
+    ext_d = dict((m.group(2), m.group(1)) for m in re.finditer(r'\[ext_resource type="Resource" path="res://([^"]+)" id="([^"]+)"\]', txt))
+    if not ref or not ext_d.get(ref.group(1), "").startswith("data/dialogues/") or not os.path.exists(ext_d.get(ref.group(1), "")):
+        err(f"{path}: an NPC's dialogue is a data/dialogues/ resource")
+sp4 = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", sp2_src, re.M | re.S)}
+if re.findall(r"^signal (.+)$", sp2_src, re.M) != ["conversation_ended(speaker: Node, completed: bool)"]:
+    err(f"{SPEECH_GD}: the panel announces only conversation_ended(speaker, completed)")
+if not re.search(r"func open\(speaker: Node, speaker_name: String, lines: PackedStringArray\) -> bool:\s*if speaker == null or lines\.is_empty\(\):\s*return false\s*if speaker == _speaker and visible:\s*return true\s*_end\(false\)", sp4.get("open", "")) \
+   or "_index = 0" not in sp4.get("open", "") or "_lines = lines" not in sp4.get("open", ""):
+    err(f"{SPEECH_GD}: open() starts a conversation at its first line, ends any other first, and is a no-op for the speaker already shown (no restart, no skip)")
+if not re.search(r"if _speaker == null:\s*return\s*if _index >= _lines\.size\(\) - 1:\s*_end\(true\)\s*return\s*_index \+= 1\s*_show_line\(\)", sp4.get("advance", "")):
+    err(f"{SPEECH_GD}: advance() shows the next line, and past the last ends the conversation complete")
+if not re.search(r"func _on_next_pressed\(\) -> void:\s*AmbientAudioManager\.play_ui_feedback\(\)\s*advance\(\)\s*$", sp4.get("_on_next_pressed", "")) \
+   or "next_button.pressed.connect(_on_next_pressed)" not in sp4.get("_ready", "") \
+   or [f for f, s2 in scripts.items() if f != SPEECH_GD and re.search(r"\.advance\(\)", code_only(s2))] \
+   or re.search(r"_gui_input|_unhandled_input|_input\(|gui_input", code_only(sp2_src)):
+    err(f"{SPEECH_GD}: only the Next button advances a conversation — no other touch, input handler or script moves it on")
+if not re.search(r"if _speaker == null:\s*visible = false\s*return", sp4.get("_end", "")) or sp4.get("_end", "").count("conversation_ended.emit(") != 1 \
+   or "_speaker = null" not in sp4.get("_end", "") or code_only(sp2_src).count("conversation_ended.emit(") != 1 \
+   or not re.search(r"func close\(\) -> void:\s*_end\(false\)", sp4.get("close", "")) \
+   or [fn for fn in ("open", "advance", "close") if "visible = false" in sp4.get(fn, "")]:
+    err(f"{SPEECH_GD}: every conversation ends through _end() exactly once — complete only past the last line, early on the ✕, walking away or the speaker leaving")
+if 'next_button.text = END_TEXT if _index >= _lines.size() - 1 else NEXT_TEXT' not in sp4.get("_show_line", "") \
+   or 'const END_TEXT := "Goodbye"' not in sp2_src or 'const NEXT_TEXT := "Next ▸"' not in sp2_src or '"%d / %d" % [_index + 1, _lines.size()]' not in sp4.get("_show_line", ""):
+    err(f"{SPEECH_GD}: the Next button reads Goodbye on the last line, and the progress shows the line out of the total")
+listeners = [f for f, s2 in scripts.items() if re.search(r"conversation_ended\.connect", code_only(s2))]
+if listeners:
+    err(f"conversation_ended has no listener until relationships (M08.5) — found {listeners}")
+SPN3, _ = scene_nodes(SPEECH_SCENE)
+nb = SPN3.get("Panel/VBoxContainer/Row/NextButton", ("", ""))
+if 'type="Button"' not in nb[0] or prop(nb[1], "theme_type_variation") != '&"PrimaryButton"' or prop(nb[1], "focus_mode") != "0" \
+   or prop(SPN3.get("Panel", ("", ""))[1], "custom_minimum_size") is None:
+    err(f"{SPEECH_SCENE}: the Next button is a primary, never-focused button (its 120 px minimum is checked with the other UI buttons)")
+notes.append(f"dialogue (M08.4): dialogues {sorted(dialogues)} ({[len(v) for v in dialogues.values()]} lines) from data/dialogues; Next-only progression, one end per conversation, no listener yet")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

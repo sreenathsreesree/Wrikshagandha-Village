@@ -8,7 +8,8 @@ class_name NpcDefinition
 
 @export var id: String = ""
 @export var display_name: String = ""
-## The one line it says when the player talks to it (M08.3 — dialogue M08.4).
-@export_multiline var greeting: String = ""
+## What it says when the player talks to it (M08.4: a short sequence of
+## lines, res://data/dialogues/).
+@export var dialogue: DialogueDefinition
 ## How far (m) it may wander from where it was placed.
 @export var wander_radius: float = 2.0
