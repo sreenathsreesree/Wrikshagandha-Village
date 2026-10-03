@@ -917,8 +917,16 @@ mcode = code_only(scripts.get(MEADOW_GD, ""))
 if re.search(r"\$(Player|FollowCamera|HUD)\b|\bFollowCamera\b|\bHUD\b", mcode) or \
    "world_simulation.configure(player, directional_light, world_environment)" not in (func_body(scripts.get(MEADOW_GD, ""), "attach_player") or ""):
     err(f"{MEADOW_GD}: the area owns no shell node and gets the player only through attach_player()")
+# M08.2a re-pinned deliberately: cell_height 0.25 -> 0.1 (the map's default cell height with it) and detail sampling
+# 1 m / 0.05 m — the baked mesh had floated up to 0.62 m above the ground, beyond the agent's 0.4 m path reach, and
+# tap-walks stalled near (-6, 1.4); agent_max_climb 0.25 -> 0.0 — the mesh had planned over the mounds' 0.15 m tiers,
+# which the player's capsule cannot step (~0.065 m), stalling every walk across a mound (a 0.1 m climb still let the
+# voxel-quantised tier through); every walkable surface here is flat. sim_nav_height checks both.
 NAV_PINS = {"geometry_parsed_geometry_type": "1", "geometry_source_geometry_mode": "1", "geometry_source_group_name": '&"navigation_source"',
-            "cell_size": "0.25", "cell_height": "0.25", "agent_height": "1.3", "agent_radius": "0.35", "agent_max_climb": "0.25", "agent_max_slope": "37.0"}
+            "cell_size": "0.25", "cell_height": "0.1", "agent_height": "1.3", "agent_radius": "0.35", "agent_max_climb": "0.0", "agent_max_slope": "37.0",
+            "detail_sample_distance": "1.0", "detail_sample_max_error": "0.05"}
+if not re.search(r"^\[navigation\]\n\n3d/default_cell_height=0\.1$", cfg, re.M) or re.search(r"^3d/default_cell_size=", cfg, re.M):
+    err("project.godot: the navigation map's default cell height is the mesh's 0.1 m (cell size stays the 0.25 m default) — sim_nav_height checks the height budget")
 mead = open(MEADOW_SCENE, encoding="utf-8").read()
 navm = re.search(r'\[sub_resource type="NavigationMesh"[^\]]*\]\n(.*?)\n\n', mead, re.S)
 navsettings = dict(re.findall(r"^(\w+) = (.+)$", navm.group(1), re.M)) if navm else {}

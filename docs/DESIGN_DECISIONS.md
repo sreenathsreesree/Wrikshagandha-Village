@@ -71,6 +71,7 @@ blocked (`[!]`) until the developer records a decision here.
 | O-05 | Final area structure: which areas, how they connect, elemental regions' layout | After Phase 16 | The vertical-slice layout is enough until then |
 | O-06 | Default movement mode: joystick shown or hidden by default (taps work either way, D-15) | Phase 01 | Decide after the Android movement playtest |
 | O-09 | Each element's distinct gameplay mechanic | Phase 11, per element | Themes are decided (D-04); mechanics are not |
+| O-15 | Should the terraced mounds' tops be reachable (the NW mound, and the NE mound under the Overlook monolith)? | Before Phase 10 exploration content builds on them | Found in M08.2a: the 0.15 m tiers are taller than the player's capsule can step (~0.065 m, no step-up), so the tops have never been reachable — by joystick or tap, identical on the pre-M08 baseline. M08.2a made navigation agree with that (paths route round, no stalls). Making them reachable means reshaping the tiers into walkable ramps (world geometry) and makes the Overlook landmark reachable for the first time (a reward-reach change). Not decided |
 | O-10 | Which verb names preparing an empty farm plot (tilling)? A new verb, or one of D-09's (e.g. Use)? | When verbs are first shown to the player | Found in M02.2: preparing soil is existing gameplay but no D-09 verb names it, so an EMPTY plot offers no verb yet (a tap still prepares it). Farming is frozen (D-11) |
 
 ## Proposed — production recommendations awaiting approval
