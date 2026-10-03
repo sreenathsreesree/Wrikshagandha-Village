@@ -323,9 +323,13 @@ func _spawn_destination_marker(destination: Vector3) -> void:
 ## state); callers never wait on it.
 func _interact_with(target: Interactable) -> void:
 	_set_selected_target(null)
-	_spent_interactables = _spent_interactables.filter(
-		func(spent: Interactable) -> bool: return is_instance_valid(spent)
-	)
+	# filter() returns an untyped Array: assign() keeps the typed list (a
+	# plain "=" raised a script error and aborted every interaction once a
+	# one-shot discovery had been collected). The element stays untyped so a
+	# freed one can be tested.
+	_spent_interactables.assign(_spent_interactables.filter(
+		func(spent: Variant) -> bool: return is_instance_valid(spent)
+	))
 	if _spent_interactables.has(target) or not target.is_interaction_available():
 		return
 	_face_target(target)

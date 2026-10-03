@@ -522,6 +522,12 @@ func capture() -> Dictionary:
 ## the crop now in the ground (null if none). A crop id with no matching
 ## CropDefinition (removed from data) leaves the plot as prepared soil.
 func restore(data: Dictionary, crop: CropDefinition) -> CropDefinition:
+	if is_instance_valid(_crop_visual):
+		# Restored in place (a parked area coming back, M08.1): the visual
+		# it already shows is replaced, never doubled.
+		crop_root.remove_child(_crop_visual)
+		_crop_visual.queue_free()
+	_crop_visual = null
 	_recent_crop_ids.clear()
 	for crop_id: Variant in data.get("soil_memory", []):
 		_recent_crop_ids.append(String(crop_id))

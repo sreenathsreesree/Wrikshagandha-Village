@@ -23,7 +23,7 @@ a Direction note exists yet.
 ## 2. Scene architecture
 ```
 Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
-├── Meadow (Node3D, group navigation_source) — the current area   scenes/world/Meadow.tscn, scripts/world/meadow.gd (MeadowArea)
+├── Meadow (GameArea, group navigation_source) — the current area   scenes/world/Meadow.tscn, scripts/world/meadow.gd (MeadowArea extends GameArea)
 │   ├── WorldEnvironment, DirectionalLight3D
 │   ├── NavigationRegion3D          navmesh baked at load from static colliders
 │   ├── Terrain / Water / Vegetation / Discoverables / Clues / SecretSpots
@@ -33,12 +33,21 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 │   ├── WorldSimulation              TimeOfDay, Environment, Vegetation, Wildlife,
 │   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers
 │   ├── PlayerSpawn                  AreaEntry "meadow_start" (scripts/world/area_entry.gd) at the boot position
+│   ├── VerticalSlice                House (HousePlaceholder + its AreaDoor → home), HouseDoorEntry (AreaEntry "house_door"), NPC spot, trees, paths
 │   └── CameraBounds                 AreaCameraBounds 64 × 64 (the ground plane)
 ├── Player                           scenes/player/Player.tscn      (shell)
 ├── FollowCamera                     scenes/camera/FollowCamera.tscn (shell; the only Camera3D)
-└── HUD (CanvasLayer)                scenes/ui/HUD.tscn             (shell)
-    ├── TopBar, NotificationRoot, MobileControls/Joystick, ScreenButtons
-    └── SeedPicker, CollectionScreen, JournalScreen, DailyDiscoveryScreen, BasketScreen
+├── HUD (CanvasLayer)                scenes/ui/HUD.tscn             (shell)
+│   ├── TopBar, NotificationRoot, MobileControls/Joystick, ScreenButtons
+│   └── SeedPicker, CollectionScreen, JournalScreen, DailyDiscoveryScreen, BasketScreen
+└── TransitionFade (CanvasLayer 10)  scenes/ui/TransitionFade.tscn  (shell, M08.1) — the veil between areas
+
+HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in for the Meadow (M08.1; bare, M08.2 builds on it)
+├── WorldEnvironment, DirectionalLight3D, RoomLight, NavigationRegion3D
+├── Room (StaticBody3D: floor, three walls, a low camera-side wall with full-height collision)
+├── HomeDoorEntry                    AreaEntry "home_door"
+├── ExitDoor                         AreaDoor (EXIT → meadow / house_door)
+└── CameraBounds                     AreaCameraBounds 3 × 2 m (D-32)
 ```
 - **Current:**
   - World content is placed in the editor. Scripts find world objects through groups (`wildlife_actor`, `environmental_event`, `exploration_landmark`) or registration (`FarmManager.register_plot`), not hard-coded positions.
@@ -46,16 +55,16 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - `main.gd` wires the shell once, after every child is ready: the camera follows the player, and `MeadowArea.attach_player()` hands the player to the area's WorldSimulation. `meadow.gd` only bakes navigation and configures its own world simulation.
   - Navigation stays with the area: the Meadow's NavigationRegion3D (settings unchanged, baked from its static colliders) and the Player's NavigationAgent3D share the one World3D navigation map.
   - Tree order keeps the old processing order: the area first, then Player, then FollowCamera, then HUD.
-- **Area loader (M03.2) — infrastructure only:** `Main.load_area(scene, entry_id)` defers `_swap_area()`, which: closes the seed picker; removes the old area and `free()`s it at once (a `queue_free()` would leave its plots alive and FarmManager would reject the new plots as duplicates); adds the new area as Main's first child (processing order unchanged); `attach_player()`; places the player on the named `AreaEntry` (else the lowest id, deterministic; else the player stays put) via `Player.place_at()`; snaps the camera. Synchronous, no autoload, no transition. **Nothing in the game calls it** — no door or trigger until M08.1; for the playtest it is called from the Godot remote debugger. Boot is unchanged (the Meadow is still instanced in `Main.tscn`; `meadow_start` sits exactly where the player boots).
+- **Area loader (M03.2; player-facing since M08.1, see §12):** `Main.load_area(scene, entry_id)` defers `_swap_area()`, which: closes the seed picker; removes the old area and `free()`s it at once (a `queue_free()` would leave its plots alive and FarmManager would reject the new plots as duplicates); adds the new area as Main's first child (processing order unchanged); `attach_player()`; places the player on the named `AreaEntry` (else the lowest id, deterministic; else the player stays put) via `Player.place_at()`; snaps the camera. Synchronous, no autoload, no transition. `load_area()` itself is still called by nothing in the game (the remote debugger only); since M08.1 doors reach `_swap_area()` through `AreaRouter` and Main's fade (§12), and a kept-alive area is parked instead of freed. Boot is unchanged (the Meadow is still instanced in `Main.tscn`; `meadow_start` sits exactly where the player boots).
   - `AreaEntry` (Marker3D, group `area_entry`): `entry_id` is lower_snake_case and unique within its area; the player faces the marker's −Z.
-- **Farm plots across a reload (M03.3):** `_swap_area()` calls `FarmManager.release_plots_in(old)` before removing the old area: each of its plots is captured by `plot_id` into `_unloaded_plot_states` and forgotten (no reference to freed nodes). When the next instance's plots register, each captured state is restored once — not recounted, since ready counts and garden interest keep including crops whose area is away. Saves include unloaded states, so an autosave at any point keeps the whole farm. An unloaded plot's time is paused (growth timer and thirst resume where they were), like time away from the app (open question O-11).
-- **Still reset by a reload** (by design until later phases): discovery respawn timers (a reload respawns every respawning discovery; since M05.3 a never-respawning one — the Ancient Seed — is a once-ever claim and never comes back, D-22), one-time environmental events, time of day.
+- **Farm plots across a reload (M03.3):** `_swap_area()` calls `FarmManager.release_plots_in(old)` before removing the old area: each of its plots is captured by `plot_id` into `_unloaded_plot_states` and forgotten (no reference to freed nodes). When the next instance's plots register, each captured state is restored once — not recounted, since ready counts and garden interest keep including crops whose area is away. Saves include unloaded states, so an autosave at any point keeps the whole farm. An unloaded plot's time is paused (growth timer and thirst resume where they were), like time away from the app — decided for indoors by D-31 (O-11 closed).
+- **Still reset by a free-and-reload swap** (`load_area()` of a fresh scene; never on a door trip since M08.1 — the Meadow is parked, D-33): discovery respawn timers (a reload respawns every respawning discovery; since M05.3 a never-respawning one — the Ancient Seed — is a once-ever claim and never comes back, D-22), one-time environmental events, time of day.
 - **Direction (Phase 03):**
   - Area-safe world state by stable id (M03.3), then player-facing transitions (M08.1 door).
   - Each area owns its NavigationRegion3D.
   - World state is restored by stable id when an area registers, as FarmPlot already does.
 
-## 3. Autoloads (15 — do not add more without a documented reason; Inventory added by M04.3, D-19; Wallet by M05.1, D-20; Market by M06.2, D-25)
+## 3. Autoloads (16 — do not add more without a documented reason; Inventory added by M04.3, D-19; Wallet by M05.1, D-20; Market by M06.2, D-25; AreaRouter by M08.1, D-34)
 | Autoload | Role |
 |---|---|
 | PointsManager | "Wriksha Points" score (one int); `add_points` / `points_changed` |
@@ -73,10 +82,12 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 | SaveManager | Reads/writes `user://save.json` |
 | GameState | Loads the save at boot; autosaves on key events and app pause/close |
 | InputManager | Player intent: move vector, tap routing, movement mode |
+| AreaRouter | Travel between areas (M08.1, D-34): loads `AreaDefinition`s from `data/areas/`; `travel(area_id, entry_id)` (refused while a trip is under way) → `travel_requested`, carried out by Main; `notify_arrived()` → `area_changed`; `get_current_area_id()`. **Not saved.** Last |
 
 **Load order matters:** GameState loads the save in its `_ready`, **before any world scene exists** and before InputManager's own `_ready`. Systems restore world objects when those objects register.
 
 ## 4. Player
+- **Spent one-shot objects (fixed in M08.1):** `_interact_with()` prunes freed objects from its typed `_spent_interactables` with `assign(filter(...))`; the earlier `= filter(...)` produced an untyped Array, raised a script error and aborted every interaction once a discovery had been collected.
 - **Current** (`scripts/player/player.gd`, CharacterBody3D):
   - **One movement path in `_physics_process`:** a direction comes from the joystick (`InputManager.move_vector`) or, in Tap to Move, from the NavigationAgent3D path. It then runs through the same acceleration, `move_and_slide()`, facing, bob and footsteps.
   - **Joystick input cancels a path.** A new tap replaces it; a stalled path is dropped after 1 s.
@@ -131,10 +142,10 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
   - `is_interaction_available()`: availability, backed by `monitorable`, so the InteractionZone and tap rays agree. Implementations change it by toggling `monitorable`.
   - `interact() -> bool`: the one entry point. It may await; the Player's INTERACT state lasts until it returns.
   - `remove_on_harvest`: one-shot (gone after a successful interaction) or persistent.
-  - **Verbs as data (M02.2):** `enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7 }` (D-09 names; explicit values, appended, never reused; never strings). Every member must be offered by some object or fixture.
+  - **Verbs as data (M02.2):** `enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7, ENTER = 8, EXIT = 9 }` (ENTER/EXIT appended by M08.1) (D-09 names; explicit values, appended, never reused; never strings). Every member must be offered by some object or fixture.
     - `get_available_interaction_verbs()`: what the object offers in its current state; empty while unavailable. Implementations override `_get_interaction_verbs()`.
     - `interact_with_verb(verb)`: a selected verb passed back; performed only if offered, via `_perform_interaction_verb()` (default: `interact()`). Nothing calls it yet.
-    - Today each object offers at most one verb: the action `interact()` performs. Discovery: `COLLECT`. FarmPlot: `PLANT` / `WATER` / `HARVEST` by state; an EMPTY plot offers none (O-10). The tap path still calls `interact()`.
+    - Today each object offers at most one verb: the action `interact()` performs. Discovery: `COLLECT`. FarmPlot: `PLANT` / `WATER` / `HARVEST` by state; an EMPTY plot offers none (O-10). AreaDoor: its own `ENTER` or `EXIT`, none mid-transition. The tap path still calls `interact()`.
   - `get_interaction_metadata()`: optional read-only facts, empty by default; nothing reads it yet.
   - `set_highlighted()` / `update_proximity()`: in-range presentation on the `Indicator` child.
   - `set_tap_selected()` (M02.4): tap feedback on the same Indicator — shown at once with its existing `pulse()`, even out of range; never for an unavailable object. The Indicator is visible while in range OR tap-selected. Player's `_set_selected_target()` selects on the tap and releases on stop, retarget or when the interaction starts.
@@ -142,6 +153,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 - **Implementations:**
   - `DiscoveryInteractable` (`discovery_interactable.gd`): collects a discovery through `DiscoveryManager`, emits `harvested` (used by `DiscoverySpawnPoint` to respawn), plays the category/rarity windup and removes itself.
   - `FarmPlot`: the farming state machine, persistent.
+  - `AreaDoor` (`scripts/world/area_door.gd`, M08.1, D-35): a way between areas, persistent; `interact()` only asks `AreaRouter.travel(target_area_id, target_entry_id)`. Tapped like anything else — never triggered by walking into it (it connects no body/area signal).
   - Non-game verification fixtures in `tools/fixtures/` (never imported by Godot, never referenced by game code): the M02.1 probe (no verbs) and the M02.6 INSPECT, OPEN and READ fixtures. The READ fixture offers INSPECT and READ at once and performs the verb passed back via `_perform_interaction_verb()`. They prove new object types need no Player/InputManager change — M02.6 left both byte-for-byte unchanged.
 - **Rules (toolkit-enforced):** Player and InputManager use only the contract and never name an implementation, a fixture or a specific verb, nor tell objects apart by reflection; `interact()` has one call site (`Player._interact_with`); the base holds no object-specific code; no second interaction hierarchy.
 - **Direction (Phase 02):** a verb UI and routing its choice through Player's guarded path come later; further behaviours (NPC talk, door enter/exit, container open, read, give, feed…) are new implementations of the same contract.
@@ -237,12 +249,20 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
 - **Rule:** systems expose `get_save_data()` / `apply_save_data()`; world objects restore by stable id on registration.
 - **Area reloads (M03.3):** farm plot states are captured by id before their area unloads (`FarmManager.release_plots_in`) and restored on re-registration; `farm.plots` in a save = boot states not yet claimed + unloaded states + live captures. Same save format.
 
-## 12. Area / world architecture (direction — Phase 03)
+## 12. Area / world architecture (Phase 03; transitions M08.1)
+- **Area transitions (M08.1, D-31–D-35):**
+  - Every area's root is a `GameArea` (`scripts/world/game_area.gd`: `area_id`, `attach_player()` — empty by default — and the navigation bake at load); the Meadow's `MeadowArea` extends it for its world simulation, the home interior uses `GameArea` itself.
+  - Areas are data: `AreaDefinition` (`scripts/world/area_definition.gd`) — `id`, `display_name`, `scene_path`, `keep_alive_when_left`, `camera_distance` — one `.tres` per area in `data/areas/` (`meadow`: kept alive, free zoom; `home`: freed when left, 7.5 m). No area, entry or area scene is named in code.
+  - The trip: the player taps a door (`AreaDoor`, verb ENTER/EXIT) → walks into range → `interact()` → `AreaRouter.travel()` (refused mid-trip) → `travel_requested` → `Main._on_travel_requested()`: loads the target's scene from its definition, `TransitionFade.cover()` (the veil takes every touch from here), `_swap_area()`, `reveal()`.
+  - `_swap_area()` (Main is the only place that does this): reuse a parked instance of the target scene if there is one, else instantiate; close the seed picker; `FarmManager.release_plots_in(old)`; `remove_child(old)`; park it if its definition keeps it alive (D-33), else `free()`; add the next area first; a restored area's plots are re-registered (`FarmManager.register_plot`, which restores their captured state — D-31), a fresh one gets `attach_player()`; place the player on the entry; camera bounds, then the area's camera distance (D-32: a fixed distance from data, the player's own zoom kept and given back), snap; `AreaRouter.notify_arrived()`.
+  - Parked = out of the tree, the same instance: no `_process`, no Timer, no `_ready` again — the day, discovery respawns, events and wildlife wait; collected discoveries never respawn early. Thirst (a clock) is held by capture/re-register; growth (a Timer) pauses by itself. `FarmPlot.restore()` replaces a crop visual the live plot already shows.
+  - Not saved (D-34): a relaunch from inside starts at `meadow_start`; a save made indoors already holds the captured plots. `load_area()` remains the debugger's plain swap (no fade).
+  - Note for later interiors: the parked Meadow's WorldSimulation stays connected to `FarmManager.garden_interest_changed`; in M08.1 nothing can change garden interest indoors (no plots there). An interior that can must make that relay tree-safe first.
 - A persistent shell with swappable areas (M03.1–M03.2). Named entry markers (`AreaEntry`). Per-area navigation mesh. Per-area camera bounds (`AreaCameraBounds`, M03.4). Farm plots survive reloads (M03.3).
 - World content is always placed in the editor. Places, elements and (later) NPCs are data resources referenced by id.
 - Nothing in scripts depends on exact prop positions.
 - *(Resolved by M03.6: the place list, the garden place id, curiosity pairs and the secret count are `PlaceDefinition` data in `data/places/`.)*
-- **Vertical slice layout (M07.1, approved):** the whole slice stays inside the existing 64 × 64 m Meadow — house exterior slot, NPC spot, forest-edge zones and the path extensions are planned in `docs/VERTICAL_SLICE_LAYOUT.md`, whose machine-readable block `tools/sims/sim_slice_layout.py` checks against `Meadow.tscn` (existing coordinates, a geometry digest, bounds, clearances, connections). M07.2 placed it under one `VerticalSlice` node in `Meadow.tscn` — a `HousePlaceholder` (plain `StaticBody3D`, exterior only, a plain `DoorMarker`: the door's `AreaEntry` is M08.1's), an `NpcSpotPlaceholder` (marker, no collider), forest-edge trees (existing tree props) and path patches (the existing path mesh) — with no script ("placement needs no code"); the navigation mesh baked at load avoids the house and trunks through the existing `navigation_source` group. The plan carries two digests: the existing world (every node outside `VerticalSlice` and `WorldRim`, unchanged) and the whole scene; any later change to `Meadow.tscn` updates them deliberately.
+- **Vertical slice layout (M07.1, approved):** the whole slice stays inside the existing 64 × 64 m Meadow — house exterior slot, NPC spot, forest-edge zones and the path extensions are planned in `docs/VERTICAL_SLICE_LAYOUT.md`, whose machine-readable block `tools/sims/sim_slice_layout.py` checks against `Meadow.tscn` (existing coordinates, a geometry digest, bounds, clearances, connections). M07.2 placed it under one `VerticalSlice` node in `Meadow.tscn` — a `HousePlaceholder` (plain `StaticBody3D`, a plain `DoorMarker`; since M08.1 an instanced `AreaDoor` on the door and the Meadow's `house_door` AreaEntry beside it), an `NpcSpotPlaceholder` (marker, no collider), forest-edge trees (existing tree props) and path patches (the existing path mesh) — with no script ("placement needs no code"); the navigation mesh baked at load avoids the house and trunks through the existing `navigation_source` group. The plan carries two digests: the existing world (every node outside `VerticalSlice` and `WorldRim`, unchanged) and the whole scene; any later change to `Meadow.tscn` updates them deliberately.
 - **Slice navigation and bounds (M07.3):** walkability comes only from the navigation mesh baked at load from the `navigation_source` group (settings unchanged) plus the colliders the player hits; a solid whose top would bake as a walkable island (the house) or that must stay unwalkable (the pond's core) carries a `NavigationObstacle3D` that carves the mesh (`affect_navigation_mesh` + `carve_navigation_mesh`, no avoidance), so a tap there resolves to nothing rather than to an unreachable target. Each area bounds itself physically: the Meadow's `WorldRim` (four invisible walls just outside its ground) keeps the player in, independent of the camera bounds (M03.4), which still bound only the camera's focus. The pond is a controlled edge (D-28): a blocked core inside the water, its discoveries reached by interaction range from the edge. The camera's spring arm ignores geometry (D-29), so tall solids can hide the player but never pull the camera in.
 
 ## 13. UI architecture

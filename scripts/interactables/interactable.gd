@@ -47,7 +47,7 @@ const RARITY_INTENSITY := {
 ## the behaviours that need them. Values are explicit and never reused or
 ## renumbered (new ones are appended), so they stay stable if they are ever
 ## saved. Never spelled as strings anywhere.
-enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7 }
+enum Verb { COLLECT = 1, PLANT = 2, WATER = 3, HARVEST = 4, INSPECT = 5, OPEN = 6, READ = 7, ENTER = 8, EXIT = 9 }
 
 @export var remove_on_harvest: bool = true
 

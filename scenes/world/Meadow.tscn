@@ -92,6 +92,7 @@ agent_max_slope = 37.0
 
 [node name="Meadow" type="Node3D" groups=["navigation_source"]]
 script = ExtResource("1")
+area_id = "meadow"
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_1")
@@ -910,6 +911,12 @@ shape = SubResource("BoxShape3D_rim_z")
 
 [node name="House" parent="VerticalSlice" instance=ExtResource("41")]
 position = Vector3(-24, 0, 0)
+
+[node name="HouseDoorEntry" type="Marker3D" parent="VerticalSlice"]
+position = Vector3(-19.8, 0.2, 0)
+rotation_degrees = Vector3(0, -90, 0)
+script = ExtResource("entry")
+entry_id = "house_door"
 
 [node name="NpcSpot" parent="VerticalSlice" instance=ExtResource("42")]
 position = Vector3(-19.5, 0, 2.2)

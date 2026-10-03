@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/world/Meadow.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/camera/FollowCamera.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/ui/TransitionFade.tscn" id="6"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -18,3 +19,5 @@ position = Vector3(0, 0.2, 5)
 position = Vector3(0, 0.2, 5)
 
 [node name="HUD" parent="." instance=ExtResource("5")]
+
+[node name="TransitionFade" parent="." instance=ExtResource("6")]

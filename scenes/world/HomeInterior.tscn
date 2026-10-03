@@ -1,0 +1,155 @@
+[gd_scene load_steps=18 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/game_area.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
+[ext_resource type="Script" path="res://scripts/world/area_camera_bounds.gd" id="camera_bounds"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/AreaDoor.tscn" id="door"]
+
+[sub_resource type="Environment" id="Environment_home"]
+background_mode = 1
+background_color = Color(0.1, 0.08, 0.07, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.95, 0.85, 0.7, 1)
+ambient_light_energy = 0.55
+
+[sub_resource type="NavigationMesh" id="NavigationMesh_home"]
+geometry_parsed_geometry_type = 1
+geometry_source_geometry_mode = 1
+geometry_source_group_name = &"navigation_source"
+cell_size = 0.25
+cell_height = 0.25
+agent_height = 1.3
+agent_radius = 0.35
+agent_max_climb = 0.25
+agent_max_slope = 37.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(8, 0.2, 6)
+
+[sub_resource type="StandardMaterial3D" id="Material_floor"]
+albedo_color = Color(0.55, 0.4, 0.27, 1)
+roughness = 0.9
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(8, 0.2, 6)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wall_x"]
+size = Vector3(8.4, 2.6, 0.2)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wall_z"]
+size = Vector3(0.2, 2.6, 6.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wall_low"]
+size = Vector3(3.6, 0.4, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="Material_wall"]
+albedo_color = Color(0.82, 0.74, 0.6, 1)
+roughness = 0.95
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall_x"]
+size = Vector3(8.4, 2.6, 0.2)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall_z"]
+size = Vector3(0.2, 2.6, 6.4)
+
+[sub_resource type="BoxMesh" id="BoxMesh_mat"]
+size = Vector3(1.2, 0.03, 0.6)
+
+[sub_resource type="StandardMaterial3D" id="Material_mat"]
+albedo_color = Color(0.4, 0.26, 0.16, 1)
+roughness = 1.0
+
+[node name="HomeInterior" type="Node3D" groups=["navigation_source"]]
+script = ExtResource("1")
+area_id = "home"
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_home")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+position = Vector3(0, 6, 0)
+rotation_degrees = Vector3(-60, 30, 0)
+light_color = Color(1, 0.93, 0.8, 1)
+light_energy = 0.5
+
+[node name="RoomLight" type="OmniLight3D" parent="."]
+position = Vector3(0, 2.3, 0)
+light_color = Color(1, 0.85, 0.6, 1)
+light_energy = 1.2
+omni_range = 7.0
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+navigation_mesh = SubResource("NavigationMesh_home")
+
+[node name="Room" type="StaticBody3D" parent="."]
+
+[node name="Floor" type="MeshInstance3D" parent="Room"]
+position = Vector3(0, -0.1, 0)
+mesh = SubResource("BoxMesh_floor")
+surface_material_override/0 = SubResource("Material_floor")
+
+[node name="FloorShape" type="CollisionShape3D" parent="Room"]
+position = Vector3(0, -0.1, 0)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="NorthWall" type="MeshInstance3D" parent="Room"]
+position = Vector3(0, 1.3, -3.1)
+mesh = SubResource("BoxMesh_wall_x")
+surface_material_override/0 = SubResource("Material_wall")
+
+[node name="NorthShape" type="CollisionShape3D" parent="Room"]
+position = Vector3(0, 1.3, -3.1)
+shape = SubResource("BoxShape3D_wall_x")
+
+[node name="WestWall" type="MeshInstance3D" parent="Room"]
+position = Vector3(-4.1, 1.3, 0)
+mesh = SubResource("BoxMesh_wall_z")
+surface_material_override/0 = SubResource("Material_wall")
+
+[node name="WestShape" type="CollisionShape3D" parent="Room"]
+position = Vector3(-4.1, 1.3, 0)
+shape = SubResource("BoxShape3D_wall_z")
+
+[node name="EastWall" type="MeshInstance3D" parent="Room"]
+position = Vector3(4.1, 1.3, 0)
+mesh = SubResource("BoxMesh_wall_z")
+surface_material_override/0 = SubResource("Material_wall")
+
+[node name="EastShape" type="CollisionShape3D" parent="Room"]
+position = Vector3(4.1, 1.3, 0)
+shape = SubResource("BoxShape3D_wall_z")
+
+[node name="SouthWallWest" type="MeshInstance3D" parent="Room"]
+position = Vector3(-2.3, 0.2, 3.1)
+mesh = SubResource("BoxMesh_wall_low")
+surface_material_override/0 = SubResource("Material_wall")
+
+[node name="SouthWallEast" type="MeshInstance3D" parent="Room"]
+position = Vector3(2.3, 0.2, 3.1)
+mesh = SubResource("BoxMesh_wall_low")
+surface_material_override/0 = SubResource("Material_wall")
+
+[node name="SouthShape" type="CollisionShape3D" parent="Room"]
+position = Vector3(0, 1.3, 3.1)
+shape = SubResource("BoxShape3D_wall_x")
+
+[node name="DoorMat" type="MeshInstance3D" parent="Room"]
+position = Vector3(0, 0.015, 2.6)
+mesh = SubResource("BoxMesh_mat")
+surface_material_override/0 = SubResource("Material_mat")
+
+[node name="HomeDoorEntry" type="Marker3D" parent="."]
+position = Vector3(0, 0.1, 1.2)
+script = ExtResource("entry")
+entry_id = "home_door"
+
+[node name="ExitDoor" parent="." instance=ExtResource("door")]
+position = Vector3(0, 0, 2.6)
+target_area_id = "meadow"
+target_entry_id = "house_door"
+verb = 9
+
+[node name="CameraBounds" type="Node3D" parent="."]
+position = Vector3(0, 0, 0.6)
+script = ExtResource("camera_bounds")
+size = Vector2(3, 2)

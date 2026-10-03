@@ -1,4 +1,6 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/world/props/AreaDoor.tscn" id="door"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_walls"]
 size = Vector3(6, 2.6, 5)
@@ -55,3 +57,9 @@ avoidance_enabled = false
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 position = Vector3(0, 1.5, 0)
 shape = SubResource("BoxShape3D_house")
+
+[node name="AreaDoor" parent="." instance=ExtResource("door")]
+position = Vector3(3.3, 0, 0)
+target_area_id = "home"
+target_entry_id = "home_door"
+verb = 8

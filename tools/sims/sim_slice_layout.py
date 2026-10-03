@@ -34,8 +34,11 @@ Checks:
    - `House` instances HousePlaceholder.tscn at the footprint centre, unrotated, unscaled; its
      collision box and walls are the footprint; its DoorMarker sits on the door and faces out
      along the door's wall normal; the house is a StaticBody3D (so the navigation mesh baked
-     from the navigation_source group avoids it) and carries no AreaEntry (the door's entry
-     is M08.1's);
+     from the navigation_source group avoids it) and carries no AreaEntry;
+   - M08.1: the house instances one AreaDoor on the door, just outside its wall (ENTER, to
+     home/home_door), and the Meadow's `house_door` AreaEntry (VerticalSlice/HouseDoorEntry)
+     stands 0.5–1.5 m out from the door along its wall normal, facing out, clear of the house
+     and inside the player's 2.2 m interaction range of the door;
    - `NpcSpot` instances NpcSpotPlaceholder.tscn at the NPC spot — a marker only, with no
      collider (it never blocks the player or the navigation mesh);
    - every forest-edge tree (an existing tree prop) stands in a forest zone, inside the
@@ -223,14 +226,35 @@ walls = next(n for n in hnodes if n[0] == "Walls")
 wx, _, wz = (float(v) for v in sub(re.search(r'SubResource\("(\w+)"\)', walls[3]["mesh"]).group(1), "size").split(","))
 assert (wx, wz) == (w, d) and vec(walls[3], "position")[0::2] == (0.0, 0.0), "the house walls are the footprint"
 dm = next(n for n in hnodes if n[0] == "DoorMarker")
-assert dm[1] == "Marker3D" and "script" not in dm[3], "the door is a plain marker — its AreaEntry is M08.1's"
+assert dm[1] == "Marker3D" and "script" not in dm[3], "the door is a plain marker (the entry is the Meadow's house_door)"
 dx_, _, dz_ = vec(dm[3], "position"); yaw = math.radians(vec(dm[3], "rotation_degrees")[1])
 assert math.dist((cx + dx_, cz + dz_), plan["door"]) <= 1e-6, "the DoorMarker sits on the door"
 fwd = (-math.sin(yaw), -math.cos(yaw))                                  # a Node3D's forward is -Z
 out_n = (1.0, 0.0) if abs(abs(plan["door"][0] - cx) - w / 2) <= 0.05 else (0.0, 1.0)
 out_n = tuple(c * (1 if (plan["door"][0] - cx) * out_n[0] + (plan["door"][1] - cz) * out_n[1] > 0 else -1) for c in out_n)
 assert fwd[0] * out_n[0] + fwd[1] * out_n[1] > 0.999, f"the door faces out of its wall towards the path ({fwd} vs {out_n})"
-assert "area_entry.gd" not in htxt and "ExtResource(\"entry\")" not in placed["House"][2], "no AreaEntry at the door before M08.1"
+assert "area_entry.gd" not in htxt and "ExtResource(\"entry\")" not in placed["House"][2], "the house carries no AreaEntry"
+# M08.1: the door's AreaDoor and the Meadow's house_door entry
+doors = [n for n in hnodes if n[0] == "AreaDoor"]
+assert len(doors) == 1 and 'path="res://scenes/world/props/AreaDoor.tscn"' in htxt, "the house instances one AreaDoor"
+ad = doors[0][3]
+adx, _, adz = vec(ad, "position")
+door_xz = (cx + adx, cz + adz)
+assert ad.get("target_area_id") == '"home"' and ad.get("target_entry_id") == '"home_door"' and ad.get("verb") == "8", f"the house door enters home/home_door (ENTER) {ad}"
+door_along = (door_xz[0] - plan["door"][0]) * out_n[0] + (door_xz[1] - plan["door"][1]) * out_n[1]
+door_across = abs((door_xz[0] - plan["door"][0]) * out_n[1] - (door_xz[1] - plan["door"][1]) * out_n[0])
+assert 0.0 < door_along <= 0.5 and door_across <= 0.05, f"the AreaDoor sits on the door, just outside the wall ({door_along:.2f} m out, {door_across:.2f} m off)"
+par, attrs, body, props = placed["HouseDoorEntry"]
+assert par == SLICE and props.get("entry_id") == '"house_door"' and 'ExtResource("entry")' in body, "VerticalSlice/HouseDoorEntry is the Meadow's house_door AreaEntry"
+ex, _, ez = vec(props, "position")
+erot = re.search(r"^rotation_degrees = Vector3\(([^)]*)\)", body, re.M)
+eyaw = math.radians(float(erot.group(1).split(",")[1]) if erot else 0.0)
+e_along = (ex - plan["door"][0]) * out_n[0] + (ez - plan["door"][1]) * out_n[1]
+e_across = abs((ex - plan["door"][0]) * out_n[1] - (ez - plan["door"][1]) * out_n[0])
+efwd = (-math.sin(eyaw), -math.cos(eyaw))
+assert 0.5 <= e_along <= 1.5 and e_across <= 0.05, f"house_door stands 0.5-1.5 m out from the door ({e_along:.2f} m out, {e_across:.2f} m off)"
+assert efwd[0] * out_n[0] + efwd[1] * out_n[1] > 0.999, f"house_door faces out of the house ({efwd} vs {out_n})"
+assert rect_dist(ex, ez, cx, cz, w, d) >= 0.5 and math.dist((ex, ez), door_xz) <= 2.2, "house_door is clear of the house and within the door's interaction range"
 # the NPC spot
 par, attrs, body, props = placed["NpcSpot"]
 assert par == SLICE and inst_of(attrs) == "NpcSpotPlaceholder.tscn" and vec(props, "position")[0::2] == plan["npc"], "NpcSpot instances NpcSpotPlaceholder.tscn on the NPC spot"
@@ -335,7 +359,8 @@ print(f"slice layout: {len(plan['existing'])} existing coordinates match Meadow.
       f"bounds ±{HALF_X:g}×±{HALF_Z:g}; house {w:g}×{d:g} m at ({cx:g}, {cz:g}) clear by ≥{min(clear['house']):.2f} m, "
       f"NPC by ≥{min(clear['npc']):.2f} m, paths by ≥{min(clear['paths']):.2f} m; {len(plan['forest'])} forest zones empty; "
       f"{length:.1f} m of planned path from the existing path to the door and the trailhead; NPC {npc_path:.2f} m off the path")
-print(f"placement: house {w:g}×{d:g} m StaticBody3D on the footprint, door marker on the door facing out, no AreaEntry; NPC marker without collider; "
+print(f"placement: house {w:g}×{d:g} m StaticBody3D on the footprint, door marker on the door facing out, AreaDoor {door_along:.2f} m out, "
+      f"house_door entry {e_along:.2f} m out facing out; NPC marker without collider; "
       f"{len(trees)} forest-edge trees in their zones (canopies clear of existing objects by ≥{min(tclear):.2f} m, no gap > 5 m); "
       f"path patches {n_patches} cover both paths end to end")
 print(f"navigation and bounds: rim walls on the ±{HALF_X:g} edges (1.6 m); house carve = footprint; pond core {core_r:g} m in {water_r:g} m water "

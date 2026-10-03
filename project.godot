@@ -30,6 +30,7 @@ AmbientAudioManager="*res://scripts/autoload/ambient_audio_manager.gd"
 SaveManager="*res://scripts/autoload/save_manager.gd"
 GameState="*res://scripts/autoload/game_state.gd"
 InputManager="*res://scripts/autoload/input_manager.gd"
+AreaRouter="*res://scripts/autoload/area_router.gd"
 
 [display]
 

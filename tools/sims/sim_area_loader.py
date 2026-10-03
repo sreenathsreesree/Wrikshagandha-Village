@@ -17,6 +17,18 @@
    (read from farm_plot.gd), no recount of ready crops, nothing lost by a save
    made after the reload or while the area is away; empty / one / many /
    partial farms, reload twice, old references dropped.
+6. Area transitions (M08.1; rules read from main.gd, area_router.gd, area_door.gd,
+   farm_plot.gd, time_of_day.gd, discovery_spawn_point.gd and data/areas): the Meadow
+   is parked, never freed — its time of day, discovery spawn timers and wildlife
+   only advance while it is in the tree, and _ready() (the first spawn) runs once per
+   instance, so a round trip neither resets the day nor respawns a collected
+   discovery (a free-and-reload design is shown to do both: a points exploit); its
+   plots are captured on leaving and re-registered on return, so thirst (a clock
+   that keeps running) and growth (a timer that pauses) both stand still indoors —
+   keeping them registered is shown to grow thirst indoors, and restoring in place
+   without the visual guard is shown to double a crop; the router refuses a second
+   trip mid-transition; the current area is never saved (relaunch = meadow_start);
+   3,000 random sessions of trips, waits, collections, farming, saves and double taps.
 """
 import math, os, random, re
 
@@ -282,4 +294,166 @@ for trial in range(1500):
         assert fw.farm.ready == ready_before, "ready crops are not counted again"
 print(f"farm across reload: fields {CAP_KEYS}; empty/one/many/partial, reload x1-3, away-then-back, "
       "autosave after reload, 1500 random runs OK (no-snapshot / snapshot-after-unload shown to lose the farm)")
+
+# ---------------------------------------------------------------- 6. area transitions (M08.1)
+ROUTER, DOOR = _src("scripts", "autoload", "area_router.gd"), _src("scripts", "world", "area_door.gd")
+TOD, SPAWN = _src("scripts", "world_simulation", "time_of_day.gd"), _src("scripts", "interactables", "discovery_spawn_point.gd")
+park_rules = ["FarmManager.release_plots_in(old)", "remove_child(old)", "if _keeps_alive(old):", "_parked_areas[old.scene_file_path] = old",
+              "old.free()", "add_child(area)", "if restored:", "_reregister_plots(area)", "area.attach_player(player)", "AreaRouter.notify_arrived(area.area_id)"]
+pidx = [SWAP.find(k) for k in park_rules]
+assert -1 not in pidx and pidx == sorted(pidx), f"main.gd parks/restores in order: {dict(zip(park_rules, pidx))}"
+assert "var next: GameArea = _parked_areas.get(scene.resource_path)" in SWAP, "a parked area is reused"
+assert "FarmManager.register_plot(plot)" in _body(MAIN, "_reregister_plots")
+assert "definition.keep_alive_when_left" in _body(MAIN, "_keeps_alive")
+KEEP = {}
+for f in sorted(os.listdir(os.path.join(REPO, "data", "areas"))):
+    t = _src("data", "areas", f)
+    KEEP[re.search(r'^id = "([^"]+)"', t, re.M).group(1)] = "keep_alive_when_left = true" in t
+assert KEEP == {"home": False, "meadow": True}, KEEP
+TRAVEL = _body(ROUTER, "travel")
+assert TRAVEL.find("if _travelling:") < TRAVEL.find("_travelling = true") < TRAVEL.find("travel_requested.emit")
+assert "_travelling = false" in _body(ROUTER, "notify_arrived") and "AreaRouter.is_travelling()" in _body(DOOR, "_get_interaction_verbs")
+assert "SaveManager" not in ROUTER and "AreaRouter" not in _src("scripts", "autoload", "save_manager.gd"), "the current area is never saved"
+assert re.search(r"func _process\(delta: float\) -> void:.*day_fraction = fmod\(day_fraction \+ delta / day_length_seconds, 1\.0\)", TOD, re.S), \
+    "time of day advances only in _process (paused out of the tree)"
+DAY_START = float(re.search(r"var start_fraction: float = ([0-9.]+)", TOD).group(1))
+DAY_LEN = float(re.search(r"var day_length_seconds: float = ([0-9.]+)", TOD).group(1))
+assert "_spawn()" in _body(SPAWN, "_ready") and "_timer.timeout.connect(_spawn)" in SPAWN and "_timer.start(definition.respawn_seconds)" in SPAWN, \
+    "a spawn point spawns in _ready (once per instance) and later only from its Timer (paused out of the tree)"
+RESTORE = _body(PLOT_SRC, "restore")
+assert re.search(r"if is_instance_valid\(_crop_visual\):\s*#[^\n]*\n(\s*#[^\n]*\n)*\s*crop_root\.remove_child\(_crop_visual\)\s*_crop_visual\.queue_free\(\)\s*_crop_visual = null", RESTORE), \
+    "restore() replaces a crop visual already shown"
+assert "_thirsty_since_msec = Time.get_ticks_msec() - int(maxf(thirsty_for, 0.0) * 1000.0)" in RESTORE, "thirst resumes from the captured duration"
+RESPAWN = {"flower": 60.0, "mint": 90.0, "seed": 0.0}
+
+class Meadow:
+    """The parts of the Meadow a trip can disturb, advancing only while in the tree."""
+    def __init__(m):
+        m.in_tree, m.readied, m.tod = False, False, None
+        m.spawns = {k: {"present": False, "left": 0.0} for k in RESPAWN}
+        m.plots = {pid: {"thirsty_since": None, "growth_left": None, "visuals": 0, "registered": False} for pid in PLOT_IDS}
+    def ready(m):                                             # Node._ready: once per instance
+        if m.readied: return
+        m.readied, m.tod = True, DAY_START
+        for k, sp in m.spawns.items(): sp["present"] = True
+    def tick(m, dt):
+        if not m.in_tree: return                              # out of the tree: no _process, no Timer
+        m.tod = (m.tod + dt / DAY_LEN) % 1.0
+        for k, sp in m.spawns.items():
+            if not sp["present"] and sp["left"] > 0:
+                sp["left"] = max(0.0, sp["left"] - dt)
+                if sp["left"] == 0.0: sp["present"] = True
+        for pl in m.plots.values():
+            if pl["growth_left"] is not None and pl["thirsty_since"] is None:
+                pl["growth_left"] = max(0.0, pl["growth_left"] - dt)
+class Game:
+    def __init__(g, design="park", restore_guard=True):
+        g.design, g.guard, g.clock, g.points, g.unloaded = design, restore_guard, 0.0, 0, {}
+        g.meadow, g.where, g.travelling, g.parked = Meadow(), "meadow", False, None
+        g.enter_tree(g.meadow); g.saves = []
+    def enter_tree(g, m):
+        m.in_tree = True; m.ready()
+        for pid, pl in m.plots.items(): g.register(pid, pl)
+    def register(g, pid, pl):
+        pl["registered"] = True
+        if pid in g.unloaded:                                 # FarmPlot.restore(kept)
+            kept = g.unloaded.pop(pid)
+            if kept["visual"]:
+                if not g.guard or pl["visuals"] == 0: pl["visuals"] += 1
+                if g.guard: pl["visuals"] = 1
+            pl["thirsty_since"] = None if kept["thirsty_for"] is None else g.clock - kept["thirsty_for"]
+            pl["growth_left"] = kept["growth_left"]
+    def capture(g, pl):
+        return {"visual": pl["visuals"] > 0, "growth_left": pl["growth_left"],
+                "thirsty_for": None if pl["thirsty_since"] is None else g.clock - pl["thirsty_since"]}
+    def wait(g, dt):
+        g.clock += dt; g.meadow.tick(dt)
+    def travel(g, to):                                        # AreaRouter.travel + Main
+        if g.travelling or to == g.where: return False
+        g.travelling = True
+        if to == "home":
+            if g.design != "keep_registered":
+                for pid, pl in g.meadow.plots.items(): g.unloaded[pid] = g.capture(pl); pl["registered"] = False
+            g.meadow.in_tree = False
+            if g.design == "free_reload": g.meadow = None
+        else:
+            if g.design == "free_reload": g.meadow = Meadow()
+            g.enter_tree(g.meadow) if g.design != "keep_registered" else setattr(g.meadow, "in_tree", True)
+        g.where, g.travelling = to, False
+        return True
+    def collect(g, k):
+        if g.where != "meadow" or not g.meadow.spawns[k]["present"]: return False
+        g.meadow.spawns[k]["present"] = False; g.meadow.spawns[k]["left"] = RESPAWN[k]; g.points += 10; return True
+    def plant(g, pid, thirsty):
+        pl = g.meadow.plots[pid]; pl["visuals"] = 1; pl["growth_left"] = 30.0
+        pl["thirsty_since"] = g.clock if thirsty else None
+    def thirst(g, pid):
+        pl = g.meadow.plots[pid]
+        if not pl["registered"]: return g.unloaded[pid]["thirsty_for"]
+        return None if pl["thirsty_since"] is None else g.clock - pl["thirsty_since"]
+    def save(g):                                              # SaveManager: the area is not a section
+        plots = {pid: g.unloaded[pid] if pid in g.unloaded else g.capture(pl) for pid, pl in g.meadow.plots.items()} if g.meadow else dict(g.unloaded)
+        return {"plots": plots, "points": g.points}
+
+# one trip, the real design
+g = Game(); g.wait(30); g.collect("flower"); g.plant(PLOT_IDS[0], True); g.plant(PLOT_IDS[1], False)
+tod0, thirst0, grow0, inst = g.meadow.tod, g.thirst(PLOT_IDS[0]), g.meadow.plots[PLOT_IDS[1]]["growth_left"], g.meadow
+g.travel("home"); g.wait(120)
+assert g.save()["plots"][PLOT_IDS[0]]["thirsty_for"] == thirst0, "a save made indoors keeps the farm as it was left"
+g.travel("meadow")
+assert g.meadow is inst and g.meadow.tod == tod0, "the same Meadow, its day exactly where it was"
+assert not g.meadow.spawns["flower"]["present"] and g.meadow.spawns["flower"]["left"] == 60.0, "a collected discovery waits; its timer did not run indoors"
+assert g.thirst(PLOT_IDS[0]) == thirst0 and g.meadow.plots[PLOT_IDS[1]]["growth_left"] == grow0, "no thirst, no growth indoors (D-31)"
+assert all(pl["visuals"] == 1 for pl in list(g.meadow.plots.values())[:2]), "each crop shows once"
+assert not g.collect("flower") and g.points == 10, "no second collection after a trip"
+assert not g.travel("meadow") and g.where == "meadow"
+# the rejected designs, shown
+bad = Game("free_reload"); bad.wait(30); bad.collect("flower"); bad.travel("home"); bad.travel("meadow")
+assert bad.meadow.tod == DAY_START and bad.collect("flower") and bad.points == 20, "free + reload: the day resets and a collected discovery respawns (exploit, shown)"
+kr = Game("keep_registered"); kr.plant(PLOT_IDS[0], True); t0 = kr.thirst(PLOT_IDS[0]); kr.travel("home"); kr.wait(60); kr.travel("meadow")
+assert kr.thirst(PLOT_IDS[0]) == t0 + 60, "plots left registered while parked: thirst grows indoors (shown, violates D-31)"
+ng = Game(restore_guard=False); ng.plant(PLOT_IDS[0], False); ng.travel("home"); ng.travel("meadow")
+assert ng.meadow.plots[PLOT_IDS[0]]["visuals"] == 2, "restore in place without the guard doubles the crop (shown)"
+# router: a second request mid-trip is refused (port of the guard)
+class Router:
+    def __init__(r): r.travelling, r.current, r.emitted = False, "meadow", []
+    def travel(r, a):
+        if r.travelling: return False
+        r.travelling = True; r.emitted.append(a); return True
+    def arrived(r, a): r.travelling = False; r.current = a
+rt = Router(); assert rt.travel("home") and not rt.travel("home") and not rt.travel("meadow") and rt.emitted == ["home"]
+rt.arrived("home"); assert rt.travel("meadow") and rt.emitted == ["home", "meadow"]
+# random sessions
+rnd = random.Random(81)
+for trial in range(3000):
+    g = Game(); inst = g.meadow; outdoor, indoor, collected = 0.0, 0.0, 0
+    thirsty_outdoors = {}
+    for _ in range(rnd.randint(5, 40)):
+        act = rnd.random()
+        if act < 0.25:
+            dt = rnd.uniform(0.1, 90.0); g.wait(dt)
+            if g.where == "meadow":
+                outdoor += dt
+                for pid in thirsty_outdoors: thirsty_outdoors[pid] += dt
+            else: indoor += dt
+        elif act < 0.45: g.travel("home" if g.where == "meadow" else "meadow")
+        elif act < 0.5: g.travel(g.where); g.travel("home" if g.where == "meadow" else "meadow")      # double tap
+        elif act < 0.7: collected += g.collect(rnd.choice(list(RESPAWN)))
+        elif act < 0.8 and g.where == "meadow":
+            pid = rnd.choice(PLOT_IDS); th = rnd.random() < 0.5; g.plant(pid, th)
+            if th: thirsty_outdoors[pid] = 0.0
+            else: thirsty_outdoors.pop(pid, None)
+        else:
+            sv = g.save(); assert set(sv["plots"]) == set(PLOT_IDS), "every plot in every save, indoors or out"
+        assert g.meadow is inst, "the Meadow is never rebuilt"
+        assert abs(((g.meadow.tod - DAY_START) % 1.0) - ((outdoor / DAY_LEN) % 1.0)) < 1e-9, "the day advanced exactly by the time outdoors"
+        assert g.points == 10 * collected
+        for pid, t in thirsty_outdoors.items():
+            assert abs(g.thirst(pid) - t) < 1e-6, "thirst counts only time outdoors"
+        assert sum(1 for pl in g.meadow.plots.values() if pl["visuals"] > 1) == 0
+    relaunch_entry = "meadow_start"                                                               # nothing saved names an area
+    assert "where" not in g.save() and relaunch_entry in ENTRIES
+print(f"area transitions: Meadow parked (keep_alive {KEEP}); day, spawn timers and farm (thirst + growth) still indoors; "
+      "free+reload shown to reset the day and respawn discoveries, kept-registered plots shown to thirst indoors, unguarded restore shown to double a crop; "
+      "router refuses a second trip; never saved; 3000 random sessions OK")
 print("ALL AREA LOADER SIMULATIONS PASSED")

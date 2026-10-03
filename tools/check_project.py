@@ -588,6 +588,9 @@ calls = [(f, n) for f, s2 in scripts.items() if not f.startswith("tools/")
 if calls != [(PL, 1)]:
     err(f"interact() must have exactly one call site (Player._interact_with); found {calls}")
 iw = func_body(scripts.get(PL, ""), "_interact_with") or ""
+if not re.search(r"_spent_interactables\.assign\(_spent_interactables\.filter\(\s*func\(spent: Variant\) -> bool: return is_instance_valid\(spent\)\s*\)\)", func_body(scripts.get(PL, ""), "_interact_with") or "") \
+   or re.search(r"_spent_interactables\s*=\s*_spent_interactables\.filter", scripts.get(PL, "")):
+    err(f"{PL}: _interact_with() prunes freed objects from the typed spent list with assign() (a plain = filter() aborts every interaction after a collection)")
 spent = re.search(r"if _spent_interactables\.has\(target\) or not target\.is_interaction_available\(\):\s*return"
                   r".*if target\.remove_on_harvest:\s*_nearby_interactables\.erase\(target\)\s*_spent_interactables\.append\(target\)"
                   r".*_begin_interaction\(target\)", iw, re.S)
@@ -672,7 +675,9 @@ FIXTURES = {"tools/fixtures/inspect_fixture.gd": {"INSPECT"},
             "tools/fixtures/open_fixture.gd": {"OPEN"},
             "tools/fixtures/read_fixture.gd": {"INSPECT", "READ"}}
 EXPECTED_VERBS = {"scripts/interactables/discovery_interactable.gd": {"COLLECT"},
-                  "scripts/farming/farm_plot.gd": {"PLANT", "WATER", "HARVEST"}, **FIXTURES}
+                  "scripts/farming/farm_plot.gd": {"PLANT", "WATER", "HARVEST"},
+                  # M08.1: a door offers its own verb, ENTER (a way in) or EXIT (a way out).
+                  "scripts/world/area_door.gd": {"ENTER", "EXIT"}, **FIXTURES}
 for f, want in EXPECTED_VERBS.items():
     body = func_body(scripts.get(f, ""), "_get_interaction_verbs") or ""
     have = set(re.findall(r"\bVerb\.([A-Z_]+)", body))
@@ -904,7 +909,7 @@ meadow_tree = expand(MEADOW_SCENE)
 for pth, t, inst in meadow_tree:
     if inst in SHELL.values() or t == "Camera3D" or t == "CanvasLayer" or inst == "scenes/ui/VirtualJoystick.tscn":
         err(f"{MEADOW_SCENE}: {pth} — an area must not own the persistent Player/Camera/HUD")
-MAIN_GD, MEADOW_GD = "scripts/main.gd", "scripts/world/meadow.gd"
+MAIN_GD, MEADOW_GD, GAME_AREA_GD = "scripts/main.gd", "scripts/world/meadow.gd", "scripts/world/game_area.gd"
 mready = func_body(scripts.get(MAIN_GD, ""), "_ready") or ""
 if not re.search(r"follow_camera\.target = player\s*_apply_camera_bounds\(\)\s*follow_camera\.snap_to_target\(\)\s*area\.attach_player\(player\)", mready):
     err(f"{MAIN_GD}: _ready() must point the camera at the player and hand the player to the area")
@@ -919,32 +924,39 @@ navm = re.search(r'\[sub_resource type="NavigationMesh"[^\]]*\]\n(.*?)\n\n', mea
 navsettings = dict(re.findall(r"^(\w+) = (.+)$", navm.group(1), re.M)) if navm else {}
 if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D" groups=\["navigation_source"\]\]', mead) \
    or not re.search(r'\[node name="NavigationRegion3D" type="NavigationRegion3D" parent="\."\]', mead) \
-   or "NavigationAgent3D" not in open(SHELL["Player"], encoding="utf-8").read() or "_bake_navigation()" not in (func_body(scripts.get(MEADOW_GD, ""), "_ready") or ""):
-    err("navigation: the Meadow keeps its NavigationRegion3D (settings unchanged, baked at load from the navigation_source group); the Player keeps its NavigationAgent3D")
+   or "NavigationAgent3D" not in open(SHELL["Player"], encoding="utf-8").read() or "_bake_navigation()" not in (func_body(scripts.get(GAME_AREA_GD, ""), "_ready") or "") \
+   or not re.search(r"^extends GameArea\s*\nclass_name MeadowArea", scripts.get(MEADOW_GD, ""), re.M) or func_body(scripts.get(MEADOW_GD, ""), "_ready") is not None:
+    err("navigation: the Meadow keeps its NavigationRegion3D (settings unchanged, baked at load by GameArea from the navigation_source group); the Player keeps its NavigationAgent3D")
 # M04.3 (O-14) added Inventory: after DiscoveryManager (it connects to it), before FarmManager and GameState.
 # M05.1 (D-20) added Wallet (coins + ledger), before SaveManager and GameState (which loads the save).
 # M06.2 (D-25) added Market (selling produce), after Inventory and Wallet, before GameState (which saves on a sale).
+# M08.1 (D-34) added AreaRouter (travel requests between areas, the current area id; never saved), last.
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager"]
+             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
+             "AreaRouter"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
     err(f"project.godot: autoloads changed {found_al} — adding one is a documented decision, never a side effect")
 # Deliberate-change pins: files a milestone promised not to touch. Changing
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
-PINNED = {"scripts/player/player.gd": "8a99e3acb0095f27", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
+PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
           "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "30c3d242996c7da3",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen;
           #  and by M06.3: the top-anchored top bar, bottom-right thumb buttons, the shared theme.)
+          # (player.gd re-pinned deliberately by M08.1: _interact_with() keeps its spent list typed with assign() —
+          #  the old "= filter()" raised a script error and aborted every interaction after a one-shot collection.)
           # (FollowCamera.tscn re-pinned deliberately by M07.3 (D-29): the SpringArm3D ignores geometry,
           #  collision_mask = 0 — the camera no longer collapses against the house or the monolith.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
           #  and by M04.3: the store moves to the Inventory autoload, save v3;
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
           # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold.)
-          "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "f0204855a7da7b37",
+          # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
+          #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
+          "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
           "scripts/autoload/save_manager.gd": "91db55e6a093d2ea", "scripts/autoload/game_state.gd": "d518671dbcca5ee7",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
@@ -1003,12 +1015,16 @@ if -1 in idx or idx != sorted(idx) or re.search(r"queue_free|await|call_deferred
 fe = code_only(func_body(main_src, "_find_entry") or "")
 if not all(k in fe for k in ("get_nodes_in_group(AreaEntry.GROUP)", "in_area.is_ancestor_of(entry)", "entry.entry_id == entry_id", "entry.entry_id < first.entry_id")):
     err(f"{MAIN_GD}: _find_entry() picks the named entry of this area, else the lowest id (deterministic)")
+# M08.1: the game's one way to swap is AreaRouter.travel_requested -> Main._on_travel_requested ->
+# _swap_area (after the fade covers); load_area() stays the debugger's plain swap, called by nothing.
 callers = [f for f, s2 in scripts.items() if f != MAIN_GD and re.search(r"\bload_area\(|_swap_area", code_only(s2))]
-if callers or len(re.findall(r"\b_swap_area\b", code_only(main_src))) != 2:
-    err(f"the area loader is infrastructure only — nothing in the game calls it yet (found {callers})")
+swap_sites = re.findall(r"^func (\w+)\(", main_src, re.M)
+swap_sites = sorted(fn for fn in swap_sites if re.search(r"\b_swap_area\b", code_only(func_body(main_src, fn) or "")) and fn != "_swap_area")
+if callers or swap_sites != ["_on_travel_requested", "load_area"] or len(re.findall(r"\b_swap_area\b", code_only(main_src))) != 3:
+    err(f"the area swap is reached only from load_area() (debugger) and Main._on_travel_requested() (found {callers}, {swap_sites})")
 for path in glob.glob("**/*.tscn", recursive=True):
     if "load_area" in open(path, encoding="utf-8").read():
-        err(f"{path}: connects to load_area — no player-facing transition before M08.1")
+        err(f"{path}: connects to load_area — travel goes through AreaRouter (M08.1)")
 actions = sorted(re.findall(r"^(\w+)=\{", re.search(r"\[input\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)) if "[input]" in cfg else []
 if actions != ["move_down", "move_left", "move_right", "move_up"]:
     err(f"project.godot: input actions changed {actions} — no new (debug) actions")
@@ -1045,8 +1061,9 @@ for path in glob.glob("**/*.tscn", recursive=True):
         m = re.search(r'^script = ExtResource\("([^"]+)"\)', b, re.M)
         if k == "node" and m and script_for_ext(ext, m.group(1)) == CB_GD:
             bounds_nodes.setdefault(path, []).append((a.get("parent", "").strip('"'), b))
-if list(bounds_nodes) != [MEADOW_SCENE] or len(bounds_nodes[MEADOW_SCENE]) != 1:
-    err(f"camera bounds: exactly one AreaCameraBounds, in the area (found {[(p, len(v)) for p, v in bounds_nodes.items()]}) — never in Main")
+AREA_SCENES = [MEADOW_SCENE, "scenes/world/HomeInterior.tscn"]  # M08.1: one AreaCameraBounds per area scene
+if sorted(bounds_nodes) != sorted(AREA_SCENES) or any(len(v) != 1 for v in bounds_nodes.values()):
+    err(f"camera bounds: exactly one AreaCameraBounds in each area {AREA_SCENES} (found {[(p, len(v)) for p, v in bounds_nodes.items()]}) — never in Main")
 else:
     par, body = bounds_nodes[MEADOW_SCENE][0]
     size = re.search(r"^size = Vector2\(([^)]*)\)", body, re.M)
@@ -1125,7 +1142,14 @@ zem = [z for z in zem if z[1]]
 if zem != [(IM, 2)]:
     err(f"zoom_requested is emitted only by InputManager's pinch and wheel paths (found {zem})")
 zcalls = [(f, n) for f, s2 in scripts.items() for n in re.findall(r"\.(zoom_by|set_zoom_distance)\b", code_only(s2)) if f != CAM_GD]
-if zcalls != [(MAIN_GD, "zoom_by")] or "InputManager.zoom_requested.connect(follow_camera.zoom_by)" not in (func_body(main_src, "_ready") or "") \
+# M08.1 (D-32): besides the zoom input, Main sets an area's fixed camera distance (and gives the player's
+# own zoom back) — only in _apply_camera_distance(), which reads it from the area's data.
+acd = code_only(func_body(main_src, "_apply_camera_distance") or "")
+zcalls_outside = [(f, n) for f, n in zcalls if not (f == MAIN_GD and n == "set_zoom_distance")]
+if len(re.findall(r"set_zoom_distance", code_only(main_src))) != len(re.findall(r"set_zoom_distance", acd)) or acd.count("set_zoom_distance") != 2 \
+   or "definition.camera_distance" not in acd:
+    err(f"{MAIN_GD}: an area's camera distance is set only by _apply_camera_distance(), from its AreaDefinition")
+if zcalls_outside != [(MAIN_GD, "zoom_by")] or "InputManager.zoom_requested.connect(follow_camera.zoom_by)" not in (func_body(main_src, "_ready") or "") \
    or code_only(main_src).count("zoom_requested.connect") != 1:
     err(f"Main connects InputManager.zoom_requested to FollowCamera.zoom_by once, in _ready (found {zcalls})")
 ui = code_only(func_body(im_src, "_unhandled_input") or "")
@@ -2222,6 +2246,9 @@ if len(roots) != 1 or roots[0][2].get("type", "").strip('"') != "Node3D" or re.s
     err(f"{MEADOW_SCENE}: one VerticalSlice Node3D directly under the Meadow, at the origin, unrotated")
 for name, par, a, b in slice_nodes:
     inst = script_for_ext(mext, re.search(r'ExtResource\("([^"]+)"\)', a["instance"]).group(1)) if "instance" in a else None
+    sm = re.search(r'^script = ExtResource\("([^"]+)"\)', b, re.M)
+    if name == "HouseDoorEntry" and par == "VerticalSlice" and sm and script_for_ext(mext, sm.group(1)) == ENTRY_GD:
+        continue  # M08.1: the house door's AreaEntry (house_door) — data, the one script allowed here
     if re.search(r"^script = ", b, re.M) or (inst and scene_root_script_of(inst)):
         err(f"{MEADOW_SCENE}: VerticalSlice/{name} carries a script — M07.2 placement needs no code")
     if inst and inst not in SLICE_INSTANCES:
@@ -2232,16 +2259,17 @@ for name, par, a, b in slice_nodes:
 for prop in sorted(SLICE_PROPS):
     ptxt = open(prop, encoding="utf-8").read() if os.path.exists(prop) else ""
     if not ptxt or 'type="Script"' in ptxt or re.search(r"^script = ", ptxt, re.M):
-        err(f"{prop}: a placeholder scene with no script (M07.2)")
+        err(f"{prop}: a placeholder scene with no script (M07.2; the house's door is an instanced AreaDoor, M08.1)")
 hp = open("scenes/world/props/HousePlaceholder.tscn", encoding="utf-8").read() if os.path.exists("scenes/world/props/HousePlaceholder.tscn") else ""
 if not re.search(r'^\[node name="HousePlaceholder" type="StaticBody3D"\]', hp, re.M) or hp.count('type="CollisionShape3D"') != 1 \
-   or not re.search(r'^\[node name="DoorMarker" type="Marker3D" parent="\."\]', hp, re.M):
-    err("scenes/world/props/HousePlaceholder.tscn: a StaticBody3D with one collision box and a plain DoorMarker (no AreaEntry before M08.1)")
+   or not re.search(r'^\[node name="DoorMarker" type="Marker3D" parent="\."\]', hp, re.M) \
+   or re.findall(r'^\[ext_resource type="(\w+)" path="([^"]+)"', hp, re.M) != [("PackedScene", "res://scenes/world/props/AreaDoor.tscn")]:
+    err("scenes/world/props/HousePlaceholder.tscn: a StaticBody3D with one collision box, a plain DoorMarker and one instanced AreaDoor (M08.1)")
 npt = open("scenes/world/props/NpcSpotPlaceholder.tscn", encoding="utf-8").read() if os.path.exists("scenes/world/props/NpcSpotPlaceholder.tscn") else ""
 if not re.search(r'^\[node name="NpcSpotPlaceholder" type="Marker3D"\]', npt, re.M) or re.search(r"Body3D|CollisionShape3D|Area3D", npt):
     err("scenes/world/props/NpcSpotPlaceholder.tscn: a marker only — no collider (the NPC is M08.3's)")
-if sorted(e for e, _ in entry_scenes.get(MEADOW_SCENE, [])) != ["meadow_start"]:
-    err(f"{MEADOW_SCENE}: the Meadow's only AreaEntry stays meadow_start until M08.1 adds the door's (found {entry_scenes.get(MEADOW_SCENE)})")
+if sorted(e for e, _ in entry_scenes.get(MEADOW_SCENE, [])) != ["house_door", "meadow_start"]:
+    err(f"{MEADOW_SCENE}: the Meadow's entries are meadow_start and the house door's house_door (M08.1) (found {entry_scenes.get(MEADOW_SCENE)})")
 for f, s2 in scripts.items():
     if not f.startswith("tools/") and re.search(r"VerticalSlice|HousePlaceholder|NpcSpotPlaceholder|DoorMarker|\bNpcSpot\b", code_only(s2)):
         err(f"{f}: names the vertical slice placeholders — M07.2 placement needs no code")
@@ -2335,14 +2363,14 @@ for scene, roots in UI_SCENES.items():
     for r in roots:
         if tid is None or r not in nodes or prop(nodes[r][1], "theme") != f'ExtResource("{tid}")':
             err(f"{scene}: '{r}' uses the shared theme {THEME_TRES}")
-    for key, (attrs, body) in nodes.items():
+    for key, (node_attrs, body) in nodes.items():
         used = re.search(r'theme_type_variation = &"(\w+)"', body)
         if used and used.group(1) not in variations:
             err(f"{scene}: {key} uses theme variation '{used.group(1)}', which {THEME_TRES} doesn't define")
     if scene == "scenes/ui/DiscoveryNotification.tscn":
         continue
-    for key, (attrs, body) in nodes.items():
-        if 'type="Button"' not in attrs:
+    for key, (node_attrs, body) in nodes.items():
+        if 'type="Button"' not in node_attrs:
             continue
         size = re.match(r"Vector2\(([\d.]+), ([\d.]+)\)", prop(body, "custom_minimum_size") or "")
         if not size or min(float(size.group(1)), float(size.group(2))) < TOUCH_MIN:
@@ -2372,8 +2400,8 @@ if prop(bs_nodes.get("Panel/VBoxContainer/Header/CoinChip", ("", ""))[1], "theme
    or "Panel/VBoxContainer/Header/CoinChip/CoinsLabel" not in bs_nodes \
    or prop(bs_nodes.get("Panel/VBoxContainer/Header/TitleLabel", ("", ""))[1], "text") != '"BASKET"':
     err("scenes/ui/BasketScreen.tscn: \"BASKET\" with the coin balance in its own CoinChip")
-for key, (attrs, body) in ui_nodes["scenes/ui/BasketScreen.tscn"].items():
-    if 'type="Panel' in attrs and key == "Panel" and (prop(body, "offset_left") or prop(body, "anchor_left") != "0.05"):
+for key, (node_attrs, body) in ui_nodes["scenes/ui/BasketScreen.tscn"].items():
+    if 'type="Panel' in node_attrs and key == "Panel" and (prop(body, "offset_left") or prop(body, "anchor_left") != "0.05"):
         err("scenes/ui/BasketScreen.tscn: the sheet is anchored to the screen's proportions, not fixed offsets")
 bsu = code_only(scripts.get(BS, ""))
 bsu_funcs = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", scripts.get(BS, ""), re.M | re.S)}
@@ -2405,7 +2433,7 @@ for f in ("scripts/ui/hud.gd", BS, IS, DN):
         if re.search(r"✿|Points", lit) and re.search(r"Coin", lit):
             err(f"{f}: '{lit}' — points and coins never share a label")
 for scene, nodes in ui_nodes.items():
-    for key, (attrs, body) in nodes.items():
+    for key, (node_attrs, body) in nodes.items():
         t = prop(body, "text") or ""
         if re.search(r"✿|Points", t) and "Coin" in t:
             err(f"{scene}: {key} shows points and coins together")
@@ -2477,6 +2505,188 @@ sa3 = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_apply_safe_are
 if 'var picker_panel: Control = seed_picker.get_node("Panel")' not in sa3 or "picker_panel.offset_bottom = -(EDGE_MARGIN + insets[3])" not in sa3:
     err("scripts/ui/hud.gd: the seed picker keeps clear of the gesture bar (safe area)")
 notes.append("landscape seed picker (M07.4b): shared theme, non-modal, bottom-centre dock, 120 px cards and ✕, behaviour pinned, safe area")
+
+# ------------------------------------------------------------ area transitions (M08.1, D-31..D-35)
+# The first real area change. Areas are data (one AreaDefinition per data/areas/*.tres, D-34); a door is
+# an ordinary Interactable (AreaDoor) whose one action asks AreaRouter.travel() — tapped, never walked
+# into (D-35); AreaRouter is the request layer and the source of the current area id, never saved
+# (relaunch = the Meadow's meadow_start, save_version stays 5); Main alone fades, swaps, parks or frees,
+# restores and places. The Meadow is kept alive (parked, out of the tree, the same instance — D-33): its
+# time of day, discoveries, events and wildlife neither reset nor advance, and its farm plots are
+# captured on leaving and given back on return (no farm time indoors, D-31). Interiors frame the
+# player with small focus bounds and a fixed camera distance from their data (D-32).
+AREA_DEF_GD, ROUTER_GD, DOOR_GD = "scripts/world/area_definition.gd", "scripts/autoload/area_router.gd", "scripts/world/area_door.gd"
+FADE_GD, FADE_SCENE, DOOR_SCENE = "scripts/ui/transition_fade.gd", "scenes/ui/TransitionFade.tscn", "scenes/world/props/AreaDoor.tscn"
+HOME_SCENE = "scenes/world/HomeInterior.tscn"
+AREA_DEF_FIELDS = [("id", "String"), ("display_name", "String"), ("scene_path", "String"), ("keep_alive_when_left", "bool"), ("camera_distance", "float")]
+ga_src, ad_src, ro_src, dr_src, fd_src = (scripts.get(f, "") for f in (GAME_AREA_GD, AREA_DEF_GD, ROUTER_GD, DOOR_GD, FADE_GD))
+# GameArea: the one base of every area; areas say who they are, nothing else.
+if not re.search(r"^extends Node3D\s*\nclass_name GameArea", ga_src, re.M) or '@export var area_id: String = ""' not in ga_src \
+   or not re.search(r"func attach_player\(_player: Node3D\) -> void:\s*pass", ga_src) \
+   or re.search(r"\bAreaRouter\b|\bFarmManager\b|\bMain\b|get_parent\(|remove_child|add_child|\bfree\(|queue_free", code_only(ga_src)):
+    err(f"{GAME_AREA_GD}: GameArea is a Node3D with an area_id, an empty attach_player() and the navigation bake — no travel, farm or tree work")
+area_scripts = sorted(f for f, s2 in scripts.items() if re.search(r"^extends GameArea\b", s2, re.M))
+if area_scripts != [MEADOW_GD]:
+    err(f"only the Meadow needs its own area script — other areas use GameArea itself (found {area_scripts})")
+# AreaDefinition: exact fields, data only.
+adf = re.findall(r"^@export(?:_file\([^)]*\))? var (\w+): (\w+)", ad_src, re.M)
+if not re.search(r"^extends Resource\s*\nclass_name AreaDefinition", ad_src, re.M) or adf != AREA_DEF_FIELDS \
+   or '@export_file("*.tscn") var scene_path' not in ad_src or re.search(r"^func ", ad_src, re.M):
+    err(f"{AREA_DEF_GD}: AreaDefinition has exactly {AREA_DEF_FIELDS} (scene_path an exported .tscn file) and no logic")
+area_defs = {}
+for path in sorted(glob.glob("data/areas/*.tres")):
+    txt = open(path, encoding="utf-8").read()
+    fields = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', txt.split("[resource]", 1)[-1], re.M))
+    aid = fields.get("id", "")
+    if 'path="res://scripts/world/area_definition.gd"' not in txt or aid != os.path.basename(path)[:-5] or not re.fullmatch(r"[a-z][a-z0-9_]*", aid) \
+       or not fields.get("display_name") or not fields.get("scene_path", "").startswith("res://scenes/world/"):
+        err(f"{path}: an AreaDefinition with a lower_snake id equal to its file name, a display name and an area scene")
+        continue
+    area_defs[aid] = fields
+if sorted(area_defs) != ["home", "meadow"]:
+    err(f"data/areas: the M08.1 areas are the Meadow and the home interior (found {sorted(area_defs)})")
+zlo, zhi = const_val(cam_src, "ZOOM_MIN_DISTANCE") or 0, const_val(cam_src, "ZOOM_MAX_DISTANCE") or 0
+area_entries = {}
+for aid, fields in area_defs.items():
+    scene = res_path(fields["scene_path"])
+    if not os.path.exists(scene):
+        err(f"data/areas/{aid}.tres: scene {scene} missing"); continue
+    st = open(scene, encoding="utf-8").read()
+    root_script = scene_root_script_of(scene)
+    root_id = re.search(r'^\[node name="[^"]+" type="Node3D"[^\n]*\]\n(?:[^\[]*\n)?area_id = "([^"]*)"', st, re.M)
+    if root_script not in (GAME_AREA_GD, MEADOW_GD) or not root_id or root_id.group(1) != aid:
+        err(f"{scene}: the root is a GameArea whose area_id is '{aid}' (its AreaDefinition)")
+    if not re.search(r'^\[node name="[^"]+" type="Node3D" groups=\["navigation_source"\]\]', st, re.M) \
+       or not re.search(r'\[node name="NavigationRegion3D" type="NavigationRegion3D" parent="\."\]', st) \
+       or dict(re.findall(r"^(\w+) = (.+)$", (re.search(r'\[sub_resource type="NavigationMesh"[^\]]*\]\n(.*?)\n\n', st, re.S) or re.search("()", "")).group(1), re.M)) != NAV_PINS:
+        err(f"{scene}: an area bakes its own navigation from the navigation_source group with the shared settings")
+    if not re.search(r'type="WorldEnvironment"', st) or not re.search(r'type="DirectionalLight3D"', st):
+        err(f"{scene}: an area brings its own WorldEnvironment and light (the parked Meadow's leave with it)")
+    area_entries[aid] = [e for e, _ in entry_scenes.get(scene, [])]
+    cd = float(fields.get("camera_distance", "0") or 0)
+    if fields.get("keep_alive_when_left", "false") not in ("true", "false") or not (cd == 0.0 or zlo <= cd <= zhi):
+        err(f"data/areas/{aid}.tres: keep_alive_when_left is a bool and camera_distance 0 (free zoom) or within [{zlo}, {zhi}]")
+if area_defs.get("meadow", {}).get("keep_alive_when_left") != "true" or area_defs.get("home", {}).get("keep_alive_when_left", "false") != "false":
+    err("data/areas: the Meadow is kept alive while left (D-33); the home interior is freed and rebuilt")
+if area_defs.get("meadow", {}).get("camera_distance", "0") not in ("0", "0.0") or float(area_defs.get("home", {}).get("camera_distance", "0")) != 7.5:
+    err("data/areas: the Meadow keeps the player's own zoom; the home interior frames at 7.5 m (D-32)")
+if area_entries.get("home") != ["home_door"]:
+    err(f"{HOME_SCENE}: the home interior has one entry, home_door (found {area_entries.get('home')})")
+hb = bounds_nodes.get(HOME_SCENE, [])
+hbs = re.search(r"^size = Vector2\(([^)]*)\)", hb[0][1], re.M) if hb else None
+if not hbs or any(float(x) <= 0 or float(x) > 4.0 for x in hbs.group(1).split(",")):
+    err(f"{HOME_SCENE}: the interior's camera bounds are small (each side > 0 and <= 4 m) — they limit the focus only (D-32)")
+# No area named in code: ids, scene paths and keep-alive live only in data.
+for f, s2 in scripts.items():
+    if f.startswith("tools/"): continue
+    code = code_only(s2)
+    if re.search(r'"(meadow|home|house_door|home_door|meadow_start)"|Meadow\.tscn|HomeInterior|res://scenes/world/', code):
+        err(f"{f}: names an area, entry or area scene — areas are data (data/areas/, D-34)")
+# AreaRouter: the request layer; never saves, never swaps.
+if re.findall(r"^signal (.+)$", ro_src, re.M) != ["travel_requested(area_id: String, entry_id: String)", "area_changed(area_id: String)"] \
+   or 'const AREAS_PATH := "res://data/areas/"' not in ro_src or "ResourceDirectory.list_tres_paths(AREAS_PATH)" not in ro_src:
+    err(f"{ROUTER_GD}: AreaRouter declares travel_requested(area_id, entry_id) and area_changed(area_id) and loads data/areas via ResourceDirectory")
+tr = code_only(func_body(ro_src, "travel") or "")
+tpos = [tr.find(k) for k in ("if _travelling:", "return false", "if not _definitions.has(area_id):", "_travelling = true", "travel_requested.emit(area_id, entry_id)", "return true")]
+if -1 in tpos or tpos != sorted(tpos) or tr.count("travel_requested.emit") != 1:
+    err(f"{ROUTER_GD}: travel() refuses while a trip is under way and unknown areas, then marks the trip and asks once")
+na = code_only(func_body(ro_src, "notify_arrived") or "")
+if not re.search(r"_travelling = false\s*if area_id == _current_area_id:\s*return\s*_current_area_id = area_id\s*area_changed\.emit\(area_id\)", na):
+    err(f"{ROUTER_GD}: notify_arrived() ends the trip and announces only a change of area")
+if "_travelling = false" not in code_only(func_body(ro_src, "notify_travel_failed") or ""):
+    err(f"{ROUTER_GD}: notify_travel_failed() ends the trip")
+if re.search(r"SaveManager|save|FileAccess|user://|remove_child|add_child|instantiate|change_scene|get_tree\(\)", code_only(ro_src)):
+    err(f"{ROUTER_GD}: AreaRouter never saves, loads scenes or touches the tree — Main carries trips out (D-34)")
+writes = sorted({fn for fn in re.findall(r"^func (\w+)\(", ro_src, re.M) if re.search(r"_current_area_id\s*=[^=]", code_only(func_body(ro_src, fn) or ""))})
+if writes != ["notify_arrived"]:
+    err(f"{ROUTER_GD}: only notify_arrived() sets the current area (found {writes})")
+use = {}
+for f, s2 in scripts.items():
+    for name in re.findall(r"\bAreaRouter\.(\w+)", code_only(s2)):
+        use.setdefault(name, set()).add(f)
+if use.get("travel") != {DOOR_GD} or use.get("notify_arrived") != {MAIN_GD} or use.get("notify_travel_failed") != {MAIN_GD} \
+   or use.get("travel_requested") != {MAIN_GD}:
+    err(f"AreaRouter: only AreaDoor asks for travel; only Main hears travel_requested and reports arrivals/failures (found {dict((k, sorted(v)) for k, v in use.items())})")
+if re.search(r"AreaRouter|area_id|current_area", code_only(scripts.get("scripts/autoload/save_manager.gd", ""))):
+    err("scripts/autoload/save_manager.gd: the current area is never saved — a relaunch starts at meadow_start (D-34, save_version 5)")
+# AreaDoor: an Interactable with one action; never triggered by walking into it.
+if not re.search(r"^extends Interactable\s*\nclass_name AreaDoor", dr_src, re.M) \
+   or re.findall(r"^@export var (\w+)", dr_src, re.M) != ["target_area_id", "target_entry_id", "verb"] \
+   or not re.search(r"func _ready\(\) -> void:\s*remove_on_harvest = false", dr_src):
+    err(f"{DOOR_GD}: AreaDoor extends Interactable, exports target_area_id, target_entry_id and its verb, and is persistent")
+gv = code_only(func_body(dr_src, "_get_interaction_verbs") or "")
+if not re.search(r"if \(verb == Verb\.ENTER or verb == Verb\.EXIT\) and not AreaRouter\.is_travelling\(\):\s*verbs\.append\(verb\)", gv):
+    err(f"{DOOR_GD}: a door offers only its own ENTER/EXIT verb, and nothing while a trip is under way")
+di = code_only(func_body(dr_src, "interact") or "")
+if not re.search(r"if _get_interaction_verbs\(\)\.is_empty\(\):\s*return false\s*return AreaRouter\.travel\(target_area_id, target_entry_id\)\s*$", di.strip() + "\n"):
+    err(f"{DOOR_GD}: interact() only asks AreaRouter.travel() for its target (and only while it offers its verb)")
+if re.search(r"body_entered|area_entered|body_exited|area_exited|_process|_physics_process|get_overlapping|\bawait\b|\bMain\b|load_area|place_at", code_only(dr_src)):
+    err(f"{DOOR_GD}: a door never reacts to being walked into, never polls, waits or swaps — only a tap reaches interact() (D-35)")
+dsc = open(DOOR_SCENE, encoding="utf-8").read() if os.path.exists(DOOR_SCENE) else ""
+if not re.search(r'^\[node name="AreaDoor" type="Area3D"\]\ncollision_layer = 4\ncollision_mask = 0\n', dsc, re.M) or scene_root_script_of(DOOR_SCENE) != DOOR_GD \
+   or dsc.count('type="CollisionShape3D"') != 1 or "DiscoveryIndicator.tscn" not in dsc:
+    err(f"{DOOR_SCENE}: an Area3D on the interactables layer that detects nothing (mask 0), one shape, the shared Indicator")
+doors = []
+for path in glob.glob("scenes/**/*.tscn", recursive=True):
+    _, secs, ext, _ = load_scene_info(path)
+    for k, a, b in secs:
+        if k == "node" and "instance" in a and script_for_ext(ext, re.search(r'ExtResource\("([^"]+)"\)', a["instance"]).group(1)) == DOOR_SCENE:
+            f2 = dict(re.findall(r'^(target_area_id|target_entry_id|verb) = "?([^"\n]*)"?$', b, re.M))
+            doors.append((path, f2.get("target_area_id"), f2.get("target_entry_id"), f2.get("verb")))
+want_doors = sorted([("scenes/world/props/HousePlaceholder.tscn", "home", "home_door", str(VERBS.get("ENTER"))),
+                     (HOME_SCENE, "meadow", "house_door", str(VERBS.get("EXIT")))])
+if sorted(doors) != want_doors:
+    err(f"doors: the house door enters home/home_door and the interior's door exits to meadow/house_door (found {sorted(doors)}, expected {want_doors})")
+for path, aid, eid, _ in doors:
+    if aid not in area_entries or eid not in area_entries.get(aid, []):
+        err(f"{path}: a door leads to {aid}/{eid}, which is not an area entry")
+# Main: the one place a trip is carried out.
+if "AreaRouter.travel_requested.connect(_on_travel_requested)" not in mready or not code_only(mready).rstrip().endswith("AreaRouter.notify_arrived(area.area_id)"):
+    err(f"{MAIN_GD}: _ready() connects travel_requested once and reports the boot area")
+otr = code_only(func_body(main_src, "_on_travel_requested") or "")
+opos = [otr.find(k) for k in ("AreaRouter.get_definition(area_id)", "load(definition.scene_path) as PackedScene", "await transition_fade.cover()",
+                               "_swap_area(scene, entry_id)", "await transition_fade.reveal()")]
+if -1 in opos or opos != sorted(opos) or otr.count("AreaRouter.notify_travel_failed()") != 2 or otr.count("await") != 2:
+    err(f"{MAIN_GD}: _on_travel_requested() loads the area's scene from its data, covers, swaps, then reveals (a failed trip is reported)")
+park = ["FarmManager.release_plots_in(old)", "remove_child(old)", "if _keeps_alive(old):", "_parked_areas[old.scene_file_path] = old", "else:", "old.free()",
+        "_parked_areas.erase(scene.resource_path)", "add_child(area)", "move_child(area, 0)", "if restored:", "_reregister_plots(area)", "else:",
+        "area.attach_player(player)", "_apply_camera_bounds()", "_apply_camera_distance()", "follow_camera.snap_to_target()", "AreaRouter.notify_arrived(area.area_id)"]
+pi, cursor = [], 0
+for k in park:
+    j = sw.find(k, cursor); pi.append(j); cursor = j + 1 if j >= 0 else cursor
+if -1 in pi or "var next: GameArea = _parked_areas.get(scene.resource_path)" not in sw or "var restored: bool = next != null" not in sw:
+    err(f"{MAIN_GD}: _swap_area() reuses a parked area, captures the old area's plots, parks it if its data keeps it alive (else frees it), "
+        f"adds the next, re-registers a restored area's plots (attaches only a fresh one), applies bounds and distance, snaps, reports")
+ka = code_only(func_body(main_src, "_keeps_alive") or "")
+if not re.search(r"var definition := AreaRouter\.get_definition\(left\.area_id\)\s*return definition != null and definition\.keep_alive_when_left", ka):
+    err(f"{MAIN_GD}: whether a left area is parked comes only from its AreaDefinition (keep_alive_when_left)")
+rr = code_only(func_body(main_src, "_reregister_plots") or "")
+if not re.search(r'for node in restored_area\.find_children\("\*", "Area3D", true, false\):\s*var plot := node as FarmPlot\s*if plot != null:\s*FarmManager\.register_plot\(plot\)', rr):
+    err(f"{MAIN_GD}: a restored area's plots are re-registered through FarmManager.register_plot() (the M03.3 restore path), never restored by Main")
+parked_writers = sorted({fn for fn in re.findall(r"^func (\w+)\(", main_src, re.M) if re.search(r"_parked_areas(\[|\.erase|\.clear)", code_only(func_body(main_src, fn) or ""))})
+if parked_writers != ["_exit_tree", "_swap_area"] or "parked.free()" not in code_only(func_body(main_src, "_exit_tree") or ""):
+    err(f"{MAIN_GD}: parked areas are written only by _swap_area() and freed on exit (found {parked_writers})")
+for f, s2 in scripts.items():
+    if f != MAIN_GD and re.search(r"\b(remove_child|add_child)\((old|area|next|meadow)\b|_parked_areas", code_only(s2)):
+        err(f"{f}: parks, restores or swaps an area — only Main does (D-33)")
+# FarmPlot.restore() works in place on a live (parked) plot: the old crop visual is replaced, never doubled.
+rst = code_only(func_body(scripts.get(FP, ""), "restore") or "")
+if not re.search(r"func restore\(data: Dictionary, crop: CropDefinition\) -> CropDefinition:\s*if is_instance_valid\(_crop_visual\):\s*crop_root\.remove_child\(_crop_visual\)\s*_crop_visual\.queue_free\(\)\s*_crop_visual = null\s*_recent_crop_ids\.clear\(\)", rst):
+    err(f"{FP}: restore() first drops a crop visual the plot already shows (a parked plot restored in place, M08.1)")
+# The fade: a CanvasLayer under Main, above the HUD, taking touches only while it covers.
+main_children = [a["name"].strip('"') for k, a, b in load_scene_info(MAIN_SCENE)[1] if k == "node" and a.get("parent", "").strip('"') == "."]
+if main_children != ["Meadow", "Player", "FollowCamera", "HUD", "TransitionFade"] or scene_root_script_of(FADE_SCENE) != FADE_GD:
+    err(f"{MAIN_SCENE}: Main's children are the area, Player, FollowCamera, HUD and TransitionFade, in that order (found {main_children})")
+if not re.search(r"^extends CanvasLayer\s*\nclass_name TransitionFade", fd_src, re.M) or (const_val(fd_src, "LAYER") or 0) <= 1 or "layer = LAYER" not in fd_src \
+   or not re.search(r"func cover\(\) -> void:\s*_veil\.visible = true\s*_veil\.mouse_filter = Control\.MOUSE_FILTER_STOP\s*await _fade_to\(1\.0, COVER_SECONDS\)", fd_src) \
+   or not re.search(r"func reveal\(\) -> void:\s*_veil\.mouse_filter = Control\.MOUSE_FILTER_IGNORE\s*await _fade_to\(0\.0, REVEAL_SECONDS\)\s*_veil\.visible = false", fd_src) \
+   or "_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE" not in (func_body(fd_src, "_ready") or ""):
+    err(f"{FADE_GD}: the fade sits above the HUD, takes every touch from the start of cover() until reveal() and none while clear")
+fsc = open(FADE_SCENE, encoding="utf-8").read() if os.path.exists(FADE_SCENE) else ""
+if not re.search(r'\[node name="Veil" type="ColorRect" parent="\."\]\nvisible = false\n(?:[^\[]*\n)?anchor_right = 1\.0\nanchor_bottom = 1\.0\n(?:[^\[]*\n)?mouse_filter = 2\n', fsc):
+    err(f"{FADE_SCENE}: one full-screen Veil ColorRect, hidden and ignoring the mouse until a trip")
+notes.append(f"area transitions (M08.1): areas {sorted(area_defs)} from data/areas; doors {len(doors)} (ENTER/EXIT, tap only); "
+             f"entries {area_entries}; Meadow parked while left; AreaRouter never saved")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
