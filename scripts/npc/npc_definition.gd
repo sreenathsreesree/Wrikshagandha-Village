@@ -11,5 +11,9 @@ class_name NpcDefinition
 ## What it says when the player talks to it (M08.4: a short sequence of
 ## lines, res://data/dialogues/).
 @export var dialogue: DialogueDefinition
-## How far (m) it may wander from where it was placed.
+## How far (m) it may wander from where it was placed (from its current
+## routine spot, M09.1).
 @export var wander_radius: float = 2.0
+## Its daily routine (M09.1, D-41): time-of-day phase -> the spot_id of an
+## NpcRoutineSpot in its area. Empty = it stays where it was placed.
+@export var routine: Dictionary = {}

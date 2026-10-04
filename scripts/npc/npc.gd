@@ -6,9 +6,17 @@ class_name Npc
 ## (its NavigationAgent3D on the same map the player walks), and stops to
 ## face the player once they come close. Who it is and what it says come
 ## from its NpcDefinition (res://data/npcs/); the talking itself is its
-## NpcTalk child, an ordinary Interactable. No schedule, no saved state:
-## it starts where it is placed, every launch. A parked area (the Meadow
-## while the player is indoors) simply stops processing it.
+## NpcTalk child, an ordinary Interactable. No saved state. A parked area
+## (the Meadow while the player is indoors) simply stops processing it.
+##
+## Its routine (M09.1, D-41): the definition maps each time-of-day phase to
+## an NpcRoutineSpot in its area; its home is the current phase's spot. It
+## hears the area's TimeOfDay (time_updated) and reads the phase from the
+## clock's fraction itself — never the clock's cached phase, which misses a
+## boundary right after the fraction is set (a restored time) — on the
+## first phase it knows it stands at that spot, on every later change it
+## walks there, then wanders around it as before. Talking always wins: while the player is
+## near or has tapped it, it holds still and walks on afterwards.
 
 @export var definition: NpcDefinition
 
@@ -50,6 +58,9 @@ var _player: Node3D
 ## The side a step aside committed to (zero when not yielding): kept until
 ## the player is no longer close, so it never dithers across their line.
 var _yield_side: Vector3 = Vector3.ZERO
+var _time_of_day: TimeOfDay
+## The routine spot it is on (its home), "" until the first phase is known.
+var _spot_id: String = ""
 
 func _ready() -> void:
 	_home = global_position
@@ -58,6 +69,8 @@ func _ready() -> void:
 	_facing_angle = visual.rotation.y
 
 func _physics_process(delta: float) -> void:
+	if _time_of_day == null:
+		_follow_time_of_day()
 	var direction := Vector3.ZERO
 	var player := _find_player()
 	if player != null and (talk.is_tap_selected() or _flat_distance(player.global_position) <= NOTICE_DISTANCE):
@@ -113,6 +126,8 @@ func _yield_direction(player: Node3D) -> Vector3:
 
 func _step_allowed(step: Vector3) -> bool:
 	var leash := (definition.wander_radius if definition else 0.0) + YIELD_LEASH
+	if _is_travelling():
+		return _clear_of_doors(step)  # on its way to a routine spot: no leash
 	return Vector2(step.x - _home.x, step.z - _home.z).length() <= leash and _clear_of_doors(step)
 
 func is_noticing_player() -> bool:
@@ -120,10 +135,15 @@ func is_noticing_player() -> bool:
 	return player != null and (talk.is_tap_selected() or _flat_distance(player.global_position) <= NOTICE_DISTANCE)
 
 ## A walkable point within its wander radius of home (on the mesh, clear of
-## doors and entries); stays idle a while longer if none is found.
+## doors and entries); stays idle a while longer if none is found. Away
+## from home (its routine spot changed), it walks back to home first.
 func _start_wander() -> void:
 	var radius := definition.wander_radius if definition else 0.0
 	var map := get_world_3d().navigation_map
+	if _is_travelling():
+		nav_agent.target_position = NavigationServer3D.map_get_closest_point(map, _home)
+		_wandering = true
+		return
 	for attempt in 6:
 		var angle := _rng.randf_range(0.0, TAU)
 		var candidate := _home + Vector3(cos(angle), 0.0, sin(angle)) * _rng.randf_range(0.4, radius)
@@ -141,6 +161,62 @@ func _clear_of_doors(point: Vector3) -> bool:
 		if Vector2((node as Node3D).global_position.x - point.x, (node as Node3D).global_position.z - point.z).length() < DOOR_CLEARANCE:
 			return false
 	return true
+
+## Further from home than it may wander: on its way to a routine spot.
+func _is_travelling() -> bool:
+	var radius := definition.wander_radius if definition else 0.0
+	return _flat_distance(_home) > radius
+
+## Finds its area's day clock (once the navigation mesh is usable) and
+## follows its phases. The first phase is read from the clock's own
+## fraction (correct even before the clock's first tick, or after a
+## restored time), and places it at that spot.
+func _follow_time_of_day() -> void:
+	var clock := get_tree().get_first_node_in_group(WorldSimulation.TIME_GROUP) as TimeOfDay
+	if clock == null or not _navigation_ready():
+		return  # try again next frame
+	_time_of_day = clock
+	_time_of_day.time_updated.connect(_on_time_updated)
+	_apply_phase(_time_of_day.get_phase_for_fraction(_time_of_day.day_fraction), true)
+
+## The area's navigation mesh is usable once its closest point to where the
+## NPC stands (always walkable ground) is right there — it is baked when the
+## area loads, a few frames in; before that the map answers the origin.
+func _navigation_ready() -> bool:
+	var map := get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return false
+	return _flat_distance(NavigationServer3D.map_get_closest_point(map, global_position)) <= 1.0
+
+func _on_time_updated(day_fraction: float) -> void:
+	_apply_phase(_time_of_day.get_phase_for_fraction(day_fraction), false)
+
+## The phase's routine spot becomes home: placed there (the first phase) or
+## walked to (any later one, once it is free to move). No routine, or a
+## spot that isn't in its area, keeps the home it has.
+func _apply_phase(phase: String, place: bool) -> void:
+	if definition == null or definition.routine.is_empty():
+		return
+	var spot_id: String = definition.routine.get(phase, "")
+	var spot := _find_spot(spot_id)
+	if spot == null:
+		push_warning("Npc: no routine spot '%s' for phase '%s'; staying" % [spot_id, phase])
+		return
+	if spot_id == _spot_id:
+		return
+	_spot_id = spot_id
+	_home = spot.global_position
+	_wandering = false
+	_idle_left = 0.0
+	if place:
+		global_position = NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, _home)
+
+func _find_spot(spot_id: String) -> NpcRoutineSpot:
+	for node in get_tree().get_nodes_in_group(NpcRoutineSpot.GROUP):
+		var spot := node as NpcRoutineSpot
+		if spot != null and spot.spot_id == spot_id:
+			return spot
+	return null
 
 func _turn_toward(direction: Vector3, delta: float) -> void:
 	direction.y = 0.0

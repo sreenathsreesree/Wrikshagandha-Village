@@ -10,6 +10,10 @@ class_name WorldSimulation
 ## removed without touching the others. configure() is called once by the
 ## owning world scene (e.g. meadow.gd) after everything else is ready.
 
+## The area's day clock joins this group so things living in the same area
+## (an NPC's routine, M09.1) can find it without a path into this scene.
+const TIME_GROUP := &"time_of_day"
+
 @onready var time_of_day: TimeOfDay = $TimeOfDay
 @onready var environment_controller: EnvironmentController = $Environment
 @onready var vegetation_controller: VegetationController = $Vegetation
@@ -17,6 +21,9 @@ class_name WorldSimulation
 @onready var ambient_controller: AmbientController = $Ambient
 @onready var environmental_event_controller: EnvironmentalEventController = $EnvironmentalEvents
 @onready var exploration_landmark_controller: ExplorationLandmarkController = $ExplorationLandmarks
+
+func _ready() -> void:
+	time_of_day.add_to_group(TIME_GROUP)
 
 func configure(player: Node3D, directional_light: DirectionalLight3D, world_environment: WorldEnvironment) -> void:
 	environment_controller.directional_light = directional_light

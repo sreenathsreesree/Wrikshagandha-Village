@@ -2806,7 +2806,8 @@ notes.append(f"home interior (M08.2): furniture {sorted(n for n, _ in furniture)
 NPC_DEF_GD, NPC_GD, NPC_TALK_GD, NPC_SCENE = "scripts/npc/npc_definition.gd", "scripts/npc/npc.gd", "scripts/npc/npc_talk.gd", "scenes/npc/Npc.tscn"
 SPEECH_GD, SPEECH_SCENE = "scripts/ui/speech_panel.gd", "scenes/ui/SpeechPanel.tscn"
 # (M08.4 deliberately replaced the single greeting with a DialogueDefinition — a short sequence of lines.)
-NPC_DEF_FIELDS = [("id", "String"), ("display_name", "String"), ("dialogue", "DialogueDefinition"), ("wander_radius", "float")]
+# (M09.1 deliberately added the routine — phase -> routine spot id; checked in "NPC routine (M09.1)".)
+NPC_DEF_FIELDS = [("id", "String"), ("display_name", "String"), ("dialogue", "DialogueDefinition"), ("wander_radius", "float"), ("routine", "Dictionary")]
 nd_src, np_src, nt_src, sp2_src = (scripts.get(f, "") for f in (NPC_DEF_GD, NPC_GD, NPC_TALK_GD, SPEECH_GD))
 if not re.search(r"^extends Resource\s*\nclass_name NpcDefinition", nd_src, re.M) or re.search(r"^func ", nd_src, re.M) \
    or re.findall(r"^@export(?:_multiline)? var (\w+): (\w+)", nd_src, re.M) != NPC_DEF_FIELDS:
@@ -3288,6 +3289,71 @@ if "Market.items_traded.connect(_save.unbind(3))" not in code_only(func_body(scr
 if const_val(sm7, "SAVE_VERSION") != 7 or re.search(r'"services"', sm7):
     err("scripts/autoload/save_manager.gd: services save nothing — no section, SAVE_VERSION stays 7 (D-40)")
 notes.append(f"services (M08.7): {len(sv_files)} service(s) {[os.path.basename(p)[:-5] for p in sv_files]}; unlocked by a request; pitch / trade (Sell) → Market.trade(); stateless, save v7")
+
+# ------------------------------------------------------------ NPC routine (M09.1, D-41)
+# An NPC follows its area's day: its NpcDefinition's routine maps every time-of-day phase to the spot_id of an
+# NpcRoutineSpot (a data-only marker in its area); its home is the current phase's spot. It hears the area's
+# TimeOfDay through time_updated and reads the phase from the fraction itself (found in WorldSimulation.TIME_GROUP;
+# time_of_day.gd stays pinned — its cached phase can miss a boundary right after the fraction is set): the first
+# phase places it at the spot, every later change makes it walk there — talking always wins (the hold rule is
+# unchanged). No saved state, no system time, no new autoload; Player and InputManager know nothing of it.
+RSP_GD = "scripts/npc/npc_routine_spot.gd"
+rsp_src = scripts.get(RSP_GD, "")
+if not re.search(r"^extends Marker3D\s*\nclass_name NpcRoutineSpot", rsp_src, re.M) or 'const GROUP := &"npc_routine_spot"' not in rsp_src \
+   or re.findall(r"^@export var (\w+)", rsp_src, re.M) != ["spot_id"] \
+   or [f for f in re.findall(r"^func (\w+)\(", rsp_src, re.M)] != ["_enter_tree"] or "add_to_group(GROUP)" not in (func_body(rsp_src, "_enter_tree") or ""):
+    err(f"{RSP_GD}: NpcRoutineSpot is a Marker3D with a spot_id that joins the npc_routine_spot group — data only")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f in (RSP_GD, NPC_GD): continue
+    if re.search(r"\bNpcRoutineSpot\b|npc_routine_spot|\bspot_id\b", code_only(s2)):
+        err(f"{f}: reads routine spots — only the NPC does (D-41)")
+PHASES = re.findall(r'"(\w+)"', (re.search(r"^const PHASE_ORDER := \[(.*)\]", scripts.get("scripts/world_simulation/time_of_day.gd", ""), re.M) or re.search("()", "")).group(1))
+mtxt = open(MEADOW_SCENE, encoding="utf-8").read() if os.path.exists(MEADOW_SCENE) else ""
+spot_nodes = re.findall(r'^\[node name="(\w+)" type="Marker3D" parent="NpcRoutine"\]\nposition = Vector3\(([-\d.]+), ([-\d.]+), ([-\d.]+)\)\nscript = ExtResource\("routine_spot"\)\nspot_id = "(\w+)"\n', mtxt, re.M)
+spot_ids = [sid for *_, sid in spot_nodes]
+if not re.search(r'^\[ext_resource type="Script" path="res://scripts/npc/npc_routine_spot\.gd" id="routine_spot"\]$', mtxt, re.M) \
+   or not re.search(r'^\[node name="NpcRoutine" type="Node3D" parent="\."\]\n\n', mtxt, re.M) \
+   or len(spot_ids) != len(set(spot_ids)) or not all(re.fullmatch(r"[a-z][a-z0-9_]*", i) for i in spot_ids) \
+   or len(re.findall(r'parent="NpcRoutine', mtxt)) != len(spot_nodes):
+    err(f"{MEADOW_SCENE}: the routine spots are data-only NpcRoutineSpot markers under one NpcRoutine node, with unique lower_snake ids")
+npc_spot = re.search(r'^\[node name="NpcSpot" parent="VerticalSlice" instance=ExtResource\("42"\)\]\nposition = Vector3\(([-\d.]+), ([-\d.]+), ([-\d.]+)\)', mtxt, re.M)
+homes = {sid: (float(x), float(z)) for _, x, _, z, sid in spot_nodes}
+for path in sorted(glob.glob("data/npcs/*.tres")):
+    txt = open(path, encoding="utf-8").read()
+    rb = re.search(r"^routine = \{(.*?)\}$", txt, re.M | re.S)
+    routine = dict(re.findall(r'"(\w+)": "(\w+)"', rb.group(1))) if rb else {}
+    if sorted(routine) != sorted(PHASES) or not set(routine.values()) <= set(spot_ids):
+        err(f"{path}: the routine names every time-of-day phase {PHASES} once, each with a routine spot in the Meadow (found {routine})")
+    if os.path.basename(path) == "villager.tres" and (routine.get("morning") != routine.get("afternoon") or len({routine.get(p) for p in ("dawn", "evening", "night")}) != 1
+                                                     or routine.get("morning") == routine.get("night") or not npc_spot
+                                                     or homes.get(routine.get("night")) != (float(npc_spot.group(1)), float(npc_spot.group(3)))):
+        err(f"{path}: the villager's routine is two spots — morning/afternoon by the pond path, dawn/evening/night at home, its existing NpcSpot (D-41)")
+ws_src = scripts.get("scripts/world_simulation/world_simulation.gd", "")
+if 'const TIME_GROUP := &"time_of_day"' not in ws_src or not re.search(r"func _ready\(\) -> void:\s*time_of_day\.add_to_group\(TIME_GROUP\)", ws_src):
+    err("scripts/world_simulation/world_simulation.gd: the area's TimeOfDay joins WorldSimulation.TIME_GROUP (time_of_day.gd itself stays pinned)")
+pp9, ft9, ap9, sw9, sa9 = (npc_fn.get(k, "") for k in ("_physics_process", "_follow_time_of_day", "_apply_phase", "_start_wander", "_step_allowed"))
+if not re.search(r"if _time_of_day == null:\s*_follow_time_of_day\(\)", pp9) or "get_phase(" in pp9 + sw9 + sa9 \
+   or not re.search(r"var clock := get_tree\(\)\.get_first_node_in_group\(WorldSimulation\.TIME_GROUP\) as TimeOfDay\s*if clock == null or not _navigation_ready\(\):\s*return", ft9) \
+   or not re.search(r"if NavigationServer3D\.map_get_iteration_id\(map\) == 0:\s*return false\s*return _flat_distance\(NavigationServer3D\.map_get_closest_point\(map, global_position\)\) <= 1\.0", npc_fn.get("_navigation_ready", "")) \
+   or "_time_of_day.time_updated.connect(_on_time_updated)" not in ft9 \
+   or "_apply_phase(_time_of_day.get_phase_for_fraction(_time_of_day.day_fraction), true)" not in ft9 or "phase_changed" in code_only(np_src) \
+   or not re.search(r"func _on_time_updated\(day_fraction: float\) -> void:\s*_apply_phase\(_time_of_day\.get_phase_for_fraction\(day_fraction\), false\)\s*$", npc_fn.get("_on_time_updated", "")):
+    err(f"{NPC_GD}: the NPC follows its area's TimeOfDay by time_updated, reading the phase from the fraction (never the clock's cached phase, which misses a boundary after a restored time), once the navigation map is ready")
+if not re.search(r'var spot_id: String = definition\.routine\.get\(phase, ""\)\s*var spot := _find_spot\(spot_id\)\s*if spot == null:\s*push_warning\(.*?\)\n\s*return\s*'
+                 r"if spot_id == _spot_id:\s*return\s*_spot_id = spot_id\s*_home = spot\.global_position\s*_wandering = false\s*_idle_left = 0\.0\s*"
+                 r"if place:\s*global_position = NavigationServer3D\.map_get_closest_point\(get_world_3d\(\)\.navigation_map, _home\)", ap9) \
+   or "definition.routine.is_empty()" not in ap9 or "talk." in ap9 or "_turn_toward" in ap9:
+    err(f"{NPC_GD}: a phase's routine spot becomes home — placed there for the first phase, walked to on any later one; a missing spot keeps the home it has")
+if not re.search(r"if _is_travelling\(\):\s*nav_agent\.target_position = NavigationServer3D\.map_get_closest_point\(map, _home\)\s*_wandering = true\s*return", sw9) \
+   or not re.search(r"if _is_travelling\(\):\s*return _clear_of_doors\(step\)", sa9) \
+   or not re.search(r"var radius := definition\.wander_radius if definition else 0\.0\s*return _flat_distance\(_home\) > radius", npc_fn.get("_is_travelling", "")):
+    err(f"{NPC_GD}: away from its routine spot it walks home first, and a step aside on the way keeps clear of doors without the home leash")
+if re.search(r"Time\.get_|OS\.get_|SaveManager|WorldClock|\.day_fraction\s*=[^=]|day_length_seconds", code_only(np_src)):
+    err(f"{NPC_GD}: the routine reads the area's day clock only — no system time, no saving, never setting the clock")
+for f in ("scripts/player/player.gd", "scripts/autoload/input_manager.gd", NPC_TALK_GD, SPEECH_GD, "scripts/ui/hud.gd"):
+    if re.search(r"\broutine\b|TimeOfDay|TIME_GROUP|phase_changed", code_only(scripts.get(f, ""))):
+        err(f"{f}: knows about NPC routines or the day clock — only the NPC follows its routine (D-41)")
+notes.append(f"NPC routine (M09.1): phases {PHASES}; spots {spot_ids}; first phase placed, later phases walked; event-driven, nothing saved")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

@@ -9,3 +9,10 @@ id = "villager"
 display_name = "Villager"
 dialogue = ExtResource("2")
 wander_radius = 2.0
+routine = {
+"afternoon": "villager_pond",
+"dawn": "villager_home",
+"evening": "villager_home",
+"morning": "villager_pond",
+"night": "villager_home"
+}

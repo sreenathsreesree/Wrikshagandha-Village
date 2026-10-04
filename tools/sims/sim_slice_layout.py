@@ -72,7 +72,7 @@ SOLID_R = {"TreeRound.tscn": 1.5, "TreeTall.tscn": 1.2, "TreeWide.tscn": 1.8, "R
 SOFT_R = {"GrassClump.tscn": 0.4, "GlowingMotes.tscn": 0.5, "Footprints.tscn": 0.5, "DriftingLeaf.tscn": 0.3, "Butterfly.tscn": 0.3}
 MOVING = ("Wildlife", "Ambient", "EnvironmentalEvents", "WorldSimulation")   # actors that move or carry no footprint
 SLICE = "VerticalSlice"
-ADDED = (SLICE, "WorldRim")                                                       # M07.2 slice, M07.3 rim: outside the existing-world digest
+ADDED = (SLICE, "WorldRim", "NpcRoutine")                                         # M07.2 slice, M07.3 rim, M09.1 routine spots: outside the existing-world digest
 def in_slice(par, name): return any(par == r or par.startswith(r + "/") or (par == "." and name == r) for r in ADDED)
 NODES, OBJECTS, PATCHES, GEOM, BASE_GEOM, PLACED = {}, [], [], [], [], []
 for m in re.finditer(r'^\[node name="([^"]+)"([^\]]*)\]\n(.*?)(?=^\[|\Z)', SCENE, re.M | re.S):
@@ -124,6 +124,7 @@ for line in BLOCK[0].splitlines():
     elif k == "existing": plan["existing"][a[0]] = (float(a[1]), float(a[2]))
     elif k in ("house",): plan[k] = tuple(float(v) for v in a)
     elif k in ("door", "npc", "trailhead"): plan[k] = (float(a[0]), float(a[1]))
+    elif k == "routine_spot": plan.setdefault("routine", {})[a[0]] = (float(a[1]), float(a[2]))   # M09.1
     elif k == "forest": plan["forest"][a[0]] = tuple(float(v) for v in a[1:])
     elif k == "path": plan["path"][a[0]] = [tuple(float(c) for c in p.split(",")) for p in a[1:]]
     else: raise AssertionError(f"unknown layout line: {k}")
@@ -264,6 +265,19 @@ under_spot = [(n, a, b) for n, (par, a, b, _) in placed.items() if par == "Verti
 assert [n for n, _, _ in under_spot] == ["Villager"] and inst_of(under_spot[0][1]) == "Npc.tscn" \
     and not re.search(r"^(position|rotation|rotation_degrees|scale|transform) = ", under_spot[0][2], re.M), \
     f"the villager is the NPC spot's only child, at the spot itself ({[n for n, _, _ in under_spot]})"
+# M09.1 (D-41): the NPC's routine spots — data-only markers under NpcRoutine, exactly as planned; the home spot is
+# the NPC spot itself; every spot keeps the NPC spot's clearance from solid objects, spawns, zones and decoration
+spots = {re.search(r'spot_id = "(\w+)"', b).group(1): vec(pr, "position")[0::2] for n, (par, a, b, pr) in placed.items()
+         if par == "NpcRoutine" and 'script = ExtResource("routine_spot")' in b}
+assert [n for n, (par, *_) in placed.items() if par == "NpcRoutine"] == ["VillagerHome", "VillagerPond"] and spots == plan.get("routine"), \
+    f"the routine spots are exactly the planned ones ({spots} vs {plan.get('routine')})"
+assert spots["villager_home"] == plan["npc"], "the home routine spot is the NPC spot itself"
+for sid, (sx, sz) in spots.items():
+    assert inside(sx, sz), f"routine spot {sid} lies inside the bounds"
+    for n, x, z, r, k in OBJECTS:
+        ms = math.hypot(x - sx, z - sz) - 0.5 - r - NEED[k]
+        assert ms >= 0, f"routine spot {sid} is too close to {n} ({k}, short by {-ms:.2f} m)"
+        clear.setdefault(sid, []).append(ms)
 ntxt, nnodes = scene_nodes("scenes/world/props/NpcSpotPlaceholder.tscn")
 assert nnodes[0][1] == "Marker3D" and not re.search(r"Body3D|CollisionShape3D|Area3D|script = ", ntxt), "the NPC spot is a marker only — no collider, no behaviour"
 # the forest edge
@@ -371,4 +385,5 @@ print(f"placement: house {w:g}×{d:g} m StaticBody3D on the footprint, door mark
       f"path patches {n_patches} cover both paths end to end")
 print(f"navigation and bounds: rim walls on the ±{HALF_X:g} edges (1.6 m); house carve = footprint; pond core {core_r:g} m in {water_r:g} m water "
       f"(shallow edge {water_r - core_r - AGENT_R:.2f} m), in-pond discoveries within reach {reach} (≤ {REACH - 0.3:.1f} m)")
+print(f"routine spots (M09.1): {spots}; home = the NPC spot; clearance {', '.join(f'{k} {min(clear[k]):.2f} m' for k in spots)}")
 print("ALL SLICE LAYOUT SIMULATIONS PASSED")
