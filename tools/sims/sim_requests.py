@@ -29,6 +29,8 @@ for rule in ("if not _definitions.has(request_id) or _states.has(request_id):\n\
              'push_warning("Requests: saved state for \'%s\' is malformed; counts as completed" % request_id)', "item.quality_levels != 1"):
     assert rule in RQ, f"requests.gd rule: {rule!r}"
 assert "if _panel.get_speaker() == self and _panel.visible:\n\t\treturn true\n\tvar npc := get_parent() as Npc\n\tvar request := Requests.conversation_for(" in NT, "the choice is locked"
+assert 0 <= NT.find("Requests.conversation_for(") < NT.find("Services.conversation_for(") and NT.find("if not request.is_empty():") < NT.find("Services.conversation_for("), \
+    "an unfinished request comes before the service (M08.7)"
 assert "if not completed:\n\t\treturn\n\tif step == Requests.STEP_OFFER:\n\t\tRequests.accept(request_id)\n\telif step == Requests.STEP_HANDOVER:\n\t\tRequests.complete(request_id)" in NT
 assert 'const GIVE_TEXT := "Give"' in NT and "_end_text = end_text" in SP and "next_button.text = _end_text if _index >= _lines.size() - 1 else NEXT_TEXT" in SP
 SAVE_VERSION = int(re.search(r"^const SAVE_VERSION := (\d+)", SM, re.M).group(1))

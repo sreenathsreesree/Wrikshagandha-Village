@@ -89,7 +89,7 @@ MARKET_PY = "\n".join(translate(fn) for fn in ("_unit_coins", "get_unit_price", 
 READY = _code(MK["_ready"])
 assert re.findall(r"load\((\w+)\)", READY) == ["SELL_RULES_PATH"] and 'const SELL_RULES_PATH := "res://data/market/sell_rules.tres"' in _src("scripts", "autoload", "market.gd") \
     and not re.search(r"[Ee]conomy|redemption|points|POINT|res://", READY), "the Market takes its percents from the one sell rules file only"
-assert "_quality_percents = rules.quality_percents.duplicate()" in READY and set(MK) == {"_ready", "_unit_coins", "get_unit_price", "sell"}
+assert "_quality_percents = rules.quality_percents.duplicate()" in READY and set(MK) == {"_ready", "_unit_coins", "get_unit_price", "sell", "trade"}  # trade: M08.7 (D-40), sim_services
 
 class Item:
     def __init__(i, item_id): d = ITEMS[item_id]; i.id, i.category, i.quality_levels, i.sell_value = item_id, d["category"], d["levels"], d["sell_value"]

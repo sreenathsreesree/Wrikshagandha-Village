@@ -942,7 +942,7 @@ if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D"
 # M06.2 (D-25) added Market (selling produce), after Inventory and Wallet, before GameState (which saves on a sale).
 # M08.1 (D-34) added AreaRouter (travel requests between areas, the current area id; never saved), last.
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "Requests", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
+             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "Requests", "Services", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
              "AreaRouter"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
@@ -966,13 +966,14 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           #  SaveManager by M05.1: the wallet section, save v4; by M05.2: the exploration section, save v5.)
           # (GameState re-pinned deliberately by M06.2: it also saves after a sale, Market.produce_sold;
           #  by M08.5: it also saves when an NPC's friendship rises, Relationships.friendship_changed;
-          #  and by M08.6: it also saves when a request is accepted or completed.)
+          #  by M08.6: it also saves when a request is accepted or completed;
+          #  and by M08.7: it also saves after an NPC trade, Market.items_traded.)
           # (SaveManager re-pinned deliberately by M08.5: the relationships section, save v6 — D-17, D-38;
           #  and by M08.6: the requests section, save v7 — D-17, D-39.)
           # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
           #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
           "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
-          "scripts/autoload/save_manager.gd": "7eaa7cb4b5b99d26", "scripts/autoload/game_state.gd": "a8d937cfd35b6981",
+          "scripts/autoload/save_manager.gd": "7eaa7cb4b5b99d26", "scripts/autoload/game_state.gd": "6c25394b3d7a4368",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
           #  farm_manager.gd by M05.3: milestone bonuses from reward data;
@@ -1732,8 +1733,8 @@ for f, s2 in scripts.items():
     if re.search(r"\bWallet\.debit\(", code):
         err(f"{f}: spends coins — M06.2 is earn-only (D-25): no coin sink exists")
     credits = [fn for fn in re.findall(r"^func (\w+)\(", s2, re.M) if re.search(r"\bWallet\.credit\(", code_only(func_body(s2, fn) or ""))]
-    if re.search(r"\bWallet\.credit\(", code) and (f != "scripts/autoload/market.gd" or credits != ["sell"] or code.count("Wallet.credit(") != 1):
-        err(f"{f}: credits coins — the one coin source is selling produce: Market.sell() is the only caller of Wallet.credit() (D-25; points and coins independent, D-24)")
+    if re.search(r"\bWallet\.credit\(", code) and (f != "scripts/autoload/market.gd" or credits != ["sell", "trade"] or code.count("Wallet.credit(") != 2):
+        err(f"{f}: credits coins — the coin sources are selling produce and NPC trades, both in the Market: Market.sell() and Market.trade() are the only callers of Wallet.credit(), once each (D-25 as amended by D-40; points and coins independent, D-24)")
     if re.search(r"\bWallet\.(_\w+)|\bWallet\.(get_save_data|apply_save_data)\(", code) and f != "scripts/autoload/save_manager.gd":
         err(f"{f}: reaches into the Wallet — only SaveManager saves/loads it; others read get_balance()/can_afford()/get_ledger()")
     if f != WL and "balance_changed.emit" in code:
@@ -2056,10 +2057,11 @@ mk_code = code_only(mk_src)
 mkf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", mk_src, re.M | re.S)}
 def body_lines(fn): return [l.strip() for l in mkf.get(fn, "").splitlines()[1:] if l.strip()]
 if not mk_src.startswith("extends Node\n") or re.search(r"^class_name", mk_src, re.M) \
-   or list(mkf) != ["_ready", "get_unit_price", "sell", "_unit_coins"] or re.findall(r"^var (\w+)", mk_code, re.M) != ["_quality_percents"] \
-   or re.findall(r"^signal .*$", mk_src, re.M) != ["signal produce_sold(item_id: String, quality: int, quantity: int, coins: int)"] \
+   or list(mkf) != ["_ready", "get_unit_price", "sell", "_unit_coins", "trade"] or re.findall(r"^var (\w+)", mk_code, re.M) != ["_quality_percents"] \
+   or re.findall(r"^signal .*$", mk_src, re.M) != ["signal produce_sold(item_id: String, quality: int, quantity: int, coins: int)",
+                                                   "signal items_traded(item_id: String, quantity: int, coins: int)"] \
    or re.findall(r"^const (\w+) := (.+)$", mk_code, re.M) != [("SELL_RULES_PATH", '"res://data/market/sell_rules.tres"')]:
-    err(f"{MK}: the Market is a plain autoload Node — _ready/get_unit_price/sell/_unit_coins, the rules' percents, one produce_sold signal")
+    err(f"{MK}: the Market is a plain autoload Node — _ready/get_unit_price/sell/_unit_coins and (M08.7) trade, the rules' percents, the produce_sold and items_traded signals")
 if re.search(r"\bPointsManager\b|\bpoints?\b|points_value|QUALITY_POINT_SCALE|add_points|EconomyConfig|economy_config|SaveManager|save_game"
              r"|FarmManager|DiscoveryManager|ExplorationManager|DailyDiscoveryManager|RewardRules?|_process|Timer|create_timer", mk_code):
     err(f"{MK}: the Market prices from item data and the sell rules only — never points, the farm's points scale, the redemption reference, saving or other systems")
@@ -2091,8 +2093,17 @@ SELL_BODY = ["var item := Inventory.get_definition(item_id)",
 if body_lines("sell") != SELL_BODY or not mkf.get("sell", "").startswith("func sell(item_id: String, quality: int, quantity: int) -> int:"):
     err(f"{MK}: sell() validates (item, produce, sell_value, quality, quantity, held), prices, removes, credits once as "
         f"\"sell:<item_id>:<quality>\", restores the exact items if the credit is refused, then announces — in that order")
-if len(re.findall(r"\bInventory\.(add|remove)\(", mk_code)) != 2 or mk_code.count("produce_sold.emit(") != 1:
-    err(f"{MK}: the Market changes items only in sell() (one removal, one restore) and announces each sale once")
+TRADE_BODY = ["var item := Inventory.get_definition(item_id)", "if item == null:", "return 0", 'if item.category != "collectible":', "return 0",
+              "if item.quality_levels != 1:", "return 0", "if quantity < 1 or coins < 1:", "return 0",
+              "if not Inventory.has(item_id, quantity, 0):", "return 0", "if not Inventory.remove(item_id, quantity, 0):", "return 0",
+              'if not Wallet.credit(coins, "trade:%s" % service_id):', "Inventory.add(item_id, quantity, 0)", "return 0",
+              "items_traded.emit(item_id, quantity, coins)", "return coins"]
+if body_lines("trade") != TRADE_BODY or not mkf.get("trade", "").startswith("func trade(item_id: String, quantity: int, coins: int, service_id: String) -> int:"):
+    err(f"{MK}: trade() (M08.7, D-40) validates (item, collectible, single quality, quantity, coins, held), removes, credits once as "
+        f"\"trade:<service_id>\", restores the exact items if the credit is refused, then announces — in that order, never points")
+if [len(re.findall(r"\bInventory\.(add|remove)\(", mkf.get(fn, ""))) for fn in ("sell", "trade")] != [2, 2] or len(re.findall(r"\bInventory\.(add|remove)\(", mk_code)) != 4 \
+   or mk_code.count("produce_sold.emit(") != 1 or mk_code.count("items_traded.emit(") != 1 or "items_traded" in mkf.get("sell", "") or "produce_sold" in mkf.get("trade", ""):
+    err(f"{MK}: the Market changes items only in sell() and trade() (one removal, one restore each) and announces each sale and each trade once")
 sr_src = scripts.get(SR_GD, "")
 if not re.search(r"^extends Resource\s*\nclass_name SellRules", sr_src, re.M) \
    or re.findall(r"^@export var (\w+): (.+?) = (.+)$", sr_src, re.M) != [("quality_percents", "Array[int]", "[]")] \
@@ -3161,16 +3172,18 @@ ntq_f = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.
 it, oc6 = ntq_f.get("interact", ""), ntq_f.get("_on_conversation_ended", "")
 if 'const GIVE_TEXT := "Give"' not in ntq \
    or not re.search(r"if _panel\.get_speaker\(\) == self and _panel\.visible:\s*return true\s*var npc := get_parent\(\) as Npc\s*var request := Requests\.conversation_for\(npc\.definition\.id\)\s*"
-                    r'_request_id = request\.get\("request_id", ""\)\s*_request_step = request\.get\("step", ""\)\s*if request\.is_empty\(\):\s*'
-                    r"return _panel\.open\(self, npc\.definition\.display_name, npc\.definition\.dialogue\.lines\)\s*"
+                    r'_request_id = request\.get\("request_id", ""\)\s*_request_step = request\.get\("step", ""\)\s*_service_id = ""\s*_service_step = ""\s*if not request\.is_empty\(\):\s*'
                     r"var end_text := GIVE_TEXT if _request_step == Requests\.STEP_HANDOVER else SpeechPanel\.END_TEXT\s*"
-                    r"return _panel\.open\(self, npc\.definition\.display_name, request\.lines, end_text\)", it) \
+                    r"return _panel\.open\(self, npc\.definition\.display_name, request\.lines, end_text\)\s*"
+                    r"var service := Services\.conversation_for\(npc\.definition\.id\)", it) \
    or {fn for fn, b in ntq_f.items() if re.search(r"\b_request_(id|step)\s*=[^=]", b)} != {"interact", "_on_conversation_ended"} \
-   or not re.search(r'var request_id := _request_id\s*var step := _request_step\s*_request_id = ""\s*_request_step = ""\s*if not completed:\s*return\s*'
-                    r"if step == Requests\.STEP_OFFER:\s*Requests\.accept\(request_id\)\s*elif step == Requests\.STEP_HANDOVER:\s*Requests\.complete\(request_id\)\s*var npc", oc6) \
+   or not re.search(r'var request_id := _request_id\s*var step := _request_step\s*var service_id := _service_id\s*var service_step := _service_step\s*'
+                    r'_request_id = ""\s*_request_step = ""\s*_service_id = ""\s*_service_step = ""\s*if not completed:\s*return\s*'
+                    r"if step == Requests\.STEP_OFFER:\s*Requests\.accept\(request_id\)\s*elif step == Requests\.STEP_HANDOVER:\s*Requests\.complete\(request_id\)\s*"
+                    r"elif service_step == Services\.STEP_TRADE:\s*Services\.trade\(service_id\)\s*var npc", oc6) \
    or code_only(ntq).count("Requests.accept(") != 1 or code_only(ntq).count("Requests.complete(") != 1:
-    err("scripts/npc/npc_talk.gd: NpcTalk locks the chosen conversation while it is open (re-taps never choose again), gives the hand-over its \"Give\" label, "
-        "and only a completed offer accepts / a completed hand-over completes — an early end does neither")
+    err("scripts/npc/npc_talk.gd: NpcTalk locks the chosen conversation while it is open (re-taps never choose again), asks its request first (M08.7: then its service), "
+        "gives the hand-over its \"Give\" label, and only a completed offer accepts / a completed hand-over completes — an early end does neither")
 if 'notification.show_message("✓ Request Complete", "%s ×%d" % [item_name, quantity], "+%d Wriksha Points" % points)' not in code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_on_request_completed") or "") \
    or re.search(r"Requests\.(?!request_completed\.connect)", code_only(scripts.get("scripts/ui/hud.gd", ""))):
     err("scripts/ui/hud.gd: a completed request shows the usual card — \"✓ Request Complete\", the items given, the points — and the HUD reads nothing else of requests")
@@ -3184,6 +3197,97 @@ gs7 = code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_r
 if "Requests.request_accepted.connect(_save.unbind(1))" not in gs7 or "Requests.request_completed.connect(_save.unbind(4))" not in gs7:
     err("scripts/autoload/game_state.gd: an accepted and a completed request are saved at once (GameState)")
 notes.append(f"requests (M08.6): {len(rq_files)} request(s) {[os.path.basename(p)[:-5] for p in rq_files]}; offer → accept, hand-over → complete (checked, recorded, paid once); save v7")
+
+# ------------------------------------------------------------ services (M08.7, D-40)
+# One repeatable NPC service as data (ServiceDefinition, data/services/): a trade of a single-quality
+# collectible for coins, unlocked only once its request is completed. The Services autoload is stateless — it
+# reads the Inventory and Requests to choose the conversation (pitch below the quantity, trade at or above it;
+# the trade's last button reads "Sell") and hands a completed trade to Market.trade(), the transaction's owner
+# (D-25 amended: the Market's two credit sites). No points, no friendship, no saved state (save v7 unchanged).
+SVD, SV = "scripts/npc/service_definition.gd", "scripts/autoload/services.gd"
+svd_src, sv_src = scripts.get(SVD, ""), scripts.get(SV, "")
+svf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", sv_src, re.M | re.S)}
+sv_code = code_only(sv_src)
+SV_FIELDS = {"id": "String", "npc_id": "String", "item_id": "String", "quantity": "int", "coins": "int", "unlocked_by_request": "String",
+             "pitch_dialogue": "DialogueDefinition", "trade_dialogue": "DialogueDefinition"}
+if not re.search(r"^extends Resource\s*\nclass_name ServiceDefinition", svd_src, re.M) \
+   or dict(re.findall(r"^@export var (\w+): (\w+)", svd_src, re.M)) != SV_FIELDS \
+   or re.search(r"^(func|var|const|signal|static) ", code_only(svd_src), re.M):
+    err(f"{SVD}: ServiceDefinition is exactly {list(SV_FIELDS)} — data only, no transaction logic")
+request_ids = {os.path.basename(p)[:-5] for p in glob.glob("data/requests/*.tres")}
+sv_files = sorted(glob.glob("data/services/*.tres"))
+if len(sv_files) != 1:
+    err(f"data/services: exactly one service in M08.7 (found {sv_files})")
+for path in sv_files:
+    txt = open(path, encoding="utf-8").read()
+    vals = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', txt, re.M))
+    ext = dict((m.group(2), m.group(1)) for m in re.finditer(r'\[ext_resource type="Resource" path="res://([^"]+)" id="([^"]+)"\]', txt))
+    item_path = f"data/items/{vals.get('item_id', '')}.tres"
+    item_vals = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(item_path, encoding="utf-8").read(), re.M)) if os.path.exists(item_path) else {}
+    q, c = vals.get("quantity", "1"), vals.get("coins", "0")
+    if 'script_class="ServiceDefinition"' not in txt or vals.get("id") != os.path.basename(path)[:-5] or not re.fullmatch(r"[a-z][a-z0-9_]*", vals.get("id", "")) \
+       or vals.get("npc_id") not in npc_ids_rq or item_vals.get("category") != "collectible" or int(item_vals.get("quality_levels", "1")) != 1 \
+       or not q.isdigit() or not 1 <= int(q) <= 9 or not c.isdigit() or int(c) < 1 or vals.get("unlocked_by_request") not in request_ids:
+        err(f"{path}: a ServiceDefinition — lower_snake id = its file name, a real NPC, a real single-quality collectible, quantity 1-9, coins >= 1, unlocked by a real request")
+    for key in ("pitch_dialogue", "trade_dialogue"):
+        ref = re.search(rf'^{key} = ExtResource\("([^"]+)"\)$', txt, re.M)
+        if not ref or not ext.get(ref.group(1), "").startswith("data/dialogues/") or not os.path.exists(ext.get(ref.group(1), "")):
+            err(f"{path}: {key} is a data/dialogues/ resource")
+if not re.match(r"extends Node\n", sv_src) or re.findall(r"^signal ", sv_src, re.M) or re.findall(r"^var (\w+)", sv_src, re.M) != ["_definitions"] \
+   or dict(re.findall(r'^const (\w+) := "(\w*)"$', sv_src, re.M)) != {"STEP_PITCH": "pitch", "STEP_TRADE": "trade"} \
+   or 'const SERVICES_PATH := "res://data/services/"' not in sv_src or const_val(sv_src, "MAX_QUANTITY") != 9 \
+   or [f for f in svf if not f.startswith("_")] != ["conversation_for", "trade"]:
+    err(f"{SV}: Services is a stateless Node — only its definitions, the pitch / trade steps and the API conversation_for, trade; no signals, no saved state")
+if re.search(r"\bInventory\.(add|remove|apply_save_data|get_save_data)\(|\bWallet\b|PointsManager|Relationships|friendship|SaveManager|GameState|FarmManager|FarmPlot|"
+             r"get_tree\(|get_node|\$\w|Player|InputManager|SpeechPanel|HUD|Requests\.(accept|complete|conversation_for|apply_save_data|get_save_data)\(", sv_code):
+    err(f"{SV}: Services only reads the Inventory and Requests and asks the Market — it never writes items or coins, pays points, touches friendship, saves, or holds nodes or UI")
+if not re.search(r"var definition: ServiceDefinition = _definitions\.get\(service_id\)\s*if definition == null or not _is_unlocked\(definition\):\s*return 0\s*"
+                 r"return Market\.trade\(definition\.item_id, definition\.quantity, definition\.coins, definition\.id\)\s*$", svf.get("trade", "")) \
+   or sv_code.count("Market.trade(") != 1:
+    err(f"{SV}: trade() trades only an unlocked service, through Market.trade() with the service's own item, quantity and coins")
+if not re.search(r"return Requests\.get_state\(definition\.unlocked_by_request\) == Requests\.COMPLETED", svf.get("_is_unlocked", "")):
+    err(f"{SV}: a service is unlocked only once its request is completed")
+cfs = svf.get("conversation_for", "")
+if not re.search(r"if definition\.npc_id != npc_id or not _is_unlocked\(definition\):\s*continue\s*if Inventory\.has\(definition\.item_id, definition\.quantity, 0\):\s*"
+                 r'return \{"service_id": service_id, "step": STEP_TRADE, "lines": definition\.trade_dialogue\.lines\}\s*'
+                 r'return \{"service_id": service_id, "step": STEP_PITCH, "lines": definition\.pitch_dialogue\.lines\}', cfs) or not cfs.rstrip().endswith("return {}"):
+    err(f"{SV}: conversation_for(): locked → nothing; unlocked with the items → the trade; unlocked without → the pitch")
+ivs = svf.get("_is_valid", "")
+if 'item.category != "collectible" or item.quality_levels != 1' not in ivs or "definition.quantity < 1 or definition.quantity > MAX_QUANTITY or definition.coins < 1" not in ivs \
+   or 'definition.unlocked_by_request == ""' not in ivs or "npc_ids.has(definition.npc_id)" not in ivs:
+    err(f"{SV}: a service is used only for a real NPC and a single-quality collectible, quantity 1..MAX_QUANTITY, coins >= 1, with an unlocking request")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == SV: continue
+    code = code_only(s2)
+    if re.search(r"\bServices\.(conversation_for|trade)\(", code) and f != "scripts/npc/npc_talk.gd":
+        err(f"{f}: drives a service — only the speaking NpcTalk does (D-40)")
+    if re.search(r"\bMarket\.trade\(", code):
+        err(f"{f}: asks the Market for a trade — only Services does (D-40)")
+    if re.search(r"items_traded\.connect", code) and f not in ("scripts/autoload/game_state.gd", "scripts/ui/hud.gd"):
+        err(f"{f}: listens to trades — only GameState (to save) and the HUD (the card) do")
+for f in ("scripts/player/player.gd", "scripts/autoload/input_manager.gd", SPEECH_GD, "scripts/npc/npc.gd", RL, RQ, "scripts/autoload/inventory.gd",
+          "scripts/autoload/wallet.gd", "scripts/autoload/farm_manager.gd", "scripts/farming/farm_plot.gd", "scripts/autoload/save_manager.gd",
+          "scripts/autoload/market.gd", "scripts/ui/basket_screen.gd", "scripts/ui/hud.gd"):
+    if re.search(r"\bServices?\b|\bservice_(?!id\b)\w+", code_only(scripts.get(f, ""))):
+        err(f"{f}: knows about services — only NpcTalk drives them, Services keeps them, the Market trades by item and coins (D-40)")
+nts = scripts.get("scripts/npc/npc_talk.gd", "")
+nts_f = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", nts, re.M | re.S)}
+if 'const SELL_TEXT := "Sell"' not in nts \
+   or not re.search(r'var service := Services\.conversation_for\(npc\.definition\.id\)\s*_service_id = service\.get\("service_id", ""\)\s*_service_step = service\.get\("step", ""\)\s*'
+                    r"if not service\.is_empty\(\):\s*var sell_text := SELL_TEXT if _service_step == Services\.STEP_TRADE else SpeechPanel\.END_TEXT\s*"
+                    r"return _panel\.open\(self, npc\.definition\.display_name, service\.lines, sell_text\)\s*"
+                    r"return _panel\.open\(self, npc\.definition\.display_name, npc\.definition\.dialogue\.lines\)", nts_f.get("interact", "")) \
+   or {fn for fn, b in nts_f.items() if re.search(r"\b_service_(id|step)\s*=[^=]", b)} != {"interact", "_on_conversation_ended"} \
+   or code_only(nts).count("Services.trade(") != 1 or re.search(r"\bInventory\b|\bWallet\b|\bMarket\b", code_only(nts)):
+    err("scripts/npc/npc_talk.gd: after an unfinished request, NpcTalk asks its service (pitch, or the trade labelled \"Sell\"), sells only on its own completed trade "
+        "conversation, and never touches the Inventory, the Wallet or the Market itself")
+if 'notification.show_message(item_name.to_upper(), "×%d" % quantity, "+%d Coins" % coins)' not in code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "_on_items_traded") or ""):
+    err("scripts/ui/hud.gd: an NPC trade shows the usual sale card — the item, ×quantity, +coins — and nothing else")
+if "Market.items_traded.connect(_save.unbind(3))" not in code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or ""):
+    err("scripts/autoload/game_state.gd: an NPC trade is saved at once (GameState, items_traded)")
+if const_val(sm7, "SAVE_VERSION") != 7 or re.search(r'"services"', sm7):
+    err("scripts/autoload/save_manager.gd: services save nothing — no section, SAVE_VERSION stays 7 (D-40)")
+notes.append(f"services (M08.7): {len(sv_files)} service(s) {[os.path.basename(p)[:-5] for p in sv_files]}; unlocked by a request; pitch / trade (Sell) → Market.trade(); stateless, save v7")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

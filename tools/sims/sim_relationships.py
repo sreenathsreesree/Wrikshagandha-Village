@@ -24,6 +24,8 @@ for rule in ("if not _known_ids.has(npc_id):\n\t\tpush_warning", "if _last_gain_
              "_friendship[npc_id] = clampi(int(value), 0, MAX_FRIENDSHIP)", "if typeof(npc_id) != TYPE_STRING or not _known_ids.has(npc_id):"):
     assert rule in RL, f"relationships.gd rule: {rule!r}"
 assert "if speaker != self:\n\t\treturn" in NT and "if not completed:\n\t\treturn" in NT and "Relationships.record_completed_conversation(npc.definition.id)" in NT  # M08.6: own, completed
+assert NT.find("Services.trade(service_id)") < NT.find("Relationships.record_completed_conversation(") and "Relationships" not in _src("scripts", "autoload", "services.gd"), \
+    "a trade conversation is an ordinary completed conversation: the Relationships report follows it, unchanged (M08.7)"
 assert "conversation_ended.emit(speaker, completed)" in SP and "if _index >= _lines.size() - 1:\n\t\t_end(true)" in SP
 assert re.search(r"^\t\t\t5:\s*pass", SM, re.M) and '"relationships": Relationships.get_save_data(),' in SM and SAVE_VERSION >= 6  # v6 = M08.5; M08.6 made it 7
 assert "Relationships.friendship_changed.connect(_save.unbind(2))" in GS

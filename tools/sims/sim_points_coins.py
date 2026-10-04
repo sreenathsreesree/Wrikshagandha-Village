@@ -35,7 +35,7 @@ MK, BS = "scripts/autoload/market.gd", "scripts/ui/basket_screen.gd"
 wallet_users = sorted(f for f, s in SCRIPTS.items() if re.search(r"\bWallet\.", s))
 assert wallet_users == sorted([BS, MK, "scripts/autoload/save_manager.gd"]), wallet_users
 assert re.findall(r"Wallet\.(\w+)\(", SCRIPTS["scripts/autoload/save_manager.gd"]) == ["get_save_data", "apply_save_data"]
-assert re.findall(r"Wallet\.(\w+)", SCRIPTS[MK]) == ["credit"] and sorted(set(re.findall(r"Wallet\.(\w+)", SCRIPTS[BS]))) == ["balance_changed", "get_balance"]
+assert re.findall(r"Wallet\.(\w+)", SCRIPTS[MK]) == ["credit", "credit"] and sorted(set(re.findall(r"Wallet\.(\w+)", SCRIPTS[BS]))) == ["balance_changed", "get_balance"]
 assert not any(re.search(r"\bWallet\b|\bMarket\b", SCRIPTS[f]) for f in payers), "no pay site touches the Wallet or the Market"
 assert not any(re.search(r"PointsManager|add_points|points_changed|points_value|QUALITY_POINT_SCALE", SCRIPTS[f]) for f in (MK, BS)), "selling knows no points"
 assert not re.search(r"Wallet|coin|balance|ledger", SCRIPTS["scripts/autoload/points_manager.gd"], re.I)

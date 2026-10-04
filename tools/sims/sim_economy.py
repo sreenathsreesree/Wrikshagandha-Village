@@ -191,7 +191,8 @@ gs_ready = F[GS]["_ready"]
 TRIGGERS = set(re.findall(r"(\w+\.\w+)\.connect\(", gs_ready))
 assert TRIGGERS == {"DiscoveryManager.discovery_made", "FarmManager.crop_planted", "FarmManager.crop_harvested", "FarmManager.seed_found",
                     "FarmManager.milestone_reached", "Market.produce_sold", "InputManager.movement_mode_changed",
-                    "Relationships.friendship_changed", "Requests.request_accepted", "Requests.request_completed"}, f"autosave triggers changed: {TRIGGERS}"  # M08.5: friendship pays nothing, saved at once
+                    "Relationships.friendship_changed", "Requests.request_accepted", "Requests.request_completed",
+                    "Market.items_traded"}, f"autosave triggers changed: {TRIGGERS}"  # M08.7: an NPC trade, saved at once  # M08.5: friendship pays nothing, saved at once
 assert "NOTIFICATION_APPLICATION_PAUSED" in F[GS]["_notification"] and "NOTIFICATION_WM_CLOSE_REQUEST" in F[GS]["_notification"]
 AL = re.findall(r'^(\w+)="\*?res://', _src("project.godot").split("[autoload]", 1)[1].split("\n[", 1)[0], re.M)
 assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager", "Inventory", "ExplorationManager", "FarmManager")), \
@@ -301,7 +302,22 @@ for _ in range(3000):
 # ---------------------------------------------------------------- 4. coins: one source (selling produce), no sinks
 MK, BS = "scripts/autoload/market.gd", "scripts/ui/basket_screen.gd"
 callers = sorted((f, fn, m.group(1)) for f, funcs in F.items() for fn, body in funcs.items() for m in re.finditer(r"\bWallet\.(credit|debit)\(", body))
-assert callers == [(MK, "sell", "credit")], f"a coin source or sink appeared: {callers}"
+assert callers == [(MK, "sell", "credit"), (MK, "trade", "credit")], f"a coin source or sink appeared: {callers}"  # M08.7 (D-40): NPC trades
+# M08.7 (D-40): the second coin source — NPC trades of a single-quality collectible, repeatable and uncapped, bounded by the
+# item's respawn (one spawn point each); the Basket still sells only produce (unit_price of anything else is 0).
+TRADES = {}
+for f in glob.glob(os.path.join(REPO, "data", "services", "*.tres")):
+    v = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(f, encoding="utf-8").read(), re.M))
+    TRADES[v["id"]] = (v["item_id"], int(v["quantity"]), int(v["coins"]), v["unlocked_by_request"])
+assert TRADES == {"villager_stone_trade": ("river_stone", 3, 6, "villager_stones")}, TRADES
+assert all(ITEMS[i].get("category") == "collectible" and int(ITEMS[i].get("quality_levels", 1)) == 1 for i, _, _, _ in TRADES.values()), "trades take single-quality collectibles"
+assert all(unit_price(i, 0) == 0 for i, _, _, _ in TRADES.values()), "a traded collectible still never sells at the Basket"
+trade_per_hour = {s: c * 3600.0 / (DISC[i][1] * q) for s, (i, q, c, _) in TRADES.items()}
+assert abs(trade_per_hour["villager_stone_trade"] - 160.0) < 1e-6, trade_per_hour
+assert max(trade_per_hour.values()) < min(coins_per_hour.values()) / 10, "NPC trades stay a small coin source next to produce sales"
+assert "Market.items_traded.connect(_save.unbind(3))" in F[GS]["_ready"], "GameState saves after a trade"
+mt = F[MK]["trade"]
+assert mt.find("Inventory.remove(") < mt.find("Wallet.credit(") < mt.find("items_traded.emit(") and "PointsManager" not in mt, "trade: remove, credit, announce — no points"
 wallet_users = sorted({f for f, s in SCRIPTS.items() if re.search(r"\bWallet\.", s)})
 assert wallet_users == sorted([SM, MK, BS]) and sorted(set(re.findall(r"Wallet\.(\w+)\(", SCRIPTS[SM]))) == ["apply_save_data", "get_save_data"]
 assert sorted(set(re.findall(r"Wallet\.(\w+)", SCRIPTS[BS]))) == ["balance_changed", "get_balance"], "the basket only shows the balance"
@@ -323,6 +339,7 @@ print(f"abuse loops (quantified, expected — points; D-25 keeps coins off these
       f"harvest upper bound {harvest_per_hour:.0f} points/hour ({PLOTS} plots, seed caps {seed_cap})")
 print(f"save lifecycle: autosaved {sorted(k for k, v in AUTOSAVED.items() if v)}, waits {sorted(k for k, v in AUTOSAVED.items() if not v)}; "
       f"3000 players, {crashes} crashes ({lost_together} lost unsaved earnings together with their claims), no duplicate payment")
-print(f"coins: 1 earn source (Market.sell, produce only), 0 sinks; {sales} random sales, wallet = sales, harvest pays no coins; "
-      f"coin ceiling if every harvest is sold: {', '.join(f'{n:.0f}' for n in coins_per_hour.values())} coins/hour at Plain/Good/Fine")
+print(f"coins: 2 earn sources (Market.sell — produce only; Market.trade — NPC trades of collectibles, D-40), 0 sinks; {sales} random sales, wallet = sales, harvest pays no coins; "
+      f"coin ceiling if every harvest is sold: {', '.join(f'{n:.0f}' for n in coins_per_hour.values())} coins/hour at Plain/Good/Fine; "
+      f"NPC trades at most {', '.join(f'{k} {v:.0f}' for k, v in trade_per_hour.items())} coins/hour (respawn-bound, walking ignored)")
 print("ALL ECONOMY SIMULATIONS PASSED")
