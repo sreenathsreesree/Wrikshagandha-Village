@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/world_simulation/world_simulation.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world_simulation/time_of_day.gd" id="2"]
@@ -9,6 +9,17 @@
 [ext_resource type="PackedScene" path="res://scenes/world_simulation/BirdFlyoverSpawner.tscn" id="7"]
 [ext_resource type="Script" path="res://scripts/world_simulation/environmental_event_controller.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark_controller.gd" id="9"]
+[ext_resource type="Script" path="res://scripts/world_simulation/weather_controller.gd" id="10"]
+[ext_resource type="Resource" path="res://data/weather/weather_schedule.tres" id="11"]
+
+[sub_resource type="StandardMaterial3D" id="Material_rain"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[sub_resource type="BoxMesh" id="BoxMesh_drop"]
+material = SubResource("Material_rain")
+size = Vector3(0.025, 0.45, 0.025)
 
 [node name="WorldSimulation" type="Node3D"]
 script = ExtResource("1")
@@ -35,3 +46,24 @@ script = ExtResource("8")
 
 [node name="ExplorationLandmarks" type="Node" parent="."]
 script = ExtResource("9")
+
+[node name="Weather" type="Node" parent="."]
+script = ExtResource("10")
+schedule = ExtResource("11")
+rain_path = NodePath("../Rain")
+
+[node name="Rain" type="CPUParticles3D" parent="."]
+emitting = false
+amount = 240
+lifetime = 0.9
+local_coords = false
+mesh = SubResource("BoxMesh_drop")
+emission_shape = 3
+emission_box_extents = Vector3(11, 0.5, 9)
+particle_flag_align_y = true
+direction = Vector3(0.08, -1, 0)
+spread = 4.0
+gravity = Vector3(0, -9.8, 0)
+initial_velocity_min = 9.0
+initial_velocity_max = 11.0
+color = Color(0.78, 0.84, 0.92, 0)

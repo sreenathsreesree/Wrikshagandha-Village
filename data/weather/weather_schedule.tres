@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="WeatherSchedule" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/weather_schedule.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weather_seed = 917
+slots_per_day = 4
+rain_chance = 0.25
+ramp_fraction = 0.01
+always_clear_days = 1

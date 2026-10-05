@@ -31,7 +31,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 │   ├── Wildlife                     WildlifeActor instances
 │   ├── Ambient / EnvironmentalEvents / ExplorationLandmarks
 │   ├── WorldSimulation              TimeOfDay, Environment, Vegetation, Wildlife,
-│   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers
+│   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers, Weather + Rain (M09.3)
 │   ├── PlayerSpawn                  AreaEntry "meadow_start" (scripts/world/area_entry.gd) at the boot position
 │   ├── VerticalSlice                House (HousePlaceholder + its AreaDoor → home), HouseDoorEntry (AreaEntry "house_door"),
 │   │                                NpcSpot → Villager (scenes/npc/Npc.tscn + data/npcs/villager.tres, M08.3; its dialogue data/dialogues/villager_hello.tres, M08.4), trees, paths
@@ -259,7 +259,7 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - **Versioning (M04.0, D-17):** `save_version` (currently 8 — M09.2 added `world_time`, absent = day 1 at 0.28; M08.6 added `requests`; M08.5 added `relationships`; M05.2 added `exploration`; M05.1 `wallet`; M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; M04.3 lets `items` hold collectibles; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`; 2 → 3 nothing to rewrite (the bump stops an M04.2 build dropping collectibles); 3 → 4 nothing to rewrite (an older save has no wallet = an empty one); 4 → 5 nothing to rewrite (no exploration section = nothing reached yet — each place can pay once more after the update, then never); 5 → 6 nothing to rewrite (no relationships section = every NPC at 0); 6 → 7 nothing to rewrite (no requests section = no request offered yet).
   - Every section is read with a default, so older saves load and a wrongly typed section only resets itself.
   - Autosave on: new discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed.
-  - **Not saved:** player position, camera zoom, discovery respawns, environmental events; exploration's session-only beats and thresholds (M05.2).
+  - **Not saved:** weather (derived from `world_time`, D-43), player position, camera zoom, discovery respawns, environmental events; exploration's session-only beats and thresholds (M05.2).
   - The farm save format is documented in `docs/farming_persistence_plan.md`.
 - **Direction:**
   - Full versioned persistence in Phase 15.
@@ -327,7 +327,11 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - **Wildlife:** `WildlifeActor` (idle/wander/pause/flee; interest points; keyed attraction; night activity; keep-out circle), relayed by `WildlifeController`.
   - **Events:** `EnvironmentalEvent`, including an arrival-only garden greeting. Controllers share one distance loop each.
 - **NPC routines (M09.1, D-41):** the villager follows the day between its two routine spots (above, §NPCs).
-- **Direction (Phase 09):** weather (M09.3, derived from `WorldClock`'s day and fraction), a weather reaction through the event layer (M09.4). Stay event-driven.
+- **Weather (M09.3, D-43):** Clear or Rain, a pure function of `WeatherSchedule`'s fixed seed (`data/weather/weather_schedule.tres`: seed 917, 4 slots of 150 s, rain chance 0.25 per slot, a 0.01-day ramp, day 1 always Clear) and `WorldClock`'s day and fraction — a 32-bit integer hash of (seed, day, slot); no random state, no system time, nothing saved.
+  - `WeatherController` (`scripts/world_simulation/weather_controller.gd`, the `Weather` node in `WorldSimulation.tscn`) never reads `WorldClock`: `WorldSimulation` gives it the day and fraction in `_ready` and in `_present_time`, before `time_updated`, so the lighting sees the current rain. A paused Meadow pauses the weather with the time.
+  - It exposes `get_weather()` (`"clear"`/`"rain"`), `is_raining()`, `get_rain_intensity()` (0–1, derived from the position in the slot: a fade at a spell's edges, 1 between rainy neighbours) and emits `weather_changed(weather)` only on a change during play — never for the first resolution (new game, load, fresh area) or a return outdoors. M09.4's reactions will listen to it; nothing does yet.
+  - Visuals: one modest `CPUParticles3D` (`Rain`, 240 drops, off while Clear) kept above the player from that same call — no frame loop of its own, no camera change; `EnvironmentController.apply_time(fraction, rain)` dims the sun, greys the sky and lowers the ambient light. Android performance not yet measured.
+- **Direction (Phase 09):** a weather reaction through the event layer (M09.4: rain beginning → the birds-flee disturbance, listening to `weather_changed`). Stay event-driven.
 
 ## 16. Future elemental architecture (direction — Phases 11–12)
 - `ElementDefinition` resources, and an optional `element_id` on places, items, discoveries and NPCs.

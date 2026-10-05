@@ -3397,14 +3397,16 @@ for path in sorted(glob.glob("scenes/**/*.tscn", recursive=True) + glob.glob("da
 ws_code = code_only(scripts.get(WS_GD, ""))
 ws_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", ws_code, re.M | re.S)}
 if not re.search(r"func _ready\(\) -> void:\s*time_of_day\.add_to_group\(TIME_GROUP\)\s*time_of_day\.set_process\(false\)\s*"
-                 r"time_of_day\.day_fraction = WorldClock\.get_fraction\(\)\s*_phase = time_of_day\.get_phase_for_fraction\(time_of_day\.day_fraction\)\s*$", ws_fn.get("_ready", "")) \
+                 r"time_of_day\.day_fraction = WorldClock\.get_fraction\(\)\s*_phase = time_of_day\.get_phase_for_fraction\(time_of_day\.day_fraction\)\s*"
+                 r"weather_controller\.apply_time\(WorldClock\.get_day\(\), time_of_day\.day_fraction\)\s*$", ws_fn.get("_ready", "")) \
    or not re.search(r"func _process\(delta: float\) -> void:\s*WorldClock\.advance\(delta\)\s*_present_time\(\)\s*$", ws_fn.get("_process", "")) \
    or not re.search(r"func _present_time\(\) -> void:\s*var fraction := WorldClock\.get_fraction\(\)\s*time_of_day\.day_fraction = fraction\s*"
+                    r"weather_controller\.apply_time\(WorldClock\.get_day\(\), fraction\)\s*"  # M09.3 (D-43): the weather is given the clock, before time_updated
                     r"time_of_day\.time_updated\.emit\(fraction\)\s*var phase := time_of_day\.get_phase_for_fraction\(fraction\)\s*"
                     r"if phase != _phase:\s*_phase = phase\s*time_of_day\.phase_changed\.emit\(phase\)\s*$", ws_fn.get("_present_time", "")) \
    or "wildlife_controller.set_time_phase(_phase)" not in ws_fn.get("configure", "") or "WorldClock" in ws_fn.get("configure", ""):
     err(f"{WS_GD}: WorldSimulation drives the clock — _ready switches TimeOfDay's own advance off and gives it the clock's fraction; "
-        "_process advances WorldClock and presents it (time_updated every frame, phase_changed when the fraction's phase changes); configure() never touches the clock")
+        "_process advances WorldClock and presents it (the weather given the day and fraction first, M09.3; time_updated every frame, phase_changed when the fraction's phase changes); configure() never touches the clock")
 adv_sites, emits, writes = [], [], []
 for f, s2 in scripts.items():
     if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
@@ -3432,6 +3434,78 @@ if '"world_time": WorldClock.get_save_data(),' not in code_only(func_body(sm8, "
         "step 7 -> 8 (M09.2) rewrites nothing (absent = day 1 at 0.28)")
 notes.append(f"world clock (M09.2): WorldClock day from {const_val(wc_src, 'START_DAY')} at {const_val(wc_src, 'START_FRACTION')}, "
              f"{const_val(wc_src, 'DAY_LENGTH_SECONDS'):.0f} s day; one driver (WorldSimulation._process); TimeOfDay presents it; save v8 world_time")
+
+# ------------------------------------------------------------ weather (M09.3, D-43)
+# Clear or Rain, a pure function of the WeatherSchedule's fixed seed and WorldClock's day and fraction: a day is
+# slots_per_day equal slots, each Rain when a 32-bit integer hash of (seed, day, slot) falls below rain_chance × 2^32;
+# days up to always_clear_days are Clear; the rain fades over ramp_fraction at a spell's edges. WeatherController
+# (inside WorldSimulation) never reads WorldClock — WorldSimulation hands it the day and fraction — holds no clock,
+# saves nothing and emits weather_changed only on a change during play (never the first resolution). It reacts to
+# nothing (M09.4 will consume the signal); farming, NPCs, wildlife and the rest never hear of the weather.
+WSCH_GD, WCTL_GD, WS_TSCN, ENV_GD = ("scripts/world_simulation/weather_schedule.gd", "scripts/world_simulation/weather_controller.gd",
+                                     "scenes/world_simulation/WorldSimulation.tscn", "scripts/world_simulation/environment_controller.gd")
+wsch_src, wctl_src = scripts.get(WSCH_GD, ""), scripts.get(WCTL_GD, "")
+wctl_code = code_only(wctl_src)
+wctl_fn = {m.group(1): m.group(0) for m in re.finditer(r"^(?:static )?func (\w+)\(.*?(?=^(?:static )?func |\Z)", wctl_code, re.M | re.S)}
+if not re.search(r"^extends Resource\s*\nclass_name WeatherSchedule\b", wsch_src, re.M) or re.search(r"^func ", wsch_src, re.M) \
+   or re.findall(r"^@export(?:_range\([^)]*\))? var (\w+)", wsch_src, re.M) != ["weather_seed", "slots_per_day", "rain_chance", "ramp_fraction", "always_clear_days"]:
+    err(f"{WSCH_GD}: WeatherSchedule is data only — weather_seed, slots_per_day, rain_chance, ramp_fraction, always_clear_days")
+wtres = sorted(glob.glob("data/weather/*.tres"))
+wvals = dict(re.findall(r"^(\w+) = (.+)$", open(wtres[0], encoding="utf-8").read(), re.M)) if len(wtres) == 1 else {}
+if wtres != ["data/weather/weather_schedule.tres"] or wvals.get("weather_seed") != "917" \
+   or (wvals.get("slots_per_day"), wvals.get("rain_chance"), wvals.get("ramp_fraction"), wvals.get("always_clear_days")) != ("4", "0.25", "0.01", "1") \
+   or (const_val(scripts.get(WC_GD, ""), "DAY_LENGTH_SECONDS") or 0) / 4 != 150.0:
+    err("data/weather/weather_schedule.tres: the one schedule — the fixed seed 917 (a change updates D-43 and sim_weather's calendar), 4 slots of 150 s, rain chance 0.25, a 0.01-day ramp, day 1 always Clear (D-43)")
+if not re.search(r"^extends Node\s*\nclass_name WeatherController\b", wctl_src, re.M) \
+   or re.findall(r"^signal (\w+)\((.*?)\)", wctl_src, re.M) != [("weather_changed", "weather: String")] \
+   or not re.search(r'^const CLEAR := "clear"$', wctl_src, re.M) or not re.search(r'^const RAIN := "rain"$', wctl_src, re.M) \
+   or re.findall(r"^var (\w+)", wctl_src, re.M) != ["player", "_weather", "_rain_intensity"] \
+   or list(wctl_fn) != ["get_weather", "is_raining", "get_rain_intensity", "apply_time", "weather_at", "rain_intensity_at", "_slot", "_slot_rains", "_hash", "_show_rain"] \
+   or re.search(r"\bWorldClock\b|\bTime\.|\bOS\.|\bEngine\.|\brand[fi]?\w*\(|RandomNumberGenerator|randomize|\bhash\(|get_tree\(|SaveManager|FileAccess|ConfigFile|ResourceSaver|user://|_process\(|_physics_process\(|\bawait\b|Timer", wctl_code):
+    err(f"{WCTL_GD}: WeatherController — weather_changed(weather) its one signal; get_weather/is_raining/get_rain_intensity, apply_time, the pure weather_at/rain_intensity_at "
+        "and the hash; no WorldClock, no system or engine time, no random state, no saving, no frame loop of its own (D-43)")
+if not re.search(r"func apply_time\(day: int, fraction: float\) -> void:\s*var weather := weather_at\(day, fraction\)\s*_rain_intensity = rain_intensity_at\(day, fraction\)\s*_show_rain\(\)\s*"
+                 r"if weather == _weather:\s*return\s*var first := _weather == \"\"\s*_weather = weather\s*if not first:\s*weather_changed\.emit\(weather\)\s*$", wctl_fn.get("apply_time", "")) \
+   or wctl_code.count("weather_changed.emit(") != 1:
+    err(f"{WCTL_GD}: apply_time() resolves the weather and intensity from the day and fraction; weather_changed fires only when it changes, never for the first resolution")
+if not re.search(r"func weather_at\(day: int, fraction: float\) -> String:\s*return RAIN if _slot_rains\(day, _slot\(fraction\)\) else CLEAR\s*$", wctl_fn.get("weather_at", "")) \
+   or not re.search(r"return clampi\(floori\(fraction \* schedule\.slots_per_day\), 0, schedule\.slots_per_day - 1\)\s*$", wctl_fn.get("_slot", "")) \
+   or not re.search(r"if day <= schedule\.always_clear_days:\s*return false\s*return _hash\(schedule\.weather_seed, day, slot\) < int\(schedule\.rain_chance \* 4294967296\.0\)\s*$", wctl_fn.get("_slot_rains", "")) \
+   or not re.search(r"var x := \(\(seed_value \* 73856093\) \^ \(day \* 19349663\) \^ \(slot \* 83492791\)\) & 0xFFFFFFFF\s*x = x \^ \(x >> 16\)\s*x = \(x \* 0x7feb352d\) & 0xFFFFFFFF\s*"
+                    r"x = x \^ \(x >> 15\)\s*x = \(x \* 0x2c1b3c6d\) & 0xFFFFFFFF\s*x = x \^ \(x >> 16\)\s*return x\s*$", wctl_fn.get("_hash", "")):
+    err(f"{WCTL_GD}: the weather is the slot's weather — slot = floor(fraction × slots_per_day); Rain when hash(seed, day, slot) < rain_chance × 2^32; days up to always_clear_days Clear")
+ri = wctl_fn.get("rain_intensity_at", "")
+if "if not _slot_rains(day, slot):\n\t\treturn 0.0" not in ri or "_slot_rains(day - 1, schedule.slots_per_day - 1)" not in ri or "_slot_rains(day + 1, 0)" not in ri \
+   or "clampf(into / ramp, 0.0, 1.0)" not in ri or "clampf((width - into) / ramp, 0.0, 1.0)" not in ri or "return minf(fade_in, fade_out)" not in ri or re.search(r"\b_\w+ \+?=", ri):
+    err(f"{WCTL_GD}: the rain intensity is derived from the position in the slot — a fade over ramp_fraction at an edge whose neighbour (across midnight too) is Clear; no state")
+wtscn = open(WS_TSCN, encoding="utf-8").read() if os.path.exists(WS_TSCN) else ""
+rain_node = re.search(r'^\[node name="Rain" type="CPUParticles3D" parent="\."\]\n((?:[^\[\n].*\n)+)', wtscn, re.M)
+if not re.search(r'^\[node name="Weather" type="Node" parent="\."\]\nscript = ExtResource\("(\w+)"\)\nschedule = ExtResource\("(\w+)"\)\nrain_path = NodePath\("\.\./Rain"\)\n', wtscn, re.M) \
+   or 'path="res://scripts/world_simulation/weather_controller.gd"' not in wtscn or 'path="res://data/weather/weather_schedule.tres"' not in wtscn \
+   or not rain_node or not re.search(r"^emitting = false$", rain_node.group(1), re.M) or not re.search(r"^local_coords = false$", rain_node.group(1), re.M) \
+   or int((re.search(r"^amount = (\d+)$", rain_node.group(1), re.M) or re.search("(9999)", "9999")).group(1)) > 300:
+    err(f"{WS_TSCN}: one Weather node (WeatherController, the schedule) and one modest Rain emitter (CPUParticles3D, at most 300 drops, off until it rains) inside WorldSimulation")
+for path in sorted(glob.glob("scenes/**/*.tscn", recursive=True)):
+    if "GPUParticles" in open(path, encoding="utf-8").read():
+        err(f"{path}: GPU particles — the rain stays one modest CPUParticles3D until Android performance is measured (D-43)")
+if not re.search(r"^func apply_time\(day_fraction: float, rain: float = 0\.0\) -> void:", scripts.get(ENV_GD, ""), re.M) or re.search(r"\bWeather|WorldClock", code_only(scripts.get(ENV_GD, ""))) \
+   or "environment_controller.apply_time(day_fraction, weather_controller.get_rain_intensity())" not in code_only(scripts.get(WS_GD, "")):
+    err(f"{ENV_GD}: the lighting takes the rain intensity as a number from WorldSimulation and never knows the weather or the clock")
+wapply = []
+for f, s2 in scripts.items():
+    if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
+    c = code_only(s2)
+    wapply += [f] * len(re.findall(r"\bweather_controller\.apply_time\(", c))
+    if re.search(r"weather_changed\.connect\(", c):
+        err(f"{f}: reacts to weather_changed — reactions are M09.4's (D-43)")
+    if f not in (WCTL_GD, WSCH_GD, WS_GD) and re.search(r"\bWeatherController\b|\bWeatherSchedule\b|\bweather_controller\b|\bis_raining\(|\bget_rain_intensity\(", c):
+        err(f"{f}: reads the weather — only WorldSimulation drives it and nothing reacts in M09.3 (farming, NPCs, wildlife, saves never hear of it; D-43)")
+if wapply != [WS_GD, WS_GD]:
+    err(f"WeatherController.apply_time() is called only by WorldSimulation (_ready and _present_time), with WorldClock's day and fraction (found {wapply})")
+if re.search(r"weather|rain", code_only(scripts.get("scripts/autoload/save_manager.gd", "")), re.I):
+    err("scripts/autoload/save_manager.gd: weather is never saved — it is derived from the saved world time (D-43)")
+notes.append(f"weather (M09.3): seed {wvals.get('weather_seed')}, {wvals.get('slots_per_day')} slots/day, rain chance {wvals.get('rain_chance')}, "
+             f"ramp {wvals.get('ramp_fraction')} day, Clear through day {wvals.get('always_clear_days')}; given the clock by WorldSimulation; not saved; no reactions")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

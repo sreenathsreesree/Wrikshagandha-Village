@@ -21,6 +21,9 @@ const TIME_GROUP := &"time_of_day"
 ## existing time_updated / phase_changed are emitted from here, so every
 ## listener (lighting, wildlife, an NPC's routine) keeps its path. The phase
 ## is read from the fraction; TimeOfDay's cached get_phase() is never used.
+## Weather (M09.3, D-43) is given the clock's day and fraction from here too —
+## WeatherController never reads WorldClock — before time_updated, so the
+## lighting already sees the current rain.
 var _phase: String = ""
 
 @onready var time_of_day: TimeOfDay = $TimeOfDay
@@ -30,12 +33,14 @@ var _phase: String = ""
 @onready var ambient_controller: AmbientController = $Ambient
 @onready var environmental_event_controller: EnvironmentalEventController = $EnvironmentalEvents
 @onready var exploration_landmark_controller: ExplorationLandmarkController = $ExplorationLandmarks
+@onready var weather_controller: WeatherController = $Weather
 
 func _ready() -> void:
 	time_of_day.add_to_group(TIME_GROUP)
 	time_of_day.set_process(false)
 	time_of_day.day_fraction = WorldClock.get_fraction()
 	_phase = time_of_day.get_phase_for_fraction(time_of_day.day_fraction)
+	weather_controller.apply_time(WorldClock.get_day(), time_of_day.day_fraction)
 
 func _process(delta: float) -> void:
 	WorldClock.advance(delta)
@@ -49,6 +54,7 @@ func configure(player: Node3D, directional_light: DirectionalLight3D, world_envi
 	wildlife_controller.wire_actors()
 	environmental_event_controller.player = player
 	exploration_landmark_controller.player = player
+	weather_controller.player = player
 
 	time_of_day.time_updated.connect(_on_time_updated)
 	_on_time_updated(time_of_day.day_fraction)
@@ -66,6 +72,7 @@ func configure(player: Node3D, directional_light: DirectionalLight3D, world_envi
 func _present_time() -> void:
 	var fraction := WorldClock.get_fraction()
 	time_of_day.day_fraction = fraction
+	weather_controller.apply_time(WorldClock.get_day(), fraction)
 	time_of_day.time_updated.emit(fraction)
 	var phase := time_of_day.get_phase_for_fraction(fraction)
 	if phase != _phase:
@@ -73,7 +80,7 @@ func _present_time() -> void:
 		time_of_day.phase_changed.emit(phase)
 
 func _on_time_updated(day_fraction: float) -> void:
-	environment_controller.apply_time(day_fraction)
+	environment_controller.apply_time(day_fraction, weather_controller.get_rain_intensity())
 
 func _on_garden_interest_changed(level: float) -> void:
 	wildlife_controller.set_attraction(FarmManager.WILDLIFE_ATTRACTION_KEY, level)
