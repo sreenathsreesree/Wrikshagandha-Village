@@ -34,7 +34,7 @@ assert 0 <= NT.find("Requests.conversation_for(") < NT.find("Services.conversati
 assert "if not completed:\n\t\treturn\n\tif step == Requests.STEP_OFFER:\n\t\tRequests.accept(request_id)\n\telif step == Requests.STEP_HANDOVER:\n\t\tRequests.complete(request_id)" in NT
 assert 'const GIVE_TEXT := "Give"' in NT and "_end_text = end_text" in SP and "next_button.text = _end_text if _index >= _lines.size() - 1 else NEXT_TEXT" in SP
 SAVE_VERSION = int(re.search(r"^const SAVE_VERSION := (\d+)", SM, re.M).group(1))
-assert SAVE_VERSION == 7 and re.search(r"^\t\t\t6:\s*pass", SM, re.M) and '"requests": Requests.get_save_data(),' in SM
+assert SAVE_VERSION >= 7 and re.search(r"^\t\t\t6:\s*pass", SM, re.M) and '"requests": Requests.get_save_data(),' in SM
 assert "Requests.request_accepted.connect(_save.unbind(1))" in GS and "Requests.request_completed.connect(_save.unbind(4))" in GS
 def _vals(f): return dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(f, encoding="utf-8").read(), re.M))
 REQS = {v["id"]: v for v in map(_vals, glob.glob(os.path.join(REPO, "data", "requests", "*.tres")))}

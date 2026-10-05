@@ -34,7 +34,7 @@ assert 'const SELL_TEXT := "Sell"' in NT and "elif service_step == Services.STEP
 assert NT.find("if not completed:\n\t\treturn") < NT.find("Services.trade(service_id)"), "only a completed conversation trades"
 assert NT.find("Requests.conversation_for(") < NT.find("Services.conversation_for("), "the request comes first"
 assert "Market.items_traded.connect(_save.unbind(3))" in GS and "Market.items_traded.connect(_on_items_traded)" in HUD
-assert int(re.search(r"^const SAVE_VERSION := (\d+)", SM, re.M).group(1)) == 7 and '"services"' not in SM, "no saved service state; save v7"
+assert int(re.search(r"^const SAVE_VERSION := (\d+)", SM, re.M).group(1)) >= 7 and '"services"' not in SM, "no saved service state (v8 is M09.2's world_time)"
 def _vals(f): return dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(f, encoding="utf-8").read(), re.M))
 SVCS = {v["id"]: v for v in map(_vals, glob.glob(os.path.join(REPO, "data", "services", "*.tres")))}
 assert list(SVCS) == ["villager_stone_trade"], SVCS

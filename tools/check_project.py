@@ -853,7 +853,8 @@ if "Vector2(offset.x, offset.z).length() - reach" not in td:
     err(f"{IM}: _tap_distance() must measure to the object's shape (minus its radius), not its centre")
 # Per-frame loops: this is the whole set. A new one is a deliberate,
 # reviewed change to this list (docs/ARCHITECTURE.md §17), never a side effect.
-PER_FRAME = [('scripts/camera/follow_camera.gd', '_physics_process'), ('scripts/interactables/indicator_bob.gd', '_process'), ('scripts/npc/npc.gd', '_physics_process'), ('scripts/player/player.gd', '_physics_process'), ('scripts/ui/virtual_joystick.gd', '_process'), ('scripts/world/butterfly.gd', '_process'), ('scripts/world/drifting_leaf.gd', '_process'), ('scripts/world/floating_motes.gd', '_process'), ('scripts/world_simulation/environmental_event_controller.gd', '_process'), ('scripts/world_simulation/exploration_landmark_controller.gd', '_process'), ('scripts/world_simulation/time_of_day.gd', '_process'), ('scripts/world_simulation/vegetation_controller.gd', '_process'), ('scripts/world_simulation/wildlife_actor.gd', '_process'), ('scripts/world_simulation/wildlife_butterfly.gd', '_process')]
+# (M09.2, D-42: WorldSimulation._process — the one driver of WorldClock.)
+PER_FRAME = [('scripts/camera/follow_camera.gd', '_physics_process'), ('scripts/interactables/indicator_bob.gd', '_process'), ('scripts/npc/npc.gd', '_physics_process'), ('scripts/player/player.gd', '_physics_process'), ('scripts/ui/virtual_joystick.gd', '_process'), ('scripts/world/butterfly.gd', '_process'), ('scripts/world/drifting_leaf.gd', '_process'), ('scripts/world/floating_motes.gd', '_process'), ('scripts/world_simulation/environmental_event_controller.gd', '_process'), ('scripts/world_simulation/exploration_landmark_controller.gd', '_process'), ('scripts/world_simulation/time_of_day.gd', '_process'), ('scripts/world_simulation/vegetation_controller.gd', '_process'), ('scripts/world_simulation/wildlife_actor.gd', '_process'), ('scripts/world_simulation/wildlife_butterfly.gd', '_process'), ('scripts/world_simulation/world_simulation.gd', '_process')]
 found = sorted((f, m) for f, s2 in scripts.items() if not f.startswith("tools/") or f.startswith("tools/fixtures/")
                for m in re.findall(r"^func (_process|_physics_process)\(", s2, re.M))
 if found != sorted(tuple(x) for x in PER_FRAME):
@@ -941,8 +942,9 @@ if navsettings != NAV_PINS or not re.search(r'\[node name="Meadow" type="Node3D"
 # M05.1 (D-20) added Wallet (coins + ledger), before SaveManager and GameState (which loads the save).
 # M06.2 (D-25) added Market (selling produce), after Inventory and Wallet, before GameState (which saves on a sale).
 # M08.1 (D-34) added AreaRouter (travel requests between areas, the current area id; never saved), last.
+# M09.2 (D-42) added WorldClock (the one game clock: day + fraction, saved), before SaveManager and GameState (which loads the save).
 AUTOLOADS = ["PointsManager", "DiscoveryDatabase", "DiscoveryManager", "JournalManager", "CollectionManager", "DailyDiscoveryManager",
-             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "Requests", "Services", "AmbientAudioManager", "SaveManager", "GameState", "InputManager",
+             "Inventory", "Wallet", "Market", "FarmManager", "ExplorationManager", "Relationships", "Requests", "Services", "AmbientAudioManager", "WorldClock", "SaveManager", "GameState", "InputManager",
              "AreaRouter"]
 found_al = re.findall(r'^(\w+)="\*?res://', re.search(r"\[autoload\]\n(.*?)(?:\n\[|\Z)", cfg, re.S).group(1), re.M)
 if found_al != AUTOLOADS:
@@ -969,11 +971,12 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           #  by M08.6: it also saves when a request is accepted or completed;
           #  and by M08.7: it also saves after an NPC trade, Market.items_traded.)
           # (SaveManager re-pinned deliberately by M08.5: the relationships section, save v6 — D-17, D-38;
-          #  and by M08.6: the requests section, save v7 — D-17, D-39.)
+          #  and by M08.6: the requests section, save v7 — D-17, D-39;
+          #  and by M09.2: the world_time section (WorldClock's day and fraction), save v8 — D-17, D-42.)
           # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
           #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
           "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
-          "scripts/autoload/save_manager.gd": "7eaa7cb4b5b99d26", "scripts/autoload/game_state.gd": "6c25394b3d7a4368",
+          "scripts/autoload/save_manager.gd": "81d49237bccad2dd", "scripts/autoload/game_state.gd": "6c25394b3d7a4368",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
           #  farm_manager.gd by M05.3: milestone bonuses from reward data;
@@ -3192,7 +3195,7 @@ sm7 = scripts.get("scripts/autoload/save_manager.gd", "")
 if '"requests": Requests.get_save_data(),' not in code_only(func_body(sm7, "save_game") or "") \
    or 'Requests.apply_save_data(data.get("requests", {}))' not in code_only(func_body(sm7, "load_game") or "") \
    or not re.search(r"^\t\t\t6:\s*pass\b", code_only(func_body(sm7, "_migrate") or ""), re.M) \
-   or not re.search(r'^\t"requests": \[TYPE_DICTIONARY\],$', sm7, re.M) or const_val(sm7, "SAVE_VERSION") != 7:
+   or not re.search(r'^\t"requests": \[TYPE_DICTIONARY\],$', sm7, re.M) or (const_val(sm7, "SAVE_VERSION") or 0) < 7:  # v8 is M09.2's world_time
     err("scripts/autoload/save_manager.gd: save v7 — the requests section is saved and loaded as a dictionary; step 6 -> 7 (M08.6) rewrites nothing (absent = no request offered)")
 gs7 = code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or "")
 if "Requests.request_accepted.connect(_save.unbind(1))" not in gs7 or "Requests.request_completed.connect(_save.unbind(4))" not in gs7:
@@ -3286,9 +3289,9 @@ if 'notification.show_message(item_name.to_upper(), "×%d" % quantity, "+%d Coin
     err("scripts/ui/hud.gd: an NPC trade shows the usual sale card — the item, ×quantity, +coins — and nothing else")
 if "Market.items_traded.connect(_save.unbind(3))" not in code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or ""):
     err("scripts/autoload/game_state.gd: an NPC trade is saved at once (GameState, items_traded)")
-if const_val(sm7, "SAVE_VERSION") != 7 or re.search(r'"services"', sm7):
-    err("scripts/autoload/save_manager.gd: services save nothing — no section, SAVE_VERSION stays 7 (D-40)")
-notes.append(f"services (M08.7): {len(sv_files)} service(s) {[os.path.basename(p)[:-5] for p in sv_files]}; unlocked by a request; pitch / trade (Sell) → Market.trade(); stateless, save v7")
+if (const_val(sm7, "SAVE_VERSION") or 0) < 7 or re.search(r'"services"', sm7):  # M09.2 (D-42) bumped to v8 for world_time, not for services
+    err("scripts/autoload/save_manager.gd: services save nothing — no section, and no save version of their own (D-40)")
+notes.append(f"services (M08.7): {len(sv_files)} service(s) {[os.path.basename(p)[:-5] for p in sv_files]}; unlocked by a request; pitch / trade (Sell) → Market.trade(); stateless, no save section")
 
 # ------------------------------------------------------------ NPC routine (M09.1, D-41)
 # An NPC follows its area's day: its NpcDefinition's routine maps every time-of-day phase to the spot_id of an
@@ -3354,6 +3357,81 @@ for f in ("scripts/player/player.gd", "scripts/autoload/input_manager.gd", NPC_T
     if re.search(r"\broutine\b|TimeOfDay|TIME_GROUP|phase_changed", code_only(scripts.get(f, ""))):
         err(f"{f}: knows about NPC routines or the day clock — only the NPC follows its routine (D-41)")
 notes.append(f"NPC routine (M09.1): phases {PHASES}; spots {spot_ids}; first phase placed, later phases walked; event-driven, nothing saved")
+
+# ------------------------------------------------------------ world clock (M09.2, D-42)
+# One authoritative clock: the WorldClock autoload holds the day (from START_DAY) and the fraction of it, and
+# advance() is called from exactly one place — the area's WorldSimulation._process — so a parked Meadow (the player
+# indoors) pauses time. TimeOfDay (time_of_day.gd, pinned and unchanged) only presents it: WorldSimulation switches
+# its own frame advance off, copies the clock's fraction in and emits its time_updated / phase_changed, so its
+# listeners (lighting, wildlife, the M09.1 NPC) are unchanged; its cached get_phase() is never read. Saved as the
+# world_time section (save v8); v7 has none → day 1 at 0.28. No time-skip: nothing else advances or sets the clock.
+WC_GD, WS_GD, TOD_GD = "scripts/autoload/world_clock.gd", "scripts/world_simulation/world_simulation.gd", "scripts/world_simulation/time_of_day.gd"
+wc_src, wc_code = scripts.get(WC_GD, ""), code_only(scripts.get(WC_GD, ""))
+wc_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", wc_code, re.M | re.S)}
+if not wc_src.startswith("extends Node\n") or re.search(r"^class_name|^signal|^@export", wc_src, re.M) \
+   or (const_val(wc_src, "DAY_LENGTH_SECONDS"), const_val(wc_src, "START_DAY"), const_val(wc_src, "START_FRACTION")) != (600.0, 1, 0.28) \
+   or re.findall(r"^var (\w+)", wc_src, re.M) != ["_day", "_fraction"] \
+   or "var _day: int = START_DAY" not in wc_src or "var _fraction: float = START_FRACTION" not in wc_src \
+   or list(wc_fn) != ["get_day", "get_fraction", "advance", "get_save_data", "apply_save_data", "_is_number"] \
+   or re.search(r"\bTime\.|\bOS\.|\bEngine\.|get_tree\(", wc_code):
+    err(f"{WC_GD}: WorldClock is a plain autoload — the day and the fraction (from START_DAY 1 / START_FRACTION 0.28, a 600 s day), "
+        "read with get_day()/get_fraction(), advanced by advance(), saved and restored; no signals, no system time, no time-skip")
+if not re.search(r"func advance\(delta: float\) -> void:\s*if not is_finite\(delta\) or delta <= 0\.0:\s*return\s*"
+                 r"var total := _fraction \+ delta / DAY_LENGTH_SECONDS\s*var whole := floori\(total\)\s*_day \+= whole\s*_fraction = total - whole\s*$", wc_fn.get("advance", "")) \
+   or not re.search(r"func get_save_data\(\) -> Dictionary:\s*return \{\"day\": _day, \"fraction\": _fraction\}\s*$", wc_fn.get("get_save_data", "")):
+    err(f"{WC_GD}: advance() adds delta / DAY_LENGTH_SECONDS; each crossing of 1.0 raises the day by exactly one and wraps the fraction; "
+        "the save holds both the day and the fraction")
+ap = wc_fn.get("apply_save_data", "")
+if not re.search(r"func apply_save_data\(data: Dictionary\) -> void:\s*_day = START_DAY\s*_fraction = START_FRACTION\s*if data\.is_empty\(\):\s*return\s", ap) \
+   or not re.search(r"float\(day\) < START_DAY or float\(day\) != floorf\(float\(day\)\) or float\(fraction\) < 0\.0 or float\(fraction\) >= 1\.0", ap) \
+   or not re.search(r"_day = int\(day\)\s*_fraction = float\(fraction\)\s*$", ap) or ap.count("return") != 3:
+    err(f"{WC_GD}: apply_save_data() restores the saved day and fraction; an empty section (a v7 save) or a malformed one starts at day 1 at 0.28 — never half-restored")
+tod_src = scripts.get(TOD_GD, "")
+tod_len = re.search(r"^@export var day_length_seconds: float = ([0-9.]+)$", tod_src, re.M)
+tod_start = re.search(r"^@export_range\(0\.0, 1\.0\) var start_fraction: float = ([0-9.]+)$", tod_src, re.M)
+if not tod_len or not tod_start or (float(tod_len.group(1)), float(tod_start.group(1))) != (const_val(wc_src, "DAY_LENGTH_SECONDS"), const_val(wc_src, "START_FRACTION")):
+    err(f"{TOD_GD}: TimeOfDay's day_length_seconds / start_fraction must equal WorldClock's DAY_LENGTH_SECONDS / START_FRACTION — one configuration, never two")
+for path in sorted(glob.glob("scenes/**/*.tscn", recursive=True) + glob.glob("data/**/*.tres", recursive=True)):
+    if re.search(r"^(day_length_seconds|start_fraction) = ", open(path, encoding="utf-8").read(), re.M):
+        err(f"{path}: overrides TimeOfDay's day_length_seconds / start_fraction — the day is WorldClock's (D-42)")
+ws_code = code_only(scripts.get(WS_GD, ""))
+ws_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", ws_code, re.M | re.S)}
+if not re.search(r"func _ready\(\) -> void:\s*time_of_day\.add_to_group\(TIME_GROUP\)\s*time_of_day\.set_process\(false\)\s*"
+                 r"time_of_day\.day_fraction = WorldClock\.get_fraction\(\)\s*_phase = time_of_day\.get_phase_for_fraction\(time_of_day\.day_fraction\)\s*$", ws_fn.get("_ready", "")) \
+   or not re.search(r"func _process\(delta: float\) -> void:\s*WorldClock\.advance\(delta\)\s*_present_time\(\)\s*$", ws_fn.get("_process", "")) \
+   or not re.search(r"func _present_time\(\) -> void:\s*var fraction := WorldClock\.get_fraction\(\)\s*time_of_day\.day_fraction = fraction\s*"
+                    r"time_of_day\.time_updated\.emit\(fraction\)\s*var phase := time_of_day\.get_phase_for_fraction\(fraction\)\s*"
+                    r"if phase != _phase:\s*_phase = phase\s*time_of_day\.phase_changed\.emit\(phase\)\s*$", ws_fn.get("_present_time", "")) \
+   or "wildlife_controller.set_time_phase(_phase)" not in ws_fn.get("configure", "") or "WorldClock" in ws_fn.get("configure", ""):
+    err(f"{WS_GD}: WorldSimulation drives the clock — _ready switches TimeOfDay's own advance off and gives it the clock's fraction; "
+        "_process advances WorldClock and presents it (time_updated every frame, phase_changed when the fraction's phase changes); configure() never touches the clock")
+adv_sites, emits, writes = [], [], []
+for f, s2 in scripts.items():
+    if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
+    c = code_only(s2)
+    adv_sites += [f] * len(re.findall(r"\bWorldClock\.advance\(", c))
+    if f != TOD_GD:
+        emits += [(f, m) for m in re.findall(r"\b(time_updated|phase_changed)\.emit\(", c)]
+        writes += [f] * len(re.findall(r"\.day_fraction\s*=[^=]", c))
+    if f not in (WC_GD, WS_GD, "scripts/autoload/save_manager.gd") and re.search(r"\bWorldClock\b", c):
+        err(f"{f}: uses WorldClock — only WorldSimulation (advance, read) and SaveManager (save, restore) do (D-42)")
+    if f != WC_GD and re.search(r"\bWorldClock\._|\bWorldClock\.(START_|DAY_LENGTH)", c):
+        err(f"{f}: reaches into WorldClock — its state is only advanced, read, saved and restored through its functions")
+    if re.search(r"(time_of_day|TimeOfDay|_time_of_day|clock)\.(set_process\(true|set_physics_process|process_mode|_process\()|\.get_phase\(\)", c):
+        err(f"{f}: re-enables or calls TimeOfDay's own clock, or reads its cached get_phase() — it only presents WorldClock (D-42)")
+if adv_sites != [WS_GD] or "WorldClock.advance(" in code_only(re.sub(r"(?ms)^func _process\(.*?(?=^func |\Z)", "", scripts.get(WS_GD, ""))):
+    err(f"WorldClock.advance() must have exactly one caller, WorldSimulation._process (found {adv_sites}) — one clock, one driver")
+if sorted(emits) != [(WS_GD, "phase_changed"), (WS_GD, "time_updated")] or writes != [WS_GD, WS_GD]:
+    err(f"only WorldSimulation presents the clock in TimeOfDay — one time_updated / phase_changed emit and its two day_fraction writes (found {emits}, {writes})")
+sm8 = scripts.get("scripts/autoload/save_manager.gd", "")
+if '"world_time": WorldClock.get_save_data(),' not in code_only(func_body(sm8, "save_game") or "") \
+   or 'WorldClock.apply_save_data(data.get("world_time", {}))' not in code_only(func_body(sm8, "load_game") or "") \
+   or not re.search(r"^\t\t\t7:\s*pass\b", code_only(func_body(sm8, "_migrate") or ""), re.M) \
+   or not re.search(r'^\t"world_time": \[TYPE_DICTIONARY\],$', sm8, re.M) or (const_val(sm8, "SAVE_VERSION") or 0) < 8:
+    err("scripts/autoload/save_manager.gd: save v8 — the world_time section (day and fraction) is saved and loaded as a dictionary; "
+        "step 7 -> 8 (M09.2) rewrites nothing (absent = day 1 at 0.28)")
+notes.append(f"world clock (M09.2): WorldClock day from {const_val(wc_src, 'START_DAY')} at {const_val(wc_src, 'START_FRACTION')}, "
+             f"{const_val(wc_src, 'DAY_LENGTH_SECONDS'):.0f} s day; one driver (WorldSimulation._process); TimeOfDay presents it; save v8 world_time")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
