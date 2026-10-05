@@ -1626,10 +1626,18 @@ Goal: the small playable test area (placeholders).
   - The farm `thirsty_for` resets on load and re-save.
   - Stale lines in ARCHITECTURE and the tools README (outside what M09.3 touched).
   - The M08.4 D/B/L probe findings.
-  - The butterflies' unclamped vertical lerp diverging on frames over 0.5 s (above; found by M09.3's regression, present since `f83d52c`).
+  - The butterflies' unclamped vertical lerp diverging on frames over 0.5 s (above; found by M09.3's regression, present since `f83d52c`) — fixed afterwards in its own commit (below).
 - **Pending (Android):** deferred by the developer — the rain's frame cost and look on a phone (the particle budget kept conservative), and a relaunch keeping the weather.
 - **Files:** new `scripts/world_simulation/weather_controller.gd`, `scripts/world_simulation/weather_schedule.gd`, `data/weather/weather_schedule.tres`, `tools/sims/sim_weather.py`, `tools/sims/gd_port.py`; changed `scripts/world_simulation/world_simulation.gd`, `scripts/world_simulation/environment_controller.gd`, `scenes/world_simulation/WorldSimulation.tscn`, `tools/check_project.py`, `tools/sims/sim_world_clock.py`, `tools/README.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN_DECISIONS.md` (D-43), this plan.
 - **Commit:** §15.
+
+**Fix (after M09.3) — butterfly height interpolation** — not a milestone and not part of the weather (D-43)
+- **What:** a pre-existing numerical-stability bug, older than M09.3 (present since `f83d52c`, the environmental event layer) and discovered by M09.3's regression. `wildlife_butterfly.gd` moved the height with `lerp(position.y, target_height, 4.0 * delta)`: past a factor of 1 the step overshoots, and on a frame longer than 0.5 s it diverged to infinity (non-finite transforms). Seen in the whole-day test run at 5× `Engine.time_scale`; a very long real frame (resuming from the background) could have done the same.
+- **Fix:** one line — the factor clamped, `minf(4.0 * delta, 1.0)`. No other wildlife change.
+- **Coverage:** new `tools/sims/sim_wildlife_stability.py` reads that real line and executes it for frames from 1/120 s to 1,000 s (0.5 s and just over included, the 5× run's ≈2.2 s frames), six start heights, both targets and alternating targets: the height stays finite, never overshoots, settles; the unclamped line is shown to break and to reach infinity (after 347 frames of 2.2 s). With the old line restored the simulation fails.
+- **Results:** the 5× whole-day run (RTA) logged 19,560 "!v.is_finite()" transform errors before and none after; a per-frame scan found seven butterflies going non-finite before and no node after; the villager's routine in that run unchanged. Static suite: checker 0 errors, GDScript 0 errors, all 30 simulations pass; headless import clean. M09.3's weather unchanged (`sim_weather`, `sim_world_clock` pass; the weather runtime phases repeat M09.3's results).
+- **Files:** `scripts/world_simulation/wildlife_butterfly.gd`, `tools/sims/sim_wildlife_stability.py`, `tools/README.md`, this plan.
+- **Commit:** its own commit, directly after `37fd5ca`.
 
 ### PHASE 10 — EXPLORATION
 | Milestone | Objective | Done when | Runtime test | Status |

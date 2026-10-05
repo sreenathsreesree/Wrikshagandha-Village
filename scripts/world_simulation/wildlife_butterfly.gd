@@ -67,7 +67,8 @@ func _process(delta: float) -> void:
 	wing_right.rotation.z = -flap * 0.6
 
 	var target_height := land_height if state == "pause" else hover_height
-	position.y = lerp(position.y, target_height, 4.0 * delta)
+	# Clamped: past 1.0 the step overshoots, and on a long frame (over 0.5 s) it diverges to infinity.
+	position.y = lerp(position.y, target_height, minf(4.0 * delta, 1.0))
 
 func _process_lead(delta: float) -> void:
 	_lead_timeout -= delta
