@@ -55,6 +55,8 @@ func configure(player: Node3D, directional_light: DirectionalLight3D, world_envi
 	environmental_event_controller.player = player
 	exploration_landmark_controller.player = player
 	weather_controller.player = player
+	# M09.4 (D-44): the one listener of the weather — rain beginning reaches the event layer.
+	weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)
 
 	time_of_day.time_updated.connect(_on_time_updated)
 	_on_time_updated(time_of_day.day_fraction)

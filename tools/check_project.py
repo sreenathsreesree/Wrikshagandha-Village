@@ -982,7 +982,9 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           #  farm_manager.gd by M05.3: milestone bonuses from reward data;
           #  and by M06.4: every milestone reward looked up by id in _reach(), one reward path.)
           "scripts/interactables/discovery_spawn_point.gd": "1956d72184b1d590",
-          "scripts/world_simulation/environmental_event.gd": "5945221474b886f2",
+          # (environmental_event.gd re-pinned deliberately by M09.4 (D-44): one export, trigger_weather — a weather-triggered
+          #  event is skipped by the distance loop and fired by EnvironmentalEventController.on_weather_changed().)
+          "scripts/world_simulation/environmental_event.gd": "a678de1503d5c210",
           "scripts/world_simulation/time_of_day.gd": "4faf06b101abc1ef"}
 for f, h in PINNED.items():
     got = hashlib.sha256(open(f, "rb").read()).hexdigest()[:16] if os.path.exists(f) else None
@@ -3491,21 +3493,64 @@ for path in sorted(glob.glob("scenes/**/*.tscn", recursive=True)):
 if not re.search(r"^func apply_time\(day_fraction: float, rain: float = 0\.0\) -> void:", scripts.get(ENV_GD, ""), re.M) or re.search(r"\bWeather|WorldClock", code_only(scripts.get(ENV_GD, ""))) \
    or "environment_controller.apply_time(day_fraction, weather_controller.get_rain_intensity())" not in code_only(scripts.get(WS_GD, "")):
     err(f"{ENV_GD}: the lighting takes the rain intensity as a number from WorldSimulation and never knows the weather or the clock")
-wapply = []
+wapply, wlisten = [], []
 for f, s2 in scripts.items():
     if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
     c = code_only(s2)
     wapply += [f] * len(re.findall(r"\bweather_controller\.apply_time\(", c))
-    if re.search(r"weather_changed\.connect\(", c):
-        err(f"{f}: reacts to weather_changed — reactions are M09.4's (D-43)")
+    # M09.4 (D-44) replaced "nothing connects weather_changed": exactly one production listener (checked below)
+    wlisten += [(f, m) for m in re.findall(r"(\S*weather_changed\.connect\([^)\n]*\))", c)]
     if f not in (WCTL_GD, WSCH_GD, WS_GD) and re.search(r"\bWeatherController\b|\bWeatherSchedule\b|\bweather_controller\b|\bis_raining\(|\bget_rain_intensity\(", c):
         err(f"{f}: reads the weather — only WorldSimulation drives it and nothing reacts in M09.3 (farming, NPCs, wildlife, saves never hear of it; D-43)")
+if wlisten != [(WS_GD, "weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)")] \
+   or "weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)" not in code_only(ws_fn.get("configure", "")):
+    err(f"exactly one production connection consumes WeatherController.weather_changed: WorldSimulation.configure() -> EnvironmentalEventController (found {wlisten}; D-44)")
 if wapply != [WS_GD, WS_GD]:
     err(f"WeatherController.apply_time() is called only by WorldSimulation (_ready and _present_time), with WorldClock's day and fraction (found {wapply})")
 if re.search(r"weather|rain", code_only(scripts.get("scripts/autoload/save_manager.gd", "")), re.I):
     err("scripts/autoload/save_manager.gd: weather is never saved — it is derived from the saved world time (D-43)")
 notes.append(f"weather (M09.3): seed {wvals.get('weather_seed')}, {wvals.get('slots_per_day')} slots/day, rain chance {wvals.get('rain_chance')}, "
-             f"ramp {wvals.get('ramp_fraction')} day, Clear through day {wvals.get('always_clear_days')}; given the clock by WorldSimulation; not saved; no reactions")
+             f"ramp {wvals.get('ramp_fraction')} day, Clear through day {wvals.get('always_clear_days')}; given the clock by WorldSimulation; not saved; one listener (M09.4)")
+
+# ------------------------------------------------------------ weather reaction (M09.4, D-44)
+# Rain beginning during play startles the five SmallBirds through the existing event layer: WorldSimulation's one
+# weather_changed connection -> EnvironmentalEventController.on_weather_changed() -> every EnvironmentalEvent whose
+# trigger_weather matches, through its own can_trigger()/fire(). A weather-triggered event never enters the distance
+# loop. RainBirdDisturbance (WILDLIFE_DISTURBANCE, rain, repeatable, 60 s cooldown, the five SmallBirds) lives under a
+# new top-level WeatherEvents node; nothing else reacts (no NPC, farming or audio), nothing is saved.
+EVT_GD, EVC_GD = "scripts/world_simulation/environmental_event.gd", "scripts/world_simulation/environmental_event_controller.gd"
+evt_src, evc_code = scripts.get(EVT_GD, ""), code_only(scripts.get(EVC_GD, ""))
+evc_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", evc_code, re.M | re.S)}
+if len(re.findall(r'^@export var trigger_weather: String = ""$', evt_src, re.M)) != 1 or code_only(evt_src).count("trigger_weather") != 1:
+    err(f"{EVT_GD}: one export, trigger_weather (\"\" = proximity, as before; a weather = fired only on that weather change) — read only by the controller (D-44)")
+if list(evc_fn) != ["_process", "on_weather_changed"] \
+   or not re.search(r"var event := node as EnvironmentalEvent\s*if event == null or event\.trigger_weather != \"\":\s*continue\s*var distance := event\.global_position", evc_fn.get("_process", "")) \
+   or not re.search(r"func on_weather_changed\(weather: String\) -> void:\s*for node in get_tree\(\)\.get_nodes_in_group\(\"environmental_event\"\):\s*var event := node as EnvironmentalEvent\s*"
+                    r"if event == null or event\.trigger_weather == \"\" or event\.trigger_weather != weather:\s*continue\s*if event\.can_trigger\(\):\s*event\.fire\(\)\s*$", evc_fn.get("on_weather_changed", "")):
+    err(f"{EVC_GD}: the distance loop skips weather-triggered events; on_weather_changed(weather) fires the events waiting for that weather through can_trigger() and fire() — nothing else")
+mtx = open(MEADOW_SCENE, encoding="utf-8").read() if os.path.exists(MEADOW_SCENE) else ""
+birds = re.findall(r'^\[node name="(SmallBird\d+)" parent="Wildlife" instance=ExtResource\("(\w+)"\)\]', mtx, re.M)
+bird_ext = re.search(r'^\[ext_resource type="PackedScene" path="res://scenes/wildlife/SmallBird\.tscn" id="(\w+)"\]$', mtx, re.M)
+rain_evt = re.search(r'^\[node name="WeatherEvents" type="Node3D" parent="\."\]\n\n\[node name="RainBirdDisturbance" type="Node3D" parent="WeatherEvents"\]\n((?:[^\[\n].*\n?)+)', mtx, re.M)
+want = ('script = ExtResource("36")\nevent_type = 0\ncooldown_seconds = 60.0\nrepeatable = true\ntrigger_weather = "rain"\nactor_paths = ['
+        + ", ".join(f'NodePath("../../Wildlife/{b}")' for b, _ in birds) + "]")
+if not bird_ext or len(birds) != 5 or {e for _, e in birds} != {bird_ext.group(1)} \
+   or not re.search(r'^\[ext_resource type="Script" path="res://scripts/world_simulation/environmental_event\.gd" id="36"\]$', mtx, re.M) \
+   or not rain_evt or rain_evt.group(1).strip() != want or len(re.findall(r'parent="WeatherEvents', mtx)) != 1:
+    err(f"{MEADOW_SCENE}: a top-level WeatherEvents node holding only RainBirdDisturbance — WILDLIFE_DISTURBANCE, trigger_weather \"rain\", repeatable, 60 s cooldown, "
+        f"the five SmallBirds and nothing else (no butterflies, rabbits, discovery or crop gate; D-44)")
+for path in sorted(glob.glob("scenes/**/*.tscn", recursive=True)):
+    n = len(re.findall(r"^trigger_weather = ", open(path, encoding="utf-8").read(), re.M))
+    if n != (1 if path == MEADOW_SCENE else 0):
+        err(f"{path}: {n} weather-triggered event(s) — RainBirdDisturbance is the only one; the existing events stay proximity events (D-44)")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
+    c = code_only(s2)
+    if f not in (EVT_GD, EVC_GD, WS_GD, WCTL_GD) and re.search(r"\bon_weather_changed\b|\btrigger_weather\b|\bweather_changed\b", c):
+        err(f"{f}: takes part in the weather reaction — only WeatherController, WorldSimulation and the event layer do (no NPC, farming, wildlife or UI listener; D-44)")
+    if re.search(r"\bplay_wildlife_sound\(", c) and f != "scripts/autoload/ambient_audio_manager.gd":
+        err(f"{f}: calls play_wildlife_sound() — audio is M09A's, not the rain reaction's (D-44)")
+notes.append(f"weather reaction (M09.4): rain beginning -> RainBirdDisturbance -> startle {[b for b, _ in birds]}; one weather_changed listener; distance loop skips weather events; nothing saved")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

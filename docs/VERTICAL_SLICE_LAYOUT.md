@@ -120,13 +120,17 @@ The runtime audit (first real run of M07.2) found three blockers; each got one i
 
 The villager follows a daily routine between two data-only `NpcRoutineSpot` markers under the Meadow's own `NpcRoutine` node (outside `VerticalSlice`, so the placement contract's "no scripts under VerticalSlice" holds): `villager_home` exactly at the NPC spot (-19.5, 2.2) — dawn, evening and night — and `villager_pond` at (4.0, -7.0), 2.4 m beside the existing pond path and 6.3 m from the pond's centre — morning and afternoon. Both keep the NPC spot's clearance rules (checked by `sim_slice_layout.py`); they are routine spots only, not rest or scenic spots.
 
+## Weather events (M09.4, D-44)
+
+A top-level `WeatherEvents` node (outside the existing-world digest, like `NpcRoutine`) holds `RainBirdDisturbance`: an `EnvironmentalEvent` that fires only when the weather changes to rain during play, startling the five existing `SmallBird`s. It has no position-based trigger and no footprint, so it takes no place on the map; nothing under `EnvironmentalEvents` changed.
+
 ## Machine-readable plan
 
 ```slice-layout
-# existing Meadow (every node outside VerticalSlice, WorldRim and NpcRoutine) — unchanged by M07.2, M07.3 and M09.1
+# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine and WeatherEvents) — unchanged by M07.2, M07.3, M09.1 and M09.4
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3) and NpcRoutine (M09.1) included
-scene_digest dce2cd4ece80a36a
+# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1) and WeatherEvents (M09.4) included
+scene_digest 6df9120437fcec76
 # M09.1 (D-41): the villager's routine spots — dawn/evening/night at home (the NPC spot), morning/afternoon by the pond path
 routine_spot villager_home -19.5 2.2
 routine_spot villager_pond 4.0 -7.0

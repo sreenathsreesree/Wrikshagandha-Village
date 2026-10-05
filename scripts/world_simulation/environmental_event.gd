@@ -41,6 +41,11 @@ enum EventType { WILDLIFE_DISTURBANCE, BUTTERFLY_LEAD, ENVIRONMENTAL_REVEAL }
 ## EnvironmentalEventController's existing distance loop.
 @export var trigger_on_arrival: bool = false
 
+## Optional (M09.4, D-44): "" (the default) is the usual proximity trigger;
+## a weather ("rain") makes this event fire only when the weather changes to
+## it during play — EnvironmentalEventController never checks its distance.
+@export var trigger_weather: String = ""
+
 ## Leaving needs this much extra distance past trigger_radius, so standing
 ## on the edge can't flicker between "left" and "arrived".
 const ARRIVAL_EXIT_MARGIN := 0.75

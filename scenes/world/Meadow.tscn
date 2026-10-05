@@ -1312,3 +1312,13 @@ spot_id = "villager_home"
 position = Vector3(4, 0, -7)
 script = ExtResource("routine_spot")
 spot_id = "villager_pond"
+
+[node name="WeatherEvents" type="Node3D" parent="."]
+
+[node name="RainBirdDisturbance" type="Node3D" parent="WeatherEvents"]
+script = ExtResource("36")
+event_type = 0
+cooldown_seconds = 60.0
+repeatable = true
+trigger_weather = "rain"
+actor_paths = [NodePath("../../Wildlife/SmallBird1"), NodePath("../../Wildlife/SmallBird2"), NodePath("../../Wildlife/SmallBird3"), NodePath("../../Wildlife/SmallBird4"), NodePath("../../Wildlife/SmallBird5")]
