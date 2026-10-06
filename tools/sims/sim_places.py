@@ -72,10 +72,11 @@ class Exploration:
 # ---------------------------------------------------------------- 3. parity with the pre-M03.6 constants
 OLD_PLACES = [("overlook", "Overlook", ""), ("wildflower_clearing", "Wildflower Clearing", ""), ("ancient_grove", "Ancient Grove", ""),
               ("stone_ring", "Stone Ring", ""), ("secluded_pond_nook", "Secluded Pond Nook", ""),
+              ("hidden_hollow", "Hidden Hollow", ""),      # M10 (D-45): a fifth secret, deliberately added to the snapshot
               ("mystery_grove_tree", "Mystery Grove Tree", ""), ("hidden_flower_pocket", "Hidden Flower Pocket", ""),
               ("quiet_farm", "Quiet Garden", "A quiet place to grow.")]
 OLD_CURIOSITY = {"secluded_pond_nook": "river_stone", "mystery_grove_tree": "golden_leaf"}
-OLD_SECRET_THRESHOLD, OLD_GARDEN = 4, "quiet_farm"
+OLD_SECRET_THRESHOLD, OLD_GARDEN = 5, "quiet_farm"   # 4 until M10 (D-45) added the Hidden Hollow
 class OldExploration(Exploration):  # the old code: constants + the scene's landmark kinds
     def __init__(e):
         places = [{"id": i, "name": n, "arrival": a, "order": k, "secret": LANDMARKS[i], "garden": i == OLD_GARDEN,

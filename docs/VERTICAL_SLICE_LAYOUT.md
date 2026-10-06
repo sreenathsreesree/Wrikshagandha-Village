@@ -124,16 +124,30 @@ The villager follows a daily routine between two data-only `NpcRoutineSpot` mark
 
 A top-level `WeatherEvents` node (outside the existing-world digest, like `NpcRoutine`) holds `RainBirdDisturbance`: an `EnvironmentalEvent` that fires only when the weather changes to rain during play, startling the five existing `SmallBird`s. It has no position-based trigger and no footprint, so it takes no place on the map; nothing under `EnvironmentalEvents` changed.
 
+## Hidden places (M10, D-45)
+
+A top-level `HiddenPlaces` node (outside the existing-world digest) holds the Hidden Hollow: one `ExplorationLandmark` (`hidden_hollow`, a secret location, radius 3.0) at (19.0, -24.0), 13.0 m north-east of the Secluded Pond Nook, behind a ring of existing props — two trees and a tall tree on its far side and a mushroom cluster — and a clue trail leading out of the Nook: two footprint marks, an unusual flower patch, then glowing motes at the hollow's edge. Each clue is further from the Nook than the last and within 3 m of the one before it (the first within 5 m of the Nook), every new node keeps the existing clearance rules, and no solid prop sits within 1.5 m of the hollow's centre or on a mound top (O-15). Only existing prop scenes are used; the landmark is the only scripted node (checked by `sim_slice_layout.py`).
+
 ## Machine-readable plan
 
 ```slice-layout
-# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine and WeatherEvents) — unchanged by M07.2, M07.3, M09.1 and M09.4
+# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents and HiddenPlaces) — unchanged by M07.2, M07.3, M09.1, M09.4 and M10
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1) and WeatherEvents (M09.4) included
-scene_digest 6df9120437fcec76
+# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4) and HiddenPlaces (M10) included
+scene_digest 97d36b491f83d13d
 # M09.1 (D-41): the villager's routine spots — dawn/evening/night at home (the NPC spot), morning/afternoon by the pond path
 routine_spot villager_home -19.5 2.2
 routine_spot villager_pond 4.0 -7.0
+# M10 (D-45): the Hidden Hollow — a fifth secret, its clue trail from the Secluded Pond Nook and its ring of props (HiddenPlaces)
+hidden HiddenHollowLandmark landmark 19.0 -24.0
+hidden HollowTrailFootprints1 Footprints.tscn 15.8 -16.3
+hidden HollowTrailFootprints2 Footprints.tscn 16.6 -18.2
+hidden HollowTrailFlowers UnusualFlowerPatch.tscn 17.4 -20.2
+hidden HollowTrailMotes GlowingMotes.tscn 18.0 -21.6
+hidden HollowTree1 TreeRound.tscn 17.2 -28.3
+hidden HollowTree2 TreeTall.tscn 20.8 -28.2
+hidden HollowTree3 TreeRound.tscn 23.3 -25.8
+hidden HollowMushrooms MushroomCluster.tscn 22.9 -22.4
 # existing Meadow nodes the plan relies on (checked against Meadow.tscn)
 existing PlayerSpawn 0.0 5.0
 existing Patch1 0.5 3.2

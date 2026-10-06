@@ -130,7 +130,7 @@ SNAPSHOT = {
     "discoveries": {"ancient_seed": (100, 0.0), "blue_mushroom": (32, 240.0), "golden_leaf": (60, 600.0), "healing_herb": (20, 120.0), "hidden_herb": (30, 240.0),
                     "meadow_flower": (10, 60.0), "river_stone": (8, 45.0), "small_mushroom": (12, 60.0), "wild_mint": (15, 90.0)},
     "crops": {"wild_carrot": (12, 30.0, 2), "meadow_herb": (15, 38.0, 2), "golden_sunflower": (20, 46.0, 1), "elderbloom": (30, 56.0, 0)},
-    "plots": 7, "places": {"landmarks": 4, "secrets": 4},
+    "plots": 7, "places": {"landmarks": 4, "secrets": 5},  # M10 (D-45): the Hidden Hollow is the fifth secret
     "quality_scale": [0.75, 1.0, 1.5],
     "harvest": {"wild_carrot": [9, 12, 18], "meadow_herb": [11, 15, 23], "golden_sunflower": [15, 20, 30], "elderbloom": [23, 30, 45]},
     # M06.2 (D-25): the locked O-01 sell prices — coins per unit, Plain / Good / Fine.

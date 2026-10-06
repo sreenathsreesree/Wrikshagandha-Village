@@ -72,7 +72,7 @@ SOLID_R = {"TreeRound.tscn": 1.5, "TreeTall.tscn": 1.2, "TreeWide.tscn": 1.8, "R
 SOFT_R = {"GrassClump.tscn": 0.4, "GlowingMotes.tscn": 0.5, "Footprints.tscn": 0.5, "DriftingLeaf.tscn": 0.3, "Butterfly.tscn": 0.3}
 MOVING = ("Wildlife", "Ambient", "EnvironmentalEvents", "WorldSimulation")   # actors that move or carry no footprint
 SLICE = "VerticalSlice"
-ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents")                        # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events: outside the existing-world digest
+ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces")        # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places: outside the existing-world digest
 def in_slice(par, name): return any(par == r or par.startswith(r + "/") or (par == "." and name == r) for r in ADDED)
 NODES, OBJECTS, PATCHES, GEOM, BASE_GEOM, PLACED = {}, [], [], [], [], []
 for m in re.finditer(r'^\[node name="([^"]+)"([^\]]*)\]\n(.*?)(?=^\[|\Z)', SCENE, re.M | re.S):
@@ -125,6 +125,7 @@ for line in BLOCK[0].splitlines():
     elif k in ("house",): plan[k] = tuple(float(v) for v in a)
     elif k in ("door", "npc", "trailhead"): plan[k] = (float(a[0]), float(a[1]))
     elif k == "routine_spot": plan.setdefault("routine", {})[a[0]] = (float(a[1]), float(a[2]))   # M09.1
+    elif k == "hidden": plan.setdefault("hidden", []).append((a[0], a[1], float(a[2]), float(a[3])))  # M10 (D-45)
     elif k == "forest": plan["forest"][a[0]] = tuple(float(v) for v in a[1:])
     elif k == "path": plan["path"][a[0]] = [tuple(float(c) for c in p.split(",")) for p in a[1:]]
     else: raise AssertionError(f"unknown layout line: {k}")
@@ -278,6 +279,46 @@ for sid, (sx, sz) in spots.items():
         ms = math.hypot(x - sx, z - sz) - 0.5 - r - NEED[k]
         assert ms >= 0, f"routine spot {sid} is too close to {n} ({k}, short by {-ms:.2f} m)"
         clear.setdefault(sid, []).append(ms)
+# M10 (D-45): the Hidden Hollow — its landmark, clue trail and ring of props under HiddenPlaces, exactly as planned, from
+# existing prop scenes only (plus the existing landmark script); every node clear of the existing world by the usual
+# rules and of each other; the landmark zone clear of every other place's zone and of the new solids; the clue chain
+# leads out from the Secluded Pond Nook in order, each clue within 3 m of the next, the motes at the hollow's mouth.
+hidden = [(n, "landmark" if 'script = ExtResource("37")' in b else inst_of(a), *vec(pr, "position")[0::2])
+          for n, (par, a, b, pr) in placed.items() if par == "HiddenPlaces"]
+assert hidden == plan.get("hidden"), f"the hidden places are exactly the planned nodes ({hidden} vs {plan.get('hidden')})"
+H_SOLID = {"TreeRound.tscn", "TreeTall.tscn", "MushroomCluster.tscn", "UnusualFlowerPatch.tscn"}
+H_SOFT = {"Footprints.tscn", "GlowingMotes.tscn"}
+assert {k for _, k, _, _ in hidden} <= H_SOLID | H_SOFT | {"landmark"}, "only existing prop scenes and the landmark"
+hl = [(n, x, z) for n, k, x, z in hidden if k == "landmark"]
+assert len(hl) == 1, "one landmark for the Hidden Hollow"
+hl_name, hx, hz = hl[0]
+assert re.search(r'location_id = "hidden_hollow"\nkind = 1\nradius = 3\.0', placed[hl_name][2]), "the landmark is the hidden_hollow secret, radius 3"
+HR = 3.0
+hclear = []
+new_objs = [(n, x, z, SOLID_R[k] if k in H_SOLID else SOFT_R[k], "solid" if k in H_SOLID else "soft") for n, k, x, z in hidden if k != "landmark"]
+for n, x, z, r, kind in new_objs:
+    assert inside(x, z, 1.0 + r), f"{n} lies inside the bounds"
+    for on, ox, oz, orr, ok in OBJECTS:
+        need = NEED[ok] if kind == "solid" else 0.3
+        m = math.hypot(x - ox, z - oz) - r - orr - need
+        assert m >= 0, f"{n} is too close to {on} ({ok}, short by {-m:.2f} m)"
+        hclear.append(m)
+for i, (n1, x1, z1, r1, k1) in enumerate(new_objs):
+    for n2, x2, z2, r2, k2 in new_objs[i + 1:]:
+        assert math.hypot(x1 - x2, z1 - z2) - r1 - r2 >= 0.3 or "soft" in (k1, k2), f"{n1} and {n2} overlap"
+    if k1 == "solid":
+        assert math.hypot(x1 - hx, z1 - hz) - r1 >= 1.5, f"{n1} crowds the hollow's centre"
+assert inside(hx, hz, 1.0 + HR), "the hollow's zone lies inside the bounds"
+for on, ox, oz, orr, ok in OBJECTS:
+    m = math.hypot(hx - ox, hz - oz) - HR - orr - (0.5 if ok == "zone" else 0.0)
+    assert m >= 0, f"the hollow's zone overlaps {on} ({ok})"
+nook = next((x, z) for n, x, z, r, k in OBJECTS if n == "SecludedPondNookLandmark")
+chain = [next((x, z) for n, k, x, z in hidden if n == m) for m in ("HollowTrailFootprints1", "HollowTrailFootprints2", "HollowTrailFlowers", "HollowTrailMotes")]
+dists = [math.hypot(x - nook[0], z - nook[1]) for x, z in chain + [(hx, hz)]]
+clue_steps = [math.dist(a, b) for a, b in zip([nook] + chain, chain + [(hx, hz)])]
+assert dists == sorted(dists) and dists[0] > 3.0 + 0.5, f"the clue chain leads out from the Nook in order ({[round(d, 1) for d in dists]})"
+assert all(d <= 3.0 for d in clue_steps[1:]) and clue_steps[0] <= 5.0, f"each clue is within sight of the next ({[round(d, 1) for d in clue_steps]})"
+assert math.hypot(chain[-1][0] - hx, chain[-1][1] - hz) <= HR, "the motes sit at the hollow's mouth, inside its zone"
 ntxt, nnodes = scene_nodes("scenes/world/props/NpcSpotPlaceholder.tscn")
 assert nnodes[0][1] == "Marker3D" and not re.search(r"Body3D|CollisionShape3D|Area3D|script = ", ntxt), "the NPC spot is a marker only — no collider, no behaviour"
 # the forest edge
@@ -286,7 +327,7 @@ zones = {fid: ((x0 + x1) / 2, (z0 + z1) / 2, abs(x1 - x0), abs(z1 - z0)) for fid
 trees, tclear = [], []
 for name, (par, attrs, body, props) in placed.items():
     kind = inst_of(attrs)
-    if kind not in TREES: continue
+    if kind not in TREES or par == "HiddenPlaces": continue     # the Hollow's ring is checked node by node above (M10)
     assert par == SLICE, f"{name}: forest trees sit directly under VerticalSlice"
     x, _, z = vec(props, "position"); r = SOLID_R[kind] * vec(props, "scale", (1.0, 1.0, 1.0))[0]
     zs = [fid for fid, zz in zones.items() if rect_dist(x, z, *zz) == 0.0]
@@ -386,4 +427,6 @@ print(f"placement: house {w:g}×{d:g} m StaticBody3D on the footprint, door mark
 print(f"navigation and bounds: rim walls on the ±{HALF_X:g} edges (1.6 m); house carve = footprint; pond core {core_r:g} m in {water_r:g} m water "
       f"(shallow edge {water_r - core_r - AGENT_R:.2f} m), in-pond discoveries within reach {reach} (≤ {REACH - 0.3:.1f} m)")
 print(f"routine spots (M09.1): {spots}; home = the NPC spot; clearance {', '.join(f'{k} {min(clear[k]):.2f} m' for k in spots)}")
+print(f"hidden places (M10): Hidden Hollow at ({hx}, {hz}), {math.dist(nook, (hx, hz)):.1f} m from the Nook; clue chain {[round(d, 1) for d in clue_steps]} m apart; "
+      f"{len(new_objs)} props, clearance >= {min(hclear):.2f} m")
 print("ALL SLICE LAYOUT SIMULATIONS PASSED")

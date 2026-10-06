@@ -3552,6 +3552,55 @@ for f, s2 in scripts.items():
         err(f"{f}: calls play_wildlife_sound() — audio is M09A's, not the rain reaction's (D-44)")
 notes.append(f"weather reaction (M09.4): rain beginning -> RainBirdDisturbance -> startle {[b for b, _ in birds]}; one weather_changed listener; distance loop skips weather events; nothing saved")
 
+# ------------------------------------------------------------ hidden places (M10, D-45)
+# A fifth secret, the Hidden Hollow, added as data and scene content only (M10.1): one PlaceDefinition
+# (hidden_hollow, order 55 — right after the Secluded Pond Nook its trail starts from — secret, no arrival text,
+# no curiosity pairing) and, under one new top-level HiddenPlaces node in the Meadow, its ExplorationLandmark
+# (SECRET_LOCATION, radius 3) with a clue trail and a ring of existing, script-free prop scenes. It pays the
+# existing one-time secret_location reward through the existing ExplorationManager; "every secret found" now
+# needs five (no migration: the saved all_secrets_bonus flag keeps a paid bonus paid). No new save field, no
+# coins, items or progression; the placement and clearances are sim_slice_layout.py's.
+HH = "data/places/hidden_hollow.tres"
+hh_want = ('[gd_resource type="Resource" script_class="PlaceDefinition" load_steps=2 format=3]\n\n'
+           '[ext_resource type="Script" path="res://scripts/world_simulation/place_definition.gd" id="1"]\n\n'
+           '[resource]\nscript = ExtResource("1")\nid = "hidden_hollow"\ndisplay_name = "Hidden Hollow"\norder = 55\nsecret = true\n')
+if not os.path.exists(HH) or open(HH, encoding="utf-8").read() != hh_want:
+    err(f"{HH}: the Hidden Hollow place — display name \"Hidden Hollow\", order 55, secret, no arrival text, not the garden, no curiosity pairing (D-45)")
+PLACE_IDS = {"overlook", "wildflower_clearing", "ancient_grove", "stone_ring", "secluded_pond_nook", "hidden_hollow",
+             "mystery_grove_tree", "hidden_flower_pocket", "quiet_farm"}
+if set(places) != PLACE_IDS or sorted(k for k, v in places.items() if v["secret"]) != \
+   ["hidden_flower_pocket", "hidden_hollow", "mystery_grove_tree", "secluded_pond_nook", "stone_ring"] \
+   or sorted(places, key=lambda k: places[k]["order"]).index("hidden_hollow") != sorted(places, key=lambda k: places[k]["order"]).index("secluded_pond_nook") + 1:
+    err(f"data/places: the four earlier secrets plus the Hidden Hollow, listed right after the Secluded Pond Nook — five secrets, nothing else added (D-45)")
+HP_PROPS = {"TreeRound", "TreeTall", "MushroomCluster", "UnusualFlowerPatch", "Footprints", "GlowingMotes"}
+hp_ext = {m.group(2): m.group(1) for m in re.finditer(r'^\[ext_resource type="PackedScene" path="res://scenes/world/props/(\w+)\.tscn" id="(\w+)"\]$', mtx, re.M)}
+hp_block = re.search(r'^\[node name="HiddenPlaces" type="Node3D" parent="\."\]\n(.*?)(?=^\[node name="[^"]+" (?:type="[^"]+" )?parent="\."|\Z)', mtx, re.M | re.S)
+hp_nodes = re.findall(r'^\[node name="(\w+)" parent="HiddenPlaces"(?: type="(\w+)")?(?: instance=ExtResource\("(\w+)"\))?\]\n((?:[^\[\n].*\n?)*)', mtx, re.M) \
+    + re.findall(r'^\[node name="(\w+)" type="(\w+)" parent="HiddenPlaces"()\]\n((?:[^\[\n].*\n?)*)', mtx, re.M)
+hp_land = [(n, b) for n, t, e, b in hp_nodes if t == "Node3D" and not e]
+hp_inst = [(n, hp_ext.get(e), b) for n, t, e, b in hp_nodes if e]
+if len(re.findall(r'^\[node name="HiddenPlaces" ', mtx, re.M)) != 1 or not hp_block or re.search(r'parent="HiddenPlaces/', mtx) \
+   or len(re.findall(r'parent="HiddenPlaces"', mtx)) != len(hp_nodes) or len(hp_land) != 1 or len(hp_inst) != len(hp_nodes) - 1 \
+   or not re.search(r'^\[ext_resource type="Script" path="res://scripts/world_simulation/exploration_landmark\.gd" id="37"\]$', mtx, re.M) \
+   or not re.fullmatch(r'script = ExtResource\("37"\)\nposition = Vector3\([-0-9., ]+\)\nlocation_id = "hidden_hollow"\nkind = 1\nradius = 3\.0\n*', hp_land[0][1] if hp_land else "") \
+   or any(k not in HP_PROPS or re.search(r"^script|^\[sub_resource|_path|^metadata", b, re.M) for _, k, b in hp_inst) \
+   or sorted(k for _, k, _ in hp_inst).count("Footprints") < 1 or not {"UnusualFlowerPatch", "GlowingMotes"} <= {k for _, k, _ in hp_inst}:
+    err(f"{MEADOW_SCENE}: one top-level HiddenPlaces node holding the hidden_hollow ExplorationLandmark (secret, radius 3) and only existing "
+        f"script-free prop scenes {sorted(HP_PROPS)} — the clue trail and the hollow's ring; nothing nested, nothing else scripted (D-45)")
+if [l for f in glob.glob("scenes/**/*.tscn", recursive=True) for l in re.findall(r'location_id = "hidden_hollow"', open(f, encoding="utf-8").read())] != ['location_id = "hidden_hollow"'] \
+   or "hidden_hollow" in mtx.replace('location_id = "hidden_hollow"', ""):
+    err(f"{MEADOW_SCENE}: the Hidden Hollow is named once, by its landmark — no event, entry or second trigger refers to it (D-45)")
+ex_save = func_body(ex, "get_save_data") or ""
+if re.findall(r'^\t\t"(\w+)":', ex_save, re.M) != ["landmarks", "secrets", "all_secrets_bonus", "curiosity_bonus"] \
+   or 'if _secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count and not _all_secrets_bonus_awarded:' not in (func_body(ex, "mark_secret_location_found") or "") \
+   or '_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")' not in (func_body(ex, "apply_save_data") or ""):
+    err(f"{EXPLO}: the Hollow is saved in the existing exploration section (no new field); 'every secret found' counts the data's secrets and a paid bonus stays paid (D-45)")
+for f, s2 in scripts.items():
+    if not f.startswith("tools/") and re.search(r"hidden_hollow|HiddenPlaces|Hidden Hollow", s2):
+        err(f"{f}: refers to the Hidden Hollow — it is data and scene content only, no script knows it (M10.1, D-45)")
+notes.append(f"hidden places (M10): hidden_hollow (order 55, secret) + HiddenPlaces [{hp_land[0][0] if hp_land else '?'} + {len(hp_inst)} props: "
+             f"{sorted({k for _, k, _ in hp_inst})}]; {sum(p['secret'] for p in places.values())} secrets; exploration save section unchanged; no script refers to it")
+
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
 # carries save_version; a load validates it (absent = 0, malformed rejected,
