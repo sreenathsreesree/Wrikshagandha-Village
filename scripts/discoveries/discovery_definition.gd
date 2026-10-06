@@ -20,3 +20,6 @@ class_name DiscoveryDefinition
 ## that should stay unavailable until a future, separate condition unlocks
 ## them again).
 @export var respawn_seconds: float = 60.0
+## The Five Elements id (data/elements/, M11.0, D-46) this belongs to; empty = none.
+## Schema only: nothing reads it yet.
+@export var element_id: String = ""

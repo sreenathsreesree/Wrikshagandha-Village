@@ -1245,7 +1245,7 @@ notes.append(f"area loader: entries {entry_scenes}")
 PLACE_GD, EXPLO = "scripts/world_simulation/place_definition.gd", "scripts/autoload/exploration_manager.gd"
 pd = scripts.get(PLACE_GD, "")
 PLACE_FIELDS = {"id": "String", "display_name": "String", "arrival_text": "String", "order": "int", "secret": "bool",
-                "garden": "bool", "curiosity_discovery_id": "String"}
+                "garden": "bool", "curiosity_discovery_id": "String", "element_id": "String"}  # element_id: M11.0 (D-46)
 if not re.search(r"^extends Resource\s*\nclass_name PlaceDefinition", pd, re.M) or \
    dict(re.findall(r"^@export var (\w+): (\w+)", pd, re.M)) != PLACE_FIELDS:
     err(f"{PLACE_GD}: PlaceDefinition is a Resource with exactly {sorted(PLACE_FIELDS)}")
@@ -1331,7 +1331,7 @@ notes.append(f"places: {len(places)} from data/places ({sum(p['secret'] for p in
 ITEM_GD, STORE = "scripts/items/item_definition.gd", "scripts/items/item_store.gd"
 idf = scripts.get(ITEM_GD, "")
 ITEM_FIELDS = {"id": "String", "display_name": "String", "category": "String", "crop_id": "String", "quality_levels": "int",
-               "discovery_id": "String", "sell_value": "int"}
+               "discovery_id": "String", "sell_value": "int", "element_id": "String"}  # element_id: M11.0 (D-46)
 ITEM_CATEGORIES = ["seed", "produce", "collectible"]
 INV = "scripts/autoload/inventory.gd"
 disc_names = {}
@@ -3600,6 +3600,89 @@ for f, s2 in scripts.items():
         err(f"{f}: refers to the Hidden Hollow — it is data and scene content only, no script knows it (M10.1, D-45)")
 notes.append(f"hidden places (M10): hidden_hollow (order 55, secret) + HiddenPlaces [{hp_land[0][0] if hp_land else '?'} + {len(hp_inst)} props: "
              f"{sorted({k for _, k, _ in hp_inst})}]; {sum(p['secret'] for p in places.values())} secrets; exploration save section unchanged; no script refers to it")
+
+# ------------------------------------------------------------ elements (M11.0, D-46)
+# The Five Elements' data foundation — data and schema only. ElementDefinition (id, display_name, order; nothing
+# else) and exactly five static resources in data/elements/ in D-05's order; one optional element_id on places,
+# items and discoveries (never NPCs or crops), each item's an explicit value (no inheritance). The approved mapping
+# is the conservative one: "earth" on the garden place and the eight crop items, everything else empty. Nothing at
+# runtime loads or reads any of it: no loader, autoload, save field, UI, Journal or scene integration (O-09 open).
+EL_GD = "scripts/elements/element_definition.gd"
+EL_WANT = 'extends Resource\nclass_name ElementDefinition\n\n@export var id: String = ""\n@export var display_name: String = ""\n@export var order: int = 0\n'
+if scripts.get(EL_GD) != EL_WANT:
+    err(f"{EL_GD}: ElementDefinition is a Resource with exactly id: String, display_name: String, order: int — no other export, function or enum (D-46)")
+ELEMENTS = [("earth", "Earth", 1), ("water", "Water", 2), ("fire", "Fire", 3), ("air", "Air", 4), ("space", "Space", 5)]
+EL_HEAD = ('[gd_resource type="Resource" script_class="ElementDefinition" load_steps=2 format=3]\n\n'
+           '[ext_resource type="Script" path="res://scripts/elements/element_definition.gd" id="1"]\n\n[resource]\nscript = ExtResource("1")\n')
+el_found = []
+for f in sorted(glob.glob("data/elements/*")):
+    t = open(f, encoding="utf-8").read() if f.endswith(".tres") else ""
+    body = re.findall(r'^(\w+) = (.+)$', t[len(EL_HEAD):], re.M) if t.startswith(EL_HEAD) else []
+    if [k for k, _ in body] != ["id", "display_name", "order"] or not re.fullmatch(r'"[a-z]+"', body[0][1]) \
+       or not re.fullmatch(r'"[^"]*"', body[1][1]) or not re.fullmatch(r"\d+", body[2][1]) or body[0][1].strip('"') + ".tres" != os.path.basename(f):
+        err(f"{f}: an ElementDefinition with only id (= the file name), display_name and order (D-46)"); continue
+    el_found.append((body[0][1].strip('"'), body[1][1].strip('"'), int(body[2][1])))
+el_ids, el_orders = [e[0] for e in el_found], [e[2] for e in el_found]
+if len(set(el_ids)) != len(el_ids) or len(set(el_orders)) != len(el_orders) or sorted(el_found, key=lambda e: e[2]) != ELEMENTS:
+    err(f"data/elements: exactly the five elements {ELEMENTS}, unique ids and orders (found {sorted(el_found, key=lambda e: e[2])}; D-05, D-46)")
+ELEMENT_IDS = {e[0] for e in ELEMENTS}
+EL_DEFS = {"scripts/world_simulation/place_definition.gd": "data/places", "scripts/items/item_definition.gd": "data/items",
+           "scripts/discoveries/discovery_definition.gd": "data/discoveries"}
+DISC_GD = "scripts/discoveries/discovery_definition.gd"
+DISC_FIELDS = {"id": "String", "display_name": "String", "description": "String", "category": "String", "rarity": "String",
+               "points_value": "int", "harvestable": "bool", "respawn_seconds": "float", "element_id": "String"}
+if not re.search(r"^extends Resource\s*\nclass_name DiscoveryDefinition", scripts.get(DISC_GD, ""), re.M) or \
+   dict(re.findall(r"^@export(?:_enum\([^)]*\)|_multiline)? var (\w+): (\w+)", scripts.get(DISC_GD, ""), re.M)) != DISC_FIELDS:
+    err(f"{DISC_GD}: DiscoveryDefinition is a Resource with exactly {sorted(DISC_FIELDS)} (D-46 added element_id)")
+for f in EL_DEFS:
+    s2 = scripts.get(f, "")
+    if len(re.findall(r'^@export var element_id: String = ""$', s2, re.M)) != 1 or code_only(s2).count("element_id") != 1:
+        err(f"{f}: exactly one optional '@export var element_id: String = \"\"' and nothing else about it (schema only; D-46)")
+for f in ("scripts/npc/npc_definition.gd", "scripts/farming/crop_definition.gd"):
+    if "element_id" in scripts.get(f, ""):
+        err(f"{f}: no element_id on NPC or crop definitions (D-46)")
+EL_MAP = {"data/places/quiet_farm.tres": "earth", **{f"data/items/{c}{x}.tres": "earth" for c in ("wild_carrot", "meadow_herb", "golden_sunflower", "elderbloom") for x in ("_seed", "")}}
+el_of, el_vals = {}, {}
+for d in EL_DEFS.values():
+    for f in sorted(glob.glob(d + "/*.tres")):
+        t = open(f, encoding="utf-8").read()
+        vals = re.findall(r'^element_id = (.*)$', t, re.M)
+        v = vals[0] if vals else '""'
+        if len(vals) > 1 or not re.fullmatch(r'"[^"]*"', v):
+            err(f"{f}: element_id is set at most once, as a string"); continue
+        el_of[f] = v.strip('"')
+        el_vals[f] = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', t.split("[resource]", 1)[1], re.M))
+for f, v in el_of.items():
+    if v and v not in ELEMENT_IDS:
+        err(f"{f}: element_id \"{v}\" is not one of the five elements {sorted(ELEMENT_IDS)}")
+if el_of != {f: EL_MAP.get(f, "") for f in el_of} or not set(EL_MAP) <= set(el_of):
+    err(f"data/: the element mapping is the approved one — \"earth\" on {sorted(EL_MAP)}, every other place, item and discovery empty "
+        f"(differs: {sorted(f for f in set(el_of) | set(EL_MAP) if el_of.get(f) != EL_MAP.get(f, ''))}; D-46)")
+by_crop = {}
+for f, v in el_vals.items():
+    if f.startswith("data/items/") and v.get("crop_id"):
+        by_crop.setdefault(v["crop_id"], set()).add(el_of[f])
+for crop, vs in sorted(by_crop.items()):
+    if len(vs) != 1:
+        err(f"data/items: {crop}'s seed and produce carry different elements {sorted(vs)} (D-46)")
+disc_el = {el_vals[f].get("id"): el_of[f] for f in el_of if f.startswith("data/discoveries/")}
+for f, v in el_vals.items():
+    if f.startswith("data/items/") and v.get("category") == "collectible" and el_of[f] != disc_el.get(v.get("discovery_id"), None):
+        err(f"{f}: a collectible's element ({el_of[f]!r}) must equal its discovery's ({disc_el.get(v.get('discovery_id'))!r}) (D-46)")
+for f in glob.glob("**/*.tscn", recursive=True) + glob.glob("**/*.tres", recursive=True):
+    if f.startswith(".godot"): continue
+    t = open(f, encoding="utf-8").read()
+    if re.search(r"^element_id = ", t, re.M) and os.path.dirname(f) not in EL_DEFS.values():
+        err(f"{f}: sets element_id — only place, item and discovery data may (no scene or other resource; D-46)")
+    if "res://scripts/elements/element_definition.gd" in t and os.path.dirname(f) != "data/elements":
+        err(f"{f}: uses ElementDefinition — the elements live only in data/elements/ (D-46)")
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == EL_GD or f in EL_DEFS: continue
+    m = re.search(r"\belement_id\b|\bElementDefinition\b|data/elements", code_only(s2))
+    if m:
+        err(f"{f}: '{m.group(0)}' — nothing reads the elements yet: no loader, database, autoload, save, Journal, HUD or gameplay consumer (M11.0 is data only; D-46)")
+notes.append(f"elements (M11.0): {[e[0] for e in sorted(el_found, key=lambda e: e[2])]}; element_id on places/items/discoveries; "
+             f"earth on {sum(1 for v in el_of.values() if v == 'earth')} files, {sum(1 for v in el_of.values() if not v)} empty; no runtime consumer")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

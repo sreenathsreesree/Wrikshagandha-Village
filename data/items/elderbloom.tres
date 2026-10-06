@@ -10,3 +10,4 @@ category = "produce"
 crop_id = "elderbloom"
 quality_levels = 3
 sell_value = 12
+element_id = "earth"

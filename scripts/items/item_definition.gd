@@ -8,8 +8,9 @@ class_name ItemDefinition
 ## Only the fields today's items need (M04.1–M04.3). Seeds and harvested
 ## produce belong to a crop, collectibles to a discovery; their glyph,
 ## color and points live on that CropDefinition / DiscoveryDefinition rather
-## than being copied here. Fields such as a glyph of its own or an element
-## arrive with the first item that needs them.
+## than being copied here. Fields such as a glyph of its own arrive with the
+## first item that needs them; the element is an explicit field of its own
+## (M11.0, D-46) — never derived from the crop or the discovery.
 
 ## Stable, lower_snake_case, equal to the file name; what saves will store.
 @export var id: String = ""
@@ -30,3 +31,6 @@ class_name ItemDefinition
 ## Market's base price, set independently of any points value. 0 = not
 ## sellable; only produce may have one (seeds and collectibles never sell).
 @export var sell_value: int = 0
+## The Five Elements id (data/elements/, M11.0, D-46) this belongs to; empty = none.
+## Schema only: nothing reads it yet.
+@export var element_id: String = ""

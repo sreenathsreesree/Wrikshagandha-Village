@@ -10,3 +10,4 @@ category = "produce"
 crop_id = "wild_carrot"
 quality_levels = 3
 sell_value = 5
+element_id = "earth"

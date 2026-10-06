@@ -21,3 +21,6 @@ class_name PlaceDefinition
 ## A discovery near this place: reaching the place before finding it earns
 ## the one-time curiosity bonus. Empty = no pairing.
 @export var curiosity_discovery_id: String = ""
+## The Five Elements id (data/elements/, M11.0, D-46) this belongs to; empty = none.
+## Schema only: nothing reads it yet.
+@export var element_id: String = ""

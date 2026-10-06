@@ -9,3 +9,4 @@ display_name = "Quiet Garden"
 arrival_text = "A quiet place to grow."
 order = 80
 garden = true
+element_id = "earth"
