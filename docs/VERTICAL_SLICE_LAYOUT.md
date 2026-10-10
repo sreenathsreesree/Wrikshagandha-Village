@@ -128,13 +128,17 @@ A top-level `WeatherEvents` node (outside the existing-world digest, like `NpcRo
 
 A top-level `HiddenPlaces` node (outside the existing-world digest) holds the Hidden Hollow: one `ExplorationLandmark` (`hidden_hollow`, a secret location, radius 3.0) at (19.0, -24.0), 13.0 m north-east of the Secluded Pond Nook, behind a ring of existing props — two trees and a tall tree on its far side and a mushroom cluster — and a clue trail leading out of the Nook: two footprint marks, an unusual flower patch, then glowing motes at the hollow's edge. Each clue is further from the Nook than the last and within 3 m of the one before it (the first within 5 m of the Nook), every new node keeps the existing clearance rules, and no solid prop sits within 1.5 m of the hollow's centre or on a mound top (O-15). Only existing prop scenes are used; the landmark is the only scripted node (checked by `sim_slice_layout.py`).
 
+## Earth prototype (M11.1, D-47)
+
+A top-level `EarthPrototype` node (outside the existing-world digest) holds the one `EarthNurture` plant at (6.6, -0.5): open meadow on the Quiet Garden's west approach, beside the fallen log, between the Garden and the path to the pond. It is the closest ground to the Garden that keeps every existing clearance rule — no compliant cell lies within 6.0 m of the Garden's centre in any direction (its 5 m zone and the Wildflower Clearing's bound this pocket); the plant's 0.5 m footprint sits 0.63 m outside both zones, 1.66 m from the fallen log and 1.52 m from the path's nearest edge. It has no collider, so the navigation mesh is unchanged (checked by `sim_slice_layout.py`).
+
 ## Machine-readable plan
 
 ```slice-layout
-# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents and HiddenPlaces) — unchanged by M07.2, M07.3, M09.1, M09.4 and M10
+# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents, HiddenPlaces and EarthPrototype) — unchanged by M07.2, M07.3, M09.1, M09.4, M10 and M11.1
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4) and HiddenPlaces (M10) included
-scene_digest 97d36b491f83d13d
+# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4), HiddenPlaces (M10) and EarthPrototype (M11.1) included
+scene_digest b03dc4ae99ac6b03
 # M09.1 (D-41): the villager's routine spots — dawn/evening/night at home (the NPC spot), morning/afternoon by the pond path
 routine_spot villager_home -19.5 2.2
 routine_spot villager_pond 4.0 -7.0
@@ -148,6 +152,8 @@ hidden HollowTree1 TreeRound.tscn 17.2 -28.3
 hidden HollowTree2 TreeTall.tscn 20.8 -28.2
 hidden HollowTree3 TreeRound.tscn 23.3 -25.8
 hidden HollowMushrooms MushroomCluster.tscn 22.9 -22.4
+# M11.1 (D-47): the Earth prototype — one EarthNurture plant by the Quiet Garden's west approach (EarthPrototype)
+earth EarthNurtureSpot EarthNurture.tscn 6.6 -0.5
 # existing Meadow nodes the plan relies on (checked against Meadow.tscn)
 existing PlayerSpawn 0.0 5.0
 existing Patch1 0.5 3.2

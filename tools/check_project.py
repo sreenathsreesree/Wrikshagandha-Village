@@ -679,7 +679,9 @@ EXPECTED_VERBS = {"scripts/interactables/discovery_interactable.gd": {"COLLECT"}
                   # M08.1: a door offers its own verb, ENTER (a way in) or EXIT (a way out).
                   "scripts/world/area_door.gd": {"ENTER", "EXIT"},
                   # M08.3: an NPC offers TALK.
-                  "scripts/npc/npc_talk.gd": {"TALK"}, **FIXTURES}
+                  "scripts/npc/npc_talk.gd": {"TALK"},
+                  # M11.1 (D-47): the Earth nurture plant offers USE.
+                  "scripts/elements/earth_nurture.gd": {"USE"}, **FIXTURES}
 for f, want in EXPECTED_VERBS.items():
     body = func_body(scripts.get(f, ""), "_get_interaction_verbs") or ""
     have = set(re.findall(r"\bVerb\.([A-Z_]+)", body))
@@ -2883,8 +2885,9 @@ if not re.search(r"^extends Interactable\s*\nclass_name NpcTalk", nt_src, re.M) 
    or not re.search(r"super\(active\)\s*if not active and _panel != null:\s*_panel\.close_for\(self\)", nt_fn.get("set_highlighted", "")) \
    or "return npc.definition.dialogue.lines" not in nt_fn.get("_lines", "") or "if not _lines().is_empty():" not in nt_fn.get("_get_interaction_verbs", ""):
     err(f"{NPC_TALK_GD}: TALK starts the definition's dialogue in the SpeechPanel (offered only while it has lines), and leaving interaction range closes it")
-if VERBS.get("TALK") != 10 or {k: v for k, v in VERBS.items() if k != "TALK"} != {"COLLECT": 1, "PLANT": 2, "WATER": 3, "HARVEST": 4, "INSPECT": 5, "OPEN": 6, "READ": 7, "ENTER": 8, "EXIT": 9}:
-    err(f"{BASE}: TALK is appended as 10 and every earlier verb keeps its value (found {VERBS})")
+# M11.1 (D-47) appended USE as 11 (D-09's Use, offered by EarthNurture): the pin now covers it too.
+if VERBS != {"COLLECT": 1, "PLANT": 2, "WATER": 3, "HARVEST": 4, "INSPECT": 5, "OPEN": 6, "READ": 7, "ENTER": 8, "EXIT": 9, "TALK": 10, "USE": 11}:
+    err(f"{BASE}: TALK is appended as 10, USE as 11, and every earlier verb keeps its value (found {VERBS})")
 # Placement: exactly one NPC, standing at the NpcSpot marker, with a definition from data/npcs.
 npcs_placed = []
 for path in glob.glob("scenes/**/*.tscn", recursive=True):
@@ -3683,6 +3686,69 @@ for f, s2 in scripts.items():
         err(f"{f}: '{m.group(0)}' — nothing reads the elements yet: no loader, database, autoload, save, Journal, HUD or gameplay consumer (M11.0 is data only; D-46)")
 notes.append(f"elements (M11.0): {[e[0] for e in sorted(el_found, key=lambda e: e[2])]}; element_id on places/items/discoveries; "
              f"earth on {sum(1 for v in el_of.values() if v == 'earth')} files, {sum(1 for v in el_of.values() if not v)} empty; no runtime consumer")
+
+# ------------------------------------------------------------ earth nurture (M11.1, D-47)
+# Earth — Nurture: one reusable Interactable, EarthNurture (scenes/elements/EarthNurture.tscn), offering D-09's Use.
+# Its cycle — dormant → grow-in (Growth children, 0.7 s each, 0.2 s stagger) → hold 6 s → relax 1.5 s → dormant — runs
+# on tweens bound to the node; it is unavailable (monitorable false) for the whole cycle and usable again after.
+# Only Growth children animate, never the root's scale (the base's proximity reaction). It pays, saves, progresses and
+# shows nothing, touches no farming and reads no element data; the Meadow holds exactly one instance under a top-level
+# EarthPrototype node and only positions it. The behaviour itself is sim_earth_nurture.py's.
+EN_GD, EN_SCENE = "scripts/elements/earth_nurture.gd", "scenes/elements/EarthNurture.tscn"
+en_src = scripts.get(EN_GD, "")
+en_code = code_only(en_src)
+en_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", en_code, re.M | re.S)}
+en_exports = re.findall(r"^@export(?:_range\([^)]*\))? var (\w+): (\w+) = (.+)$", en_src, re.M)
+EN_EXPORTS = [("grow_seconds", "float", "0.7"), ("stagger_seconds", "float", "0.2"), ("hold_seconds", "float", "6.0"),
+              ("relax_seconds", "float", "1.5"), ("dormant_scale", "float", "0.4")]
+en_interact = en_fn.get("interact", "")
+if not re.search(r"^extends Interactable\s*\nclass_name EarthNurture", en_src, re.M) or en_exports != EN_EXPORTS \
+   or sorted(en_fn) != ["_get_interaction_verbs", "_hold_then_relax", "_on_dormant", "_ready", "interact"] \
+   or "remove_on_harvest = false" not in en_fn.get("_ready", "") \
+   or not re.search(r"if not monitorable:\s*return false\s*monitorable = false\s", en_interact) \
+   or not re.search(r"tween_property\(parts\[i\], \"scale\", _awake_scales\[i\], grow_seconds\)\s*\\\s*\.set_delay\(i \* stagger_seconds\)", en_interact) \
+   or not re.search(r"await grow\.finished\s*_hold_then_relax\(\)\s*return true\s*$", en_interact) \
+   or "rest.tween_interval(hold_seconds)" not in en_fn.get("_hold_then_relax", "") \
+   or "_awake_scales[i] * dormant_scale, relax_seconds" not in en_fn.get("_hold_then_relax", "") \
+   or "tween_callback(_on_dormant)" not in en_fn.get("_hold_then_relax", "") \
+   or en_code.count("monitorable = true") != 1 or "monitorable = true" not in en_fn.get("_on_dormant", ""):
+    err(f"{EN_GD}: EarthNurture extends Interactable, persistent, with exactly the exports {[e[0] for e in EN_EXPORTS]} at "
+        f"0.7 / 0.2 / 6.0 / 1.5 s and dormant 0.4; interact() refuses while cycling, becomes unavailable, grows the Growth children "
+        f"in (staggered), returns after the grow-in; the hold and relax run on, then it is available again (D-47)")
+m = re.search(r"\b(PointsManager|Wallet|Market|Inventory|DiscoveryManager|DiscoveryDatabase|JournalManager|CollectionManager|"
+              r"DailyDiscoveryManager|FarmManager|ExplorationManager|SaveManager|GameState|Requests|Relationships|Services|"
+              r"WorldClock|AmbientAudioManager|AreaRouter|InputManager|HarvestBurst\w*|_play_harvest_sound|create_timer|Timer|"
+              r"_process|_physics_process|queue_free|signal|emit|get_tree|get_node|get_parent|HUD|DiscoveryNotification|"
+              r"FarmPlot|CropDefinition|GlowingMotes)\b|(?<![\w.])scale\s*=|self\.scale|tween_property\(self\b|\$(?!Growth\b)", en_code)
+if m:
+    err(f"{EN_GD}: '{m.group(0)}' — EarthNurture pays, saves, progresses and shows nothing, has no farming, HUD, timer, frame "
+        f"loop or autoload dependency, and never sets its own (root) scale (D-47)")
+ens = open(EN_SCENE, encoding="utf-8").read() if os.path.exists(EN_SCENE) else ""
+en_nodes = re.findall(r'^\[node name="(\w+)"(?: type="(\w+)")?(?: parent="([^"]*)")?(?: instance=ExtResource\("(\w+)"\))?\]', ens, re.M)
+en_growth = [n for n, t, par, inst in en_nodes if par == "Growth"]
+if not re.search(r'^\[ext_resource type="Script" path="res://scripts/elements/earth_nurture\.gd" id="1"\]$', ens, re.M) \
+   or not re.search(r'^\[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator\.tscn" id="2"\]$', ens, re.M) \
+   or not re.search(r'^\[node name="EarthNurture" type="Area3D"\]\ncollision_layer = 4\ncollision_mask = 0\nscript = ExtResource\("1"\)\n', ens, re.M) \
+   or [n for n, t, par, inst in en_nodes if t == "CollisionShape3D"] != ["CollisionShape3D"] \
+   or ("Indicator", "", ".", "2") not in en_nodes \
+   or not re.search(r'^\[node name="Growth" type="Node3D" parent="\."\]\n\n', ens, re.M) or len(en_growth) < 2 \
+   or any(not re.search(rf'^\[node name="{g}" type="Node3D" parent="Growth"\]\n\n', ens, re.M)
+          or [t for n, t, par, inst in en_nodes if par == f"Growth/{g}"] != ["MeshInstance3D"] for g in en_growth) \
+   or re.search(r"StaticBody3D|CharacterBody3D|RigidBody3D|Navigation\w*3D|Particles|AudioStream|ShaderMaterial|Shader\b|"
+                r"emission_enabled|HarvestBurst|GlowingMotes|floating_motes|\belement_id\b|ElementDefinition|data/elements", ens):
+    err(f"{EN_SCENE}: an Area3D on the interactables layer (mask 0) with one shape, the shared Indicator and a Growth node whose "
+        f"children are ground-level pivots each holding one mesh — no body, obstacle, particles, audio, shader, glow or element data (D-47)")
+en_refs = [f for f in glob.glob("scenes/**/*.tscn", recursive=True) if 'path="res://scenes/elements/EarthNurture.tscn"' in open(f, encoding="utf-8").read()]
+en_ext = re.search(r'^\[ext_resource type="PackedScene" path="res://scenes/elements/EarthNurture\.tscn" id="(\w+)"\]$', mtx, re.M)
+en_inst = re.findall(r'^\[node name="(\w+)" parent="([^"]*)" instance=ExtResource\("%s"\)\]\n((?:[^\[\n].*\n?)*)' % (en_ext.group(1) if en_ext else "-"), mtx, re.M)
+if en_refs != [MEADOW_SCENE] or len(en_inst) != 1 or en_inst[0][1] != "EarthPrototype" \
+   or not re.fullmatch(r"position = Vector3\([-0-9., ]+\)\n*", en_inst[0][2]) \
+   or not re.search(r'^\[node name="EarthPrototype" type="Node3D" parent="\."\]\n\n', mtx, re.M) \
+   or len(re.findall(r'^\[node name="EarthPrototype" ', mtx, re.M)) != 1 or len(re.findall(r'parent="EarthPrototype', mtx)) != 1:
+    err(f"{MEADOW_SCENE}: exactly one EarthNurture in the project — the Meadow's, under a top-level EarthPrototype node that holds "
+        f"nothing else, positioned only (no timing or other override; D-47)")
+notes.append(f"earth nurture (M11.1): EarthNurture offers USE; cycle {[e[2] for e in EN_EXPORTS[:4]]} s, dormant {EN_EXPORTS[4][2]}; "
+             f"{len(en_growth)} growth parts; {len(en_inst)} instance under EarthPrototype; no reward, save, farming, HUD or element data")
 
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save

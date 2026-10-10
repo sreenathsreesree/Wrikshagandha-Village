@@ -224,7 +224,7 @@ for chunk in s.split("\n[")[1:]:
     parent = (re.search(r'parent="([^"]+)"', chunk.split("\n")[0]) or [None, ""])[1]
     if inst and inst.group(1) in FOOT and "/" not in parent.replace("Farm", "", 0):
         obstacles.append((name, x, z, FOOT[inst.group(1)] * k, inst.group(1) in REACH_ONLY))
-    if inst and inst.group(1) in ("3", "4", "5", "6", "7", "19", "20", "21", "22", "23", "38", "42"):   # 42: the NPC spot (M07.2) must be reachable
+    if inst and inst.group(1) in ("3", "4", "5", "6", "7", "19", "20", "21", "22", "23", "38", "42", "43"):   # 42: the NPC spot (M07.2), 43: the Earth nurture plant (M11.1) must be reachable
         points.append((name, x, z))
 # The player now lives in the persistent Main scene (M03.1), with the Meadow
 # instanced at the origin — so its position there is its Meadow position.

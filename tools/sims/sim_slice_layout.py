@@ -72,7 +72,7 @@ SOLID_R = {"TreeRound.tscn": 1.5, "TreeTall.tscn": 1.2, "TreeWide.tscn": 1.8, "R
 SOFT_R = {"GrassClump.tscn": 0.4, "GlowingMotes.tscn": 0.5, "Footprints.tscn": 0.5, "DriftingLeaf.tscn": 0.3, "Butterfly.tscn": 0.3}
 MOVING = ("Wildlife", "Ambient", "EnvironmentalEvents", "WorldSimulation")   # actors that move or carry no footprint
 SLICE = "VerticalSlice"
-ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces")        # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places: outside the existing-world digest
+ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces", "EarthPrototype")   # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places, M11.1 Earth prototype: outside the existing-world digest
 def in_slice(par, name): return any(par == r or par.startswith(r + "/") or (par == "." and name == r) for r in ADDED)
 NODES, OBJECTS, PATCHES, GEOM, BASE_GEOM, PLACED = {}, [], [], [], [], []
 for m in re.finditer(r'^\[node name="([^"]+)"([^\]]*)\]\n(.*?)(?=^\[|\Z)', SCENE, re.M | re.S):
@@ -126,6 +126,7 @@ for line in BLOCK[0].splitlines():
     elif k in ("door", "npc", "trailhead"): plan[k] = (float(a[0]), float(a[1]))
     elif k == "routine_spot": plan.setdefault("routine", {})[a[0]] = (float(a[1]), float(a[2]))   # M09.1
     elif k == "hidden": plan.setdefault("hidden", []).append((a[0], a[1], float(a[2]), float(a[3])))  # M10 (D-45)
+    elif k == "earth": plan.setdefault("earth", []).append((a[0], a[1], float(a[2]), float(a[3])))  # M11.1 (D-47)
     elif k == "forest": plan["forest"][a[0]] = tuple(float(v) for v in a[1:])
     elif k == "path": plan["path"][a[0]] = [tuple(float(c) for c in p.split(",")) for p in a[1:]]
     else: raise AssertionError(f"unknown layout line: {k}")
@@ -319,6 +320,33 @@ clue_steps = [math.dist(a, b) for a, b in zip([nook] + chain, chain + [(hx, hz)]
 assert dists == sorted(dists) and dists[0] > 3.0 + 0.5, f"the clue chain leads out from the Nook in order ({[round(d, 1) for d in dists]})"
 assert all(d <= 3.0 for d in clue_steps[1:]) and clue_steps[0] <= 5.0, f"each clue is within sight of the next ({[round(d, 1) for d in clue_steps]})"
 assert math.hypot(chain[-1][0] - hx, chain[-1][1] - hz) <= HR, "the motes sit at the hollow's mouth, inside its zone"
+# M11.1 (D-47): the Earth prototype — exactly one EarthNurture under EarthPrototype, as planned: a 0.5 m plant footprint
+# clear of the existing world by the usual rules (solids 1.5 m, places' zones 0.5 m, decoration 0.3 m, the player spawn
+# 1.5 m), inside the bounds by 1 m, 0.8 m from every path edge (the existing patches as their true ellipses, the planned
+# paths), and associated with the Quiet Garden — the closest compliant ground to it (its centre within 6.5 m).
+earth = [(n, inst_of(a), *vec(pr, "position")[0::2]) for n, (par, a, b, pr) in placed.items() if par == "EarthPrototype"]
+assert earth == plan.get("earth") and len(earth) == 1 and earth[0][1] == "EarthNurture.tscn", f"the Earth prototype is exactly the planned EarthNurture ({earth} vs {plan.get('earth')})"
+_, _, ex, ez = earth[0]
+ER = 0.5
+assert inside(ex, ez, 1.0 + ER), "the Earth plant lies inside the bounds"
+eclear = min(math.hypot(ex - ox, ez - oz) - ER - orr - NEED[ok] for _, ox, oz, orr, ok in OBJECTS)
+assert eclear >= 0, f"the Earth plant keeps the clearance rules (short by {-eclear:.2f} m)"
+def patch_gap(x, z, r):
+    gaps = []
+    for pm in re.finditer(r'^\[node name="\w+" type="MeshInstance3D" parent="Terrain/Path"\]\n((?:[^\[\n].*\n)*)', SCENE, re.M):
+        body = pm.group(1)
+        px, _, pz = (float(v) for v in re.search(r"position = Vector3\(([^)]*)\)", body).group(1).split(","))
+        yaw = math.radians(float((re.search(r"rotation_degrees = Vector3\(([^)]*)\)", body) or [None, "0,0,0"])[1].split(",")[1]))
+        sx, _, sz = (float(v) for v in (re.search(r"scale = Vector3\(([^)]*)\)", body) or [None, "1,1,1"])[1].split(","))
+        edge = min(math.hypot(px + sx * math.cos(t) * math.cos(yaw) + sz * math.sin(t) * math.sin(yaw) - x,
+                              pz - sx * math.cos(t) * math.sin(yaw) + sz * math.sin(t) * math.cos(yaw) - z)
+                   for t in (2 * math.pi * k / 720 for k in range(720)))
+        gaps.append(edge - r)
+    return min(gaps)
+egap = patch_gap(ex, ez, ER)
+assert egap >= 0.8 and all(path_dist(ex, ez, pts) - ER >= 0.8 for pts in plan["path"].values()), f"the Earth plant stays 0.8 m off every path ({egap:.2f} m)"
+qx, qz = next((x, z) for n, x, z, r, k in OBJECTS if n == "QuietFarmLandmark")
+assert math.hypot(ex - qx, ez - qz) <= 6.5, "the Earth plant stands by the Quiet Garden"
 ntxt, nnodes = scene_nodes("scenes/world/props/NpcSpotPlaceholder.tscn")
 assert nnodes[0][1] == "Marker3D" and not re.search(r"Body3D|CollisionShape3D|Area3D|script = ", ntxt), "the NPC spot is a marker only — no collider, no behaviour"
 # the forest edge
@@ -429,4 +457,6 @@ print(f"navigation and bounds: rim walls on the ±{HALF_X:g} edges (1.6 m); hous
 print(f"routine spots (M09.1): {spots}; home = the NPC spot; clearance {', '.join(f'{k} {min(clear[k]):.2f} m' for k in spots)}")
 print(f"hidden places (M10): Hidden Hollow at ({hx}, {hz}), {math.dist(nook, (hx, hz)):.1f} m from the Nook; clue chain {[round(d, 1) for d in clue_steps]} m apart; "
       f"{len(new_objs)} props, clearance >= {min(hclear):.2f} m")
+print(f"earth prototype (M11.1): EarthNurture at ({ex}, {ez}), {math.hypot(ex - qx, ez - qz):.2f} m from the Quiet Garden; "
+      f"clearance >= {eclear:.2f} m beyond the rules; path edge {egap:.2f} m")
 print("ALL SLICE LAYOUT SIMULATIONS PASSED")
