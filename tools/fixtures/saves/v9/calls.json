@@ -120,7 +120,7 @@
 		"args": [
 			"rabbit"
 		],
-		"result": false
+		"result": true
 	},
 	{
 		"call": "SaveManager.save_game",

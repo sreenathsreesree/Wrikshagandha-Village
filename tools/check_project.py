@@ -4030,7 +4030,6 @@ fx_sv = int(re.search(r"^const SAVE_VERSION := (\d+)", scripts.get(SM, ""), re.M
 fx_gen = open(os.path.join(FX_DIR, "generate_all.sh"), encoding="utf-8").read() if os.path.exists(os.path.join(FX_DIR, "generate_all.sh")) else ""
 fx_commits = dict(re.findall(r"\bv(\d+):([0-9a-f]{7}):M\d", fx_gen))
 fx_bad = []
-fx_pending = []
 for n in range(fx_sv + 1):
     d = os.path.join(FX_DIR, f"v{n}")
     files = {k: os.path.join(d, k) for k in ("save.json", "expected.json", "calls.json", "meta.json")}
@@ -4045,16 +4044,8 @@ for n in range(fx_sv + 1):
     stamp = save.get("save_version") if isinstance(save, dict) else None
     if not isinstance(save, dict) or (n == 0 and stamp is not None) or (n > 0 and stamp != n):
         fx_bad.append(f"v{n}: stamped {stamp}")
-    # PENDING exception (M14.1a; removed once the introducing commit exists and v<N> is regenerated from it): only the
-    # current SAVE_VERSION's fixture may be pending — from the working tree, labelled pending and not historical, with
-    # no commit in meta.json or generate_all.sh. Every other check on it still applies; it is reported as PENDING.
-    if meta.get("pending") is not None or meta.get("historical") is not None:
-        if n == fx_sv and meta.get("pending") is True and meta.get("historical") is False and meta.get("commit") is None \
-           and str(n) not in fx_commits and meta.get("version") == f"v{n}":
-            fx_pending.append(f"v{n}")
-        else:
-            fx_bad.append(f"v{n}: a pending fixture is allowed only for the current SAVE_VERSION {fx_sv}, labelled pending and not historical, with no commit")
-    elif meta.get("commit") is None or meta.get("commit") != fx_commits.get(str(n)) or meta.get("version") != f"v{n}":
+    # A real commit on both sides (M14.1a: a meta with no commit no longer matches a version missing from generate_all.sh).
+    if meta.get("commit") is None or meta.get("commit") != fx_commits.get(str(n)) or meta.get("version") != f"v{n}":
         fx_bad.append(f"v{n}: meta commit {meta.get('commit')} vs generate_all.sh {fx_commits.get(str(n))}")
 extra = sorted(int(k) for k in fx_commits if int(k) > fx_sv)
 if extra: fx_bad.append(f"generate_all.sh lists versions beyond SAVE_VERSION {extra}")
@@ -4082,8 +4073,7 @@ if not fx_src or re.search(r"load_game\(|_migrate\(|_valid_sections\(|read_versi
 for f, s2 in scripts.items():
     if not f.startswith("tools/") and re.search(r"res://tools/", s2):
         err(f"{f}: game code never loads anything from tools/ (fixtures are tooling)")
-notes.append(f"save fixtures (M15.3): v0..v{fx_sv} fixtures, {len(fx_commits)} real saves from their commits, + newer and malformed"
-             + (f"; PENDING (not historical, from the working tree): {fx_pending}" if fx_pending else ""))
+notes.append(f"save fixtures (M15.3): v0..v{fx_sv} real saves from {len(fx_commits)} commits, + newer and malformed")
 
 # ------------------------------------------------------------ session vs persistent (M15.2)
 # Every autoload member variable is classified in the state registry (docs/ARCHITECTURE.md §11, ```state-registry):

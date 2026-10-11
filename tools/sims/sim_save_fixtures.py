@@ -4,9 +4,6 @@ sim_save_versioning does) fed the real fixture files in tools/fixtures/saves/. T
 half is tools/fixtures/run_save_fixtures.sh.
 1. Every save format the game has had (v0 = unversioned … v9 = SAVE_VERSION) has a fixture written by the commit that
    introduced it (meta.json), stamped with that version (v0: no stamp), holding exactly that version's sections.
-   PENDING exception (M14.1a, removed once the introducing commit exists): the current SAVE_VERSION's fixture alone may
-   come from the working tree, labelled pending and not historical with no commit; it is reported as PENDING and
-   every other check still applies.
 2. Each loads through the port: read_version, step-by-step migration (1 -> 2 moves farm.seeds / farm.basket into
    items), section type filtering; the result equals what the old version held in memory (expected.json): points,
    discoveries, journal, movement mode, seed and produce counts per crop, farm milestones and plots (clock-derived
@@ -109,10 +106,8 @@ def plots_match(a, b):
                 if abs(float(a[pid][k]) - float(b[pid][k])) > 0.05: return False
             elif godot_json(json.dumps(a[pid][k])) != godot_json(json.dumps(b[pid][k])): return False
     return True
-PENDING = []
 def run(P):
     p_ = []
-    PENDING.clear()
     present = sorted(os.path.basename(d) for d in glob.glob(os.path.join(FIX, "v[0-9]")) if os.path.isfile(os.path.join(d, "save.json")))
     present = [v for v in present if v not in P.get("hide", ())]
     want = [f"v{n}" for n in range(SAVE_VERSION + 1)]
@@ -123,10 +118,7 @@ def run(P):
         e = godot_json(open(os.path.join(d, "expected.json"), encoding="utf-8").read())
         meta = json.load(open(os.path.join(d, "meta.json"), encoding="utf-8"))
         raw = godot_json(text)
-        pending = meta.get("pending") is True and meta.get("historical") is False and meta.get("commit") is None and n == SAVE_VERSION and not P.get("no_pending")
-        if pending: PENDING.append(v)
-        elif meta.get("version") != v or not re.fullmatch(r"[0-9a-f]{7}", meta.get("commit") or "") or "generate_save_fixture.gd" not in meta.get("generator", "") \
-           or "pending" in meta or "historical" in meta:
+        if meta.get("version") != v or not re.fullmatch(r"[0-9a-f]{7}", meta.get("commit") or "") or "generate_save_fixture.gd" not in meta.get("generator", ""):
             p_.append(f"{v}: meta.json names the commit and the generator that wrote it")
         if not isinstance(raw, dict) or read_version(raw) != n or (n == 0 and KEY in raw) or int(e["save_version_written"]) != n:
             p_.append(f"{v}: written by a version-{n} SaveManager (stamp {raw.get(KEY) if isinstance(raw, dict) else raw})"); continue
@@ -178,7 +170,6 @@ MUTANTS = {
     "step 4 missing": {"steps": [s for s in STEPS if s != 4]},
     "a newer save loaded": {"steps": STEPS, "accept_newer": True},
     "the v5 fixture missing": {"steps": STEPS, "hide": ("v5",)},
-    "the pending allowance withdrawn while v9 is still pending": {"steps": STEPS, "no_pending": True},
 }
 # Equivalent here, by construction: real saves never hold a wrongly typed section, so dropping SaveManager's type filter
 # changes nothing these fixtures can show — sim_save_versioning covers it with 3,000 random malformed saves.
@@ -191,10 +182,8 @@ for name, P in MUTANTS.items():
         else: survivors.append(name)
     except Exception as ex:
         crash += 1; crashes.append(f"{name}: {type(ex).__name__}")
-bad = run(GOOD)
-print(f"save fixtures (model): v0..v{SAVE_VERSION} saves (each written by the commit that introduced its format) load, "
+print(f"save fixtures (model): v0..v{SAVE_VERSION} real saves (each written by the commit that introduced its format) load, "
       f"migrate and equal what the old version held; newer refused, malformed ignored")
-if PENDING: print(f"PENDING (not historical, from the working tree; M15.3 exception for the current SAVE_VERSION only): {PENDING}")
 print(f"broken designs: {caught + crash} caught — {caught} by behaviour, {crash} by a crash {crashes}; "
       f"{len(EQUIVALENT)} equivalent for real saves (covered by sim_save_versioning)")
 if survivors:

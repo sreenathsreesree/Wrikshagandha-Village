@@ -1,7 +1,7 @@
 {
 	"clock": [
 		1,
-		0.435701387777784
+		0.436240556111112
 	],
 	"coins": 5,
 	"discovered_ids": [
@@ -101,7 +101,7 @@
 			"stage": 0,
 			"stage_time_left": 0.0,
 			"state": "PLANTED",
-			"thirsty_for": 0.625
+			"thirsty_for": 0.635
 		},
 		"farm_plot_02": {
 			"soil_memory": [],

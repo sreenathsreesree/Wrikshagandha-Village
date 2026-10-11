@@ -37,7 +37,6 @@ current=$(grep -oE '^const SAVE_VERSION := [0-9]+' "$project/scripts/autoload/sa
 for n in $(seq 0 "$current"); do
   v="v$n"; dir="$saves/$v"
   [ -f "$dir/save.json" ] && [ -f "$dir/expected.json" ] || { echo "  FIXTURE_CHECK FAIL MISSING $v (save.json / expected.json)"; failed=1; continue; }
-  grep -q '"pending": true' "$dir/meta.json" 2>/dev/null && echo "$v: PENDING fixture — from the uncommitted working tree, NOT historical (M15.3 exception, current SAVE_VERSION only)"
   d="$work/$v"; place "$d" "$dir/save.json"
   run "$d" "$work/$v.1.log" mode=fixture "expected=$dir/expected.json" "fresh=$work/fresh.json" "origin=$n" resave=1
   run "$d" "$work/$v.2.log" mode=fixture "expected=$dir/expected.json" "fresh=$work/fresh.json" "origin=$n" again=1
