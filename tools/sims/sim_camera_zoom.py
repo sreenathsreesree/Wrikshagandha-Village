@@ -53,7 +53,7 @@ class Input:  # InputManager: world touches, taps, pinch, wheel
         if len(i.touches) != 2: return 0.0
         a, b = list(i.touches.values()); return math.dist(a, b)
     def touch(i, idx, pressed, pos, gui=False):
-        if gui: return                                  # the GUI (joystick, buttons) consumed it
+        if gui: return                                  # the GUI (buttons) consumed it, or it is the joystick's
         if pressed: i.touches[idx] = pos
         else: i.touches.pop(idx, None)
         i.pinch = i._two()
@@ -123,7 +123,8 @@ inp.touch(1, False, (1000, 800)); inp.touch(0, False, (500, 800)); assert inp.ta
 cam.set_zoom_distance(START); inp = Input(cam)
 inp.touch(0, True, (300, 300)); inp.drag(0, (305, 302)); inp.wait(100); inp.touch(0, False, (305, 302))
 assert inp.taps == [(305, 302)] and cam.distance == START and inp.zooms == []
-# joystick (GUI) finger + one world finger: no pinch, the world tap still works
+# a finger the world never sees (a HUD button; since D-58 also the joystick's own finger, see sim_floating_joystick)
+# + one world finger: no pinch, the world tap still works
 inp = Input(cam)
 inp.touch(5, True, (80, 900), gui=True); inp.touch(0, True, (600, 400)); inp.wait(100); inp.touch(0, False, (600, 401))
 assert inp.taps == [(600, 401)] and cam.distance == START

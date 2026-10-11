@@ -33,6 +33,7 @@ Main (Node3D) — persistent shell    scenes/Main.tscn, scripts/main.gd
 │   ├── WeatherEvents                RainBirdDisturbance (M09.4: rain beginning startles the five SmallBirds)
 │   ├── HiddenPlaces                 the Hidden Hollow (M10): its ExplorationLandmark, the clue trail from the Secluded Pond Nook and its ring of props
 │   ├── EarthPrototype               EarthNurture (M11.1): the Earth — Nurture plant on the Quiet Garden's west approach (scenes/elements/EarthNurture.tscn)
+│   ├── PeacefulPlaces               PondRestSpot (E1): the Pond Rest Spot on the pond's west side, facing the pond (scenes/peaceful/RestSpot.tscn)
 │   ├── WorldSimulation              TimeOfDay, Environment, Vegetation, Wildlife,
 │   │                                Ambient, EnvironmentalEvents, ExplorationLandmarks controllers, Weather + Rain (M09.3)
 │   ├── PlayerSpawn                  AreaEntry "meadow_start" (scripts/world/area_entry.gd) at the boot position
@@ -79,7 +80,7 @@ HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in fo
 | PointsManager | "Wriksha Points" score (one int); `add_points` / `points_changed` |
 | DiscoveryDatabase | Loads `DiscoveryDefinition` `.tres` from `data/discoveries/` |
 | DiscoveryManager | Discovered ids (saved); `discover()` → `discovery_made` / `discovery_repeated`; awards points |
-| JournalManager | Discovery journal entries (saved) |
+| JournalManager | Discovery journal entries (saved); the wildlife species (data) and which have been seen (saved, M14.1a, D-59) |
 | CollectionManager | Read-only grouping of discoveries for the Collection screen |
 | DailyDiscoveryManager | One target discovery per calendar day (saved) |
 | Inventory | The player's items (M04.3, D-19): one `ItemStore` — seeds, produce (a count per quality), collectibles; saved as `items`; gives a collectible per discovery collected. After DiscoveryManager, before FarmManager and GameState |
@@ -112,23 +113,28 @@ HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in fo
     - `_interact_with()` is the single call site of `interact()`. It refuses unavailable objects and has a double-interaction guard for one-shot objects (`remove_on_harvest`).
     - **Facing on arrival (M02.3):** `_interact_with()` then calls `_face_target()`, before INTERACT and `interact()`. It sets `_facing_angle` from the horizontal direction to the target's position (kept if closer than 0.05 m); the existing smooth turn in `_update_facing()` does the rest. Once per interaction, never while walking, never for a cancelled or replaced target.
 - **Animation state hook** (`class_name Player`):
-  - `AnimState { IDLE, WALK, INTERACT }`, read with `get_animation_state()`, announced by `animation_state_changed(state, previous)` only on change.
+  - `AnimState { IDLE, WALK, INTERACT, SEATED }` (SEATED: E1, D-57), read with `get_animation_state()`, announced by `animation_state_changed(state, previous)` only on change.
   - It describes gameplay; it never drives movement or interaction.
     - IDLE ↔ WALK comes from the actual post-collision speed, with hysteresis (0.35 / 0.15 m/s), in the existing physics step.
     - INTERACT spans the real `interact()` call (awaited) or ends when the object leaves the tree.
-  - Future animation assets subscribe to this one signal. The procedural bob/squash/facing is separate and unchanged.
-- **Facing:** `_update_facing()` faces the intended movement direction (input or path); `_face_target()` faces the object being interacted with; `place_at()` faces a placement spot's forward. Nothing else sets the facing.
-- **Placement (M03.2):** `place_at(spot: Transform3D)` — the only public way to move the player: ends any tap-started walk and pending interaction (`_stop_navigation()`), zeroes velocity, sets the position, faces the spot's −Z (kept when it has no horizontal direction). Generic; called only by Main's area loader.
+    - SEATED spans from arriving at a `sit()` spot until `stand()`; the speed logic and the end of an interaction leave it alone.
+  - Future animation assets subscribe to this one signal. The procedural bob/squash/facing is separate, except the seated cue: while SEATED the visual eases 0.1 m lower and 12 % wider (a placeholder until rigs; no AnimationPlayer or rig).
+- **Sitting (E1, D-57, D-56, D3):** generic — the player knows no rest spot, camera or HUD; Main coordinates them.
+  - `sit(spot, source)` walks to `spot` with the ordinary navigation (no teleport) and keeps a private pending sit; the walk's normal end (`_finish_navigation()`, the two "navigation finished" branches) takes it if the player stands within `SEAT_ARRIVAL_TOLERANCE` (0.5 m) of the spot: the player turns to the spot's forward (the usual eased turn) and is SEATED. Any other end of the walk — `_start_navigation()`/`_stop_navigation()` (a ground tap, joystick/keyboard, tapping the player, another object, a mode change, a stall, `place_at`) or an out-of-reach spot — gives it up. `seat_ended(was_seated)` reports either end. A repeated request from the same source while walking (a second tap on the same seat) changes nothing (D3).
+  - While SEATED: joystick/keyboard movement stands and moves in the same physics step; tapping the player (`stop_requested`) stands; a ground tap is ignored; a tap on the seat it sits on (`target == _seat_source`) changes nothing (D-56 — the D3 guard extended to SEATED); tapping another object stands, then its normal flow; `place_at()` stands. Sitting is never saved (a relaunch is standing).
+- **Facing:** `_update_facing()` faces the intended movement direction (input or path); `_face_target()` faces the object being interacted with; `place_at()` faces a placement spot's forward; `_finish_navigation()` faces a reached sit spot's forward (E1). Nothing else sets the facing.
+- **Placement (M03.2):** `place_at(spot: Transform3D)` — the only public way to move the player at once: ends any tap-started walk and pending interaction or sit (`_stop_navigation()`), zeroes velocity, sets the position, stands a seated player (E1), faces the spot's −Z (kept when it has no horizontal direction). Generic; called only by Main's area loader.
 - **Direction:** interaction feedback (M02.4). The occasional stuck/spinning navigation is left for a later movement-polish pass.
 
 ## 5. Camera
 - **Current** (`scripts/camera/follow_camera.gd`): Node3D → SpringArm3D (−42°, 11 m) → Camera3D (FOV 50); smooth follow, velocity look-ahead, FOV widening at speed.
+- **Settle (E1, D-49, D1):** one transaction from the first `settle(distance, framing_offset, seconds)` until a `release(seconds)` has finished. Starting a transaction captures the base (the distance and the existing screen-space framing offset, `Camera3D.h_offset`/`v_offset`); a settle during a release continues from the current values and keeps the original base. Each ease is one tween bound to the camera: the distance through `set_zoom_distance()` (so within 7–15 m) and the two offsets, SINE in-out, exact end values set at the end; a new ease replaces a running one; `release(0.0)` restores at once. `zoom_by()` (pinch and wheel) is ignored for the whole transaction. The follow, look-ahead, bounds and FOV code is untouched, nothing rotates, there is no second camera, and the camera stays area-agnostic: the preset comes from the rest spot, the calls from Main.
 - **Bounds per area (M03.4):** each area owns one `AreaCameraBounds` (`scripts/world/area_camera_bounds.gd`, group `area_camera_bounds`): an axis-aligned X/Z rectangle centred on the node, `size` in metres (zero = none). The Meadow's is its ground plane (64 × 64 m at the origin, from `PlaneMesh_ground`). Main's `_apply_camera_bounds()` — at start and on every area swap, after the new area is installed — gives it to the camera (`set_bounds`) or clears it (`clear_bounds`), then `snap_to_target()`. The camera clamps the point it follows (player + look-ahead) to the rectangle before its unchanged smoothing; it knows no area, keeps no area reference and never looks bounds up per frame. In the Meadow the only difference from before is that the ≤ 1 m look-ahead stops at the ground's edge. Whether bounds should keep the whole *view* inside an area is open question O-12.
 - **Zoom (M03.5):** zoom is the spring arm's length (the camera's distance; 11 m in the scene, FOV untouched — it stays the speed widening). `FollowCamera.zoom_by(factor)` → `set_zoom_distance()`, the only writer of the length, clamps to `ZOOM_MIN_DISTANCE`–`ZOOM_MAX_DISTANCE` (7–15 m, provisional — P-03). The camera reads no input and does no zoom work per frame; zoom survives area reloads (the camera is Main's) and never moves the focus or its M03.4 bounds.
 
 ## 6. Input — InputManager
 - **Current tap pipeline:**
-  1. **The GUI consumes its own touches.** Joystick zone, buttons, seed picker and screens have `mouse_filter` STOP. Only `_unhandled_input` reaches the world.
+  1. **The GUI consumes its own touches.** Buttons, seed picker and screens have `mouse_filter` STOP. Only `_unhandled_input` reaches the world. The joystick takes no touches (D-58, below).
   2. **A tap is a short, still touch** (≤ 24 px, ≤ 450 ms). Drags never issue commands.
   3. **On the next physics frame** (one-off await), a ray against `interactables` (areas only) finds an active **Interactable** → `interact_target_requested(target)`.
      - Unavailable ones (`is_interaction_available()` false: locked plots, items mid-harvest) are skipped.
@@ -139,13 +145,20 @@ HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in fo
      - Before the mesh exists, the tapped point is used directly.
   5. **Tapping the player** is the deliberate stop. That's its body (on the `world` layer, so the ground ray can hit it) or the ground within `PLAYER_TAP_RADIUS` (0.6 m) of its feet → `stop_requested`. The Player (group `InputManager.PLAYER_GROUP`) cancels the walk and any pending interaction. This is checked after the exact interactable ray and before small-object selection and movement.
   6. **Taps behave the same in both movement modes** (decision D-15).
-- **Desktop:** the mouse emulates touch (`emulate_touch_from_mouse`), so a click takes the same path.
-- **Zoom input (M03.5):** InputManager tracks every finger on the world (`_world_touches`; GUI-consumed touches such as the joystick never reach it). Exactly two fingers pinch: the change in their distance becomes `zoom_requested(old / new)` (apart = closer); the pinch restarts from the current distance whenever a finger is added or lifted, so a third finger pauses it and nothing jumps. **Once two fingers are down, no finger is a tap** (a pinch's still pivot finger must never walk the player). The mouse wheel emits `zoom_requested(1 / 1.1)` (up, closer) or `(1.1)` (down) on press, before and apart from click handling. Main connects `zoom_requested` to `FollowCamera.zoom_by` once. Tap routing itself (`_track_tap`, `_handle_tap`, selection, snapping) is unchanged and pinned.
+- **Desktop:** the mouse emulates touch (`emulate_touch_from_mouse`), so a click takes the same path, and a mouse drag drives the floating joystick.
+- **Floating joystick (E1, D-58; desktop verified, Android pending):** the joystick owns no screen area. InputManager alone decides which finger is the joystick's:
+  - In Joystick mode, a lone world finger landing on the left `JOYSTICK_ZONE_FRACTION` (0.5) of the screen, with no joystick held, is a **candidate** — still an ordinary tap finger. Once it drags farther than `TAP_MAX_MOVE` (24 px) from where it touched, it can no longer be a tap and becomes **the joystick's** (`_start_joystick()`): dropped from the tap starts and the world (pinch) fingers; `joystick_started(origin, position)`, then `joystick_moved(position)` on its drags, `joystick_ended` on release.
+  - A short touch anywhere (the left half included) stays a tap. Nothing moves before the 24 px point, so a tap never nudges or stands a seated player.
+  - A second world finger before the candidate starts makes a pinch and drops the candidate. While the joystick is held, other fingers tap and pinch as usual; another left-side finger is no second joystick.
+  - The joystick ends on release, a mode switch, focus loss, or a new press on its touch index (its release was lost — Android reuses indices).
+  - Tap routing (`_handle_tap`, selection, snapping) knows nothing of it.
+  - `VirtualJoystick` (`scripts/ui/virtual_joystick.gd`, `scenes/ui/VirtualJoystick.tscn`; every node `MOUSE_FILTER_IGNORE`, the ring hidden until started) only draws it: the ring appears at the touch-down point, moved inward only as far as it takes to be seen whole near a screen edge; the thumb follows the finger within `knob_max_distance` (50 px, the configurable radius); the deflection is measured from the touch-down point — never from the shifted ring — so direction never depends on where the ring is drawn, clamped to length 1, with the dead zone (0.15) and smoothing as before; it alone writes `set_move_vector` every frame. Hidden (Tap to Move), it releases. The HUD scene and `hud.gd` are unchanged (its safe-area code still places the joystick node, now only a drawing parent).
+- **Zoom input (M03.5):** InputManager tracks every finger on the world (`_world_touches`; GUI-consumed touches never reach it, and the joystick's finger leaves it once it is the joystick's, D-58). Exactly two fingers pinch: the change in their distance becomes `zoom_requested(old / new)` (apart = closer); the pinch restarts from the current distance whenever a finger is added or lifted, so a third finger pauses it and nothing jumps. **Once two fingers are down, no finger is a tap** (a pinch's still pivot finger must never walk the player). The mouse wheel emits `zoom_requested(1 / 1.1)` (up, closer) or `(1.1)` (down) on press, before and apart from click handling. Main connects `zoom_requested` to `FollowCamera.zoom_by` once. Tap routing itself (`_track_tap`, `_handle_tap`, selection, snapping) is unchanged and pinned.
 - **Keyboard (desktop fallback):**
   - InputMap actions `move_up/down/left/right` (W/S/A/D + arrows) are read in `_input` on key events only (non-consuming) via `Input.get_vector()`.
   - InputManager combines joystick (`set_move_vector`, every frame) and keyboard into the one `move_vector`, clamped to length 1. Player is unaware of the source.
   - Focus loss clears keys. Raw key polling is not allowed (toolkit-enforced).
-- **Movement mode:** `movement_mode` (JOYSTICK default, TAP_TO_MOVE) only controls whether the joystick is shown. It's saved in `settings`.
+- **Movement mode:** `movement_mode` (JOYSTICK default, TAP_TO_MOVE) only controls whether the floating joystick is available (and its view shown). It's saved in `settings`.
 - **Notification cards** are input-transparent, so they never swallow a world tap.
 - **One way in (M02.5, A6 resolved):** `interact_target_requested(target)` is InputManager's only interaction request. The old "interact with the nearest object" path (`interact_requested` / `request_interact()`) had no callers and was removed; the toolkit keeps it from returning. Player's `_interact_with()` is entered only from a tap (`_on_interact_target_requested`) or on arriving at the tapped object (`_on_interaction_zone_area_entered`).
 - **Direction:** no second input system, ever.
@@ -258,12 +271,102 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
 
 ## 11. Saving
 - **Current:**
-  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`, `items` (M04.2: `{item_id: [count per quality level]}`; since M04.3 the `Inventory`'s, loaded before `farm`), `wallet` (M05.1: `{"ledger": [{amount, reason}, ...]}`), `exploration` (M05.2: `{landmarks, secrets, all_secrets_bonus, curiosity_bonus}` — restored without paying anything; unknown or wrong-kind places dropped; a malformed bonus flag counts as paid), `relationships` (M08.5: `{npc_id: {friendship, last_gain_date}}` — unknown NPC ids and malformed records dropped with a warning, friendship clamped to 0–10, nothing announced on load), `world_time` (M09.2: `{day, fraction}` — WorldClock's; a malformed section starts at day 1 at 0.28 with a warning), `requests` (M08.6: `{request_id: "accepted" | "completed"}` — unknown ids dropped with a warning, a malformed state for a known request counts as completed so its reward is never paid twice, nothing announced or paid on load).
-  - **Versioning (M04.0, D-17):** `save_version` (currently 8 — M09.2 added `world_time`, absent = day 1 at 0.28; M08.6 added `requests`; M08.5 added `relationships`; M05.2 added `exploration`; M05.1 `wallet`; M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; M04.3 lets `items` hold collectibles; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`; 2 → 3 nothing to rewrite (the bump stops an M04.2 build dropping collectibles); 3 → 4 nothing to rewrite (an older save has no wallet = an empty one); 4 → 5 nothing to rewrite (no exploration section = nothing reached yet — each place can pay once more after the update, then never); 5 → 6 nothing to rewrite (no relationships section = every NPC at 0); 6 → 7 nothing to rewrite (no requests section = no request offered yet).
+  - One JSON file, `user://save.json`, written and read only by SaveManager, with keys `save_version`, `points`, `discovered_ids`, `journal_entries`, `daily_discovery`, `farm` (FarmManager's own `version: 1`, unused), `settings`, `items` (M04.2: `{item_id: [count per quality level]}`; since M04.3 the `Inventory`'s, loaded before `farm`), `wallet` (M05.1: `{"ledger": [{amount, reason}, ...]}`), `exploration` (M05.2: `{landmarks, secrets, all_secrets_bonus, curiosity_bonus}` — restored without paying anything; unknown or wrong-kind places dropped; a malformed bonus flag counts as paid), `relationships` (M08.5: `{npc_id: {friendship, last_gain_date}}` — unknown NPC ids and malformed records dropped with a warning, friendship clamped to 0–10, nothing announced on load), `world_time` (M09.2: `{day, fraction}` — WorldClock's; a malformed section starts at day 1 at 0.28 with a warning), `wildlife_sightings` (M14.1a, D-59: JournalManager's species ids seen, in the order first seen; non-strings and duplicates dropped on load, an id no longer in the data kept), `requests` (M08.6: `{request_id: "accepted" | "completed"}` — unknown ids dropped with a warning, a malformed state for a known request counts as completed so its reward is never paid twice, nothing announced or paid on load).
+  - **Versioning (M04.0, D-17):** `save_version` (currently 9 — M14.1a added `wildlife_sightings`, absent = no species seen; M09.2 added `world_time`, absent = day 1 at 0.28; M08.6 added `requests`; M08.5 added `relationships`; M05.2 added `exploration`; M05.1 `wallet`; M04.2 moved `farm.seeds`/`farm.basket` into the `items` section; M04.3 lets `items` hold collectibles; absent = 0 = pre-M04.0). Load order: parse → must be a dictionary → read the version (malformed → ignored like a corrupted file) → newer than the build → not loaded, and saving is blocked for the session so the file survives → `_migrate()` one step per version on a copy → `_valid_sections()` (only sections of the expected JSON type, `SECTION_TYPES`) → each system's apply. Changing what is saved = bump `SAVE_VERSION` + add a migration step. Steps: 0 → 1 nothing to rewrite; 1 → 2 seeds/basket → `items`, `farm.starter_seeds`; 2 → 3 nothing to rewrite (the bump stops an M04.2 build dropping collectibles); 3 → 4 nothing to rewrite (an older save has no wallet = an empty one); 4 → 5 nothing to rewrite (no exploration section = nothing reached yet — each place can pay once more after the update, then never); 5 → 6 nothing to rewrite (no relationships section = every NPC at 0); 6 → 7 nothing to rewrite (no requests section = no request offered yet).
   - Every section is read with a default, so older saves load and a wrongly typed section only resets itself.
-  - Autosave on: new discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed.
+  - Autosave on: new discovery, plant, harvest, found seed, farm milestone, movement-mode change, app paused/closed; since M15.4 also each once-ever exploration reward (landmark, secret, curiosity bonus, every secret found), the daily bonus and — deferred — a repeat discovery collection. Since M14.1a (D-59) also a wildlife species seen for the first time (`JournalManager.wildlife_sighted`, once ever per species).
   - **Not saved:** weather (derived from `world_time`, D-43), player position, camera zoom, discovery respawns, environmental events; exploration's session-only beats and thresholds (M05.2).
   - The farm save format is documented in `docs/farming_persistence_plan.md`.
+- **Old-save fixtures (M15.3):** `tools/fixtures/saves/` holds one real save per format the game has had — `v0` (unversioned, M03.6) to `v9` (M14.1a) — each written by the commit that introduced that format, running its own code. **Pending exception (M14.1a, temporary):** until the commit that introduces v9 exists, `v9` is generated from the working tree (`PENDING=1 generate_all.sh v9`) and its `meta.json` says so (`"pending": true, "historical": false, "commit": null`); only the current `SAVE_VERSION` may be pending, every other check still applies, and the checker, model and runner report it as PENDING. It is regenerated from that commit with the ordinary historical path, and the exception removed, in the follow-up commit. `generate_all.sh` exports the commit read-only (`git archive`) into a temporary folder, and `generate_save_fixture.gd` boots its main scene, plays a short scripted session through that version's public API (farm: prepare, plant, water, harvest, replant; discoveries; points; movement mode; and where the version has them, a sale or a credit, exploration, friendship, the request, the clock), saves with that version's `SaveManager`, and records `save.json`, `expected.json` (what that version held in memory, read through its getters), `calls.json` (every call) and `meta.json` (commit, generator, Godot). Two constructed negatives come from the v8 save (`make_negative_fixtures.py`): `newer` (stamped `SAVE_VERSION` + 1 with an unknown section; `v9_newer` until M14.1a made v9 real — rerun the script after every bump) and `malformed` (cut in half). **Checks:** `tools/fixtures/run_save_fixtures.sh` (real Godot, headless): each fixture is placed as `user://save.json` in its own data folder and the game's own `GameState` loads it at boot; `save_fixture_check.gd` compares the loaded state with `expected.json` (sections a version never saved must equal a new game; the three clock-derived plot fields within 0.05 s), re-saves (the build's `save_version`, exactly today's sections), and a second launch checks the re-saved file again; `newer` is refused and left byte-identical; `malformed` is ignored. `tools/sims/sim_save_fixtures.py` runs the same files through the Python port of today's `SaveManager` on every `run_all.sh`. The checker requires a fixture for every version up to `SAVE_VERSION` — **a version bump must add the new format's fixture** (a commit in `generate_all.sh`, then regenerate). The fixtures' daily-discovery dates are the day they were generated, so that section is not compared (a new day re-rolls it).
+- **Session vs persistent state (M15.2).** Every piece of runtime state is one of: **persistent** (written to `save.json` and restored at the next launch), **derived** (never saved; rebuilt from persistent state), **session** (lives only while the app runs) or **data** (definitions and settings loaded from `data/` or the project at boot — the same every launch). Enforced by the checker section "session vs persistent (M15.2)" and `tools/sims/sim_state_registry.py`, from the registry block below.
+  - **Persistent** — one section per owner, restored by `SaveManager.load_game()` at boot: `points` (PointsManager), `discovered_ids` (DiscoveryManager; also the once-ever claim of never-respawning discoveries, D-22), `journal_entries` (JournalManager), `daily_discovery` (DailyDiscoveryManager), `items` (Inventory), `farm` (FarmManager, including every plot's `FarmPlot.capture()` — the only world object whose state is saved), `settings` (InputManager: the movement mode only), `wallet` (Wallet: the ledger), `exploration` (ExplorationManager: places, secrets, the two once-ever bonuses, D-21), `relationships` (Relationships), `requests` (Requests), `world_time` (WorldClock, D-42), `wildlife_sightings` (JournalManager: the wildlife species seen, D-59).
+  - **Derived** — never saved: time of day, weather (D-43) and NPC routines (D-41) from the saved clock; the wallet balance from the ledger; the farm's ready counts, garden interest and found-seed list, rebuilt as the save is applied and plots register.
+  - **Session** — gone on relaunch, by design: all input state (touches, pinch, keyboard, the floating joystick, D-58); the current area and travel (D-34) and the parked Meadow (D-33); the player's position, facing, walk, interaction and seated state (D-57) and the rest spot's occupancy (D-48); camera zoom and settle (P-03, D-49); Earth Nurture's cycle (D-47); discovery respawn timers and environmental events (D-22, D-33); wildlife, ambient props, NPC wander positions and conversation progress; HUD, screens, notifications, the seed picker and speech panel; exploration's discovery-count bonuses and session beats, which pay again each session (D-21); FarmManager's pending seed choice and last-ripening time; SaveManager's newer-save block.
+  - **When persistent state is written (M15.4):** `GameState` saves on a new discovery, plant, harvest, found seed, farm milestone, sale, NPC trade, friendship rise, request accepted or completed, movement-mode change, each once-ever exploration reward (a landmark, a secret, the curiosity bonus, every secret found) and the daily bonus — synchronously, at its own signal, after its state and points are set — and after a repeat discovery collection, deferred until every listener of that signal has added its part (the collectible, any found seed, the daily bonus); and when the app is paused or closed. Since M14.1a also a wildlife species seen for the first time (`JournalManager.wildlife_sighted`, synchronously; the species is recorded before the signal). A force-stop no longer loses those moments (real-Godot evidence: `tools/fixtures/run_force_stop.sh`). The **world time** still has no save of its own, by decision: it is written with every save, so a force-stop can lose the time since the last one.
+  - **Not yet defined — deferred until designed:** elemental progression (O-09; M11.1's Earth Nurture saves nothing, D-47), Rishi progression (R-01–R-07), world changes (O-04, M13.2) and journal player memories (M14.1). None has state today (M14.1a's wildlife sightings, D-59, are a separate, classified section — not player memories). When one is implemented, its state is classified like any other: a new autoload variable, save section or saved world object fails the checker until it is in the registry, and a registry entry or section named for a deferred item fails while that item is still listed as deferred.
+  - **Registry** (read by the checker: every autoload member variable exactly once as `<autoload>.<variable> <class>[:<section>]`; the fields `FarmPlot.capture()` saves; the deferred items):
+
+```state-registry
+area_router._definitions data
+area_router._current_area_id session
+area_router._travelling session
+daily_discovery_manager.target_id persistent:daily_discovery
+daily_discovery_manager.target_date persistent:daily_discovery
+daily_discovery_manager.completed_date persistent:daily_discovery
+daily_discovery_manager._bonus_points data
+discovery_database._definitions data
+discovery_manager.discovered_ids persistent:discovered_ids
+exploration_manager._places data
+exploration_manager._rewards data
+exploration_manager._thresholds data
+exploration_manager._summary_threshold data
+exploration_manager._secret_place_count data
+exploration_manager._session_discovery_count session
+exploration_manager._session_rare_discovery_count session
+exploration_manager._awarded_thresholds session
+exploration_manager._reached_landmarks persistent:exploration
+exploration_manager._found_secret_locations persistent:exploration
+exploration_manager._first_discovery_announced session
+exploration_manager._rare_discovery_announced session
+exploration_manager._all_secrets_bonus_awarded persistent:exploration
+exploration_manager._curiosity_bonus_given persistent:exploration
+exploration_manager._summary_shown session
+farm_manager._crops data
+farm_manager._rewards data
+farm_manager._seed_item_ids data
+farm_manager._produce_item_ids data
+farm_manager._starter_seeds_given persistent:farm
+farm_manager._found_seed_crop_ids derived
+farm_manager._grown_crop_ids persistent:farm
+farm_manager._milestones_reached persistent:farm
+farm_manager._planted_count persistent:farm
+farm_manager._harvested_count persistent:farm
+farm_manager._ready_by_crop derived
+farm_manager._garden_interest derived
+farm_manager._last_ripened_msec session
+farm_manager._found_seed_origins persistent:farm
+farm_manager._garden_found persistent:farm
+farm_manager._plots persistent:farm
+farm_manager._starter_plot_ids session
+farm_manager._harvested_plot_ids persistent:farm
+farm_manager._pending_plot session
+farm_manager._saved_plot_states persistent:farm
+farm_manager._unloaded_plot_states persistent:farm
+input_manager.move_vector session
+input_manager.movement_mode persistent:settings
+input_manager._tap_starts session
+input_manager._mouse_emulates_touch data
+input_manager._joystick_vector session
+input_manager._tap_select_shape session
+input_manager._keyboard_vector session
+input_manager._world_touches session
+input_manager._pinch_distance session
+input_manager._joystick_candidate session
+input_manager._joystick_origin session
+input_manager._joystick_index session
+inventory._store persistent:items
+inventory._collectible_item_ids data
+inventory._definitions data
+journal_manager._entries persistent:journal_entries
+journal_manager._sighted_species persistent:wildlife_sightings
+journal_manager._species data
+market._quality_percents data
+points_manager.points persistent:points
+relationships._friendship persistent:relationships
+relationships._last_gain_date persistent:relationships
+relationships._known_ids data
+requests._definitions data
+requests._states persistent:requests
+save_manager._saving_blocked session
+services._definitions data
+wallet._balance derived
+wallet._ledger persistent:wallet
+world_clock._day persistent:world_time
+world_clock._fraction persistent:world_time
+farm_plot.capture state soil_memory crop stage needs_water stage_time_left thirsty_for longest_thirst soil care quality
+deferred elemental_progression rishi_progression world_changes player_memories
+```
+
 - **Direction:**
   - Full versioned persistence in Phase 15.
 - **Rule:** systems expose `get_save_data()` / `apply_save_data()`; world objects restore by stable id on registration.
@@ -288,7 +391,8 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
 
 ## 13. UI architecture
 - **Current:**
-  - `HUD` (CanvasLayer) wires autoload signals to presentation. It holds no gameplay state.
+  - `HUD` (CanvasLayer, `class_name GameHUD`) wires autoload signals to presentation. It holds no gameplay state.
+  - **Quiet HUD (E1, D-50, D-56, D2):** `set_quiet(quiet)` fades the top bar (points, discoveries and the screen buttons, the Movement mode toggle included) and the thumb buttons (Basket, Inventory) out over 0.4 s and sets every control in them to ignore touches (their own filters given back after), so a stray tap reaches the world; `MobileControls`/joystick, notifications, the seed picker, the speech panel and the screens are untouched. Called only by Main while the player is seated. `HUD.tscn` is unchanged.
   - **One notification card language** (`DiscoveryNotification`: discovery, compact, message) for every event.
   - **Modal screens** (Collection, Journal, Daily, Basket, Inventory) share one pattern: dim background, a sheet, a close button, rebuilt on open. Basket and Inventory use the M06.3 language below, and so — since M07.4a — do Collection, Journal and Daily, and — since M07.4b — the SeedPicker (non-modal); no screen uses the old parchment theme any more. Every modal sheet stays inside the safe area (the HUD moves a sheet in only as far as a cut-out reaches past its designed margin).
 - **UI language and layout rules (M06.3, D-26):**
@@ -328,7 +432,7 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - `WorldSimulation` coordinates independent controllers.
   - **Game time (M09.2, D-42):** `WorldClock` (autoload) is the one clock — day number + fraction, a 600 s day, saved (`world_time`, save v8). `WorldSimulation._process` is its only driver, so a parked Meadow (the player indoors) pauses time and the return resumes it exactly.
   - `TimeOfDay` (phases dawn/morning/afternoon/evening/night; `time_of_day.gd` pinned and unchanged) only presents that clock: `WorldSimulation` switches its own frame advance off in `_ready`, copies the clock's fraction into it and emits its `time_updated` (every frame) and `phase_changed` (when the fraction's phase changes) — so `EnvironmentController`, wildlife and the NPC keep their listening path. Its `day_length_seconds` / `start_fraction` must equal `WorldClock`'s constants (checker); its cached `get_phase()` is never read. `time_of_day.gd` stays pinned because driving it from `WorldSimulation`, which already wires the clock to every consumer, needs no change to it.
-  - **Wildlife:** `WildlifeActor` (idle/wander/pause/flee; interest points; keyed attraction; night activity; keep-out circle), relayed by `WildlifeController`.
+  - **Wildlife:** `WildlifeActor` (idle/wander/pause/flee; interest points; keyed attraction; night activity; keep-out circle), relayed by `WildlifeController`. Each actor names its `species_id` (`data/wildlife/`) and reports it once, the first frame the player is inside its `alert_distance`; the controller relays that to `JournalManager.record_sighting()` (M14.1a, D-59 — once ever per species, no reward).
   - **Events:** `EnvironmentalEvent`, including an arrival-only garden greeting. Controllers share one distance loop each. Since M09.4 (D-44) an event may wait for a weather instead (`trigger_weather`, `""` = proximity): the distance loop skips it and `EnvironmentalEventController.on_weather_changed()` fires it through the same `can_trigger()`/`fire()`.
 - **NPC routines (M09.1, D-41):** the villager follows the day between its two routine spots (above, §NPCs).
 - **Weather (M09.3, D-43):** Clear or Rain, a pure function of `WeatherSchedule`'s fixed seed (`data/weather/weather_schedule.tres`: seed 917, 4 slots of 150 s, rain chance 0.25 per slot, a 0.01-day ramp, day 1 always Clear) and `WorldClock`'s day and fraction — a 32-bit integer hash of (seed, day, slot); no random state, no system time, nothing saved.
@@ -336,7 +440,11 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - It exposes `get_weather()` (`"clear"`/`"rain"`), `is_raining()`, `get_rain_intensity()` (0–1, derived from the position in the slot: a fade at a spell's edges, 1 between rainy neighbours) and emits `weather_changed(weather)` only on a change during play — never for the first resolution (new game, load, fresh area) or a return outdoors. Its one production listener (M09.4, D-44) is `EnvironmentalEventController.on_weather_changed`, connected in `WorldSimulation.configure()`.
   - Visuals: one modest `CPUParticles3D` (`Rain`, 240 drops, off while Clear) kept above the player from that same call — no frame loop of its own, no camera change; `EnvironmentController.apply_time(fraction, rain)` dims the sun, greys the sky and lowers the ambient light. Android performance not yet measured.
 - **Weather reaction (M09.4, D-44):** rain beginning during play fires `RainBirdDisturbance` (a `WILDLIFE_DISTURBANCE` under the Meadow's top-level `WeatherEvents` node: `trigger_weather = "rain"`, repeatable, 60 s cooldown), which calls the existing `WildlifeActor.startle()` on the five `SmallBird`s. Event-driven only: nothing differs while it rains; a load, relaunch, return outdoors, fresh area, midnight inside a spell and Rain → Clear startle nothing. No NPC, farming or audio part; nothing saved.
-- **Direction:** Phase 09 is complete in code. Further world work — the world-experience phase (Group E: rest spots, settle camera, seated player, audio) — has **approved directions** (D-48–D-57) but **nothing is implemented**: no rest spot, settle camera, seated state or HUD quieting exists in code; the systems above are unchanged. Its first milestone, E1, has a complete design contract and implementation audit but is not implemented and not yet approved to begin. Stay event-driven.
+- **Direction:** Phase 09 is complete in code. Further world work is the world-experience phase (Group E, D-48–D-57); its first milestone, E1, is below. Stay event-driven.
+- **Rest spots (E1, D-48–D-57; desktop verified, Android pending):** one reusable `RestSpot` (`scripts/peaceful/rest_spot.gd`, `scenes/peaceful/RestSpot.tscn`): an `Interactable` offering D-09's Use (`Verb.USE`), an Area3D on the interactables layer with one shape, the shared Indicator, a `SeatPoint` marker (where the player sits and faces: the view) and a placeholder seat mesh with no collider (the navigation mesh is unchanged). Its exports are the settle preset (distance 7–15 m, framing offset, settle/release 1–2 s). `interact()` only emits `sit_requested(self)` (refused, and no verb offered, while occupied); `set_occupied()` only sets a private flag — availability (`monitorable`) is never touched, so a tap on the occupied seat still names it and the Player ignores it (D-56). It knows no Player, camera, Main, HUD, reward, save or audio. One instance: the Meadow's `PeacefulPlaces/PondRestSpot` at (4.3, −12.12), yaw −118.7° (the pond's west side, facing it).
+  - **Main's routing:** `_connect_rest_spots()` (at start and on every area swap) connects each RestSpot of the area once (group `rest_spot`; a parked area keeps its connections). A sit request → `player.sit(seat, rest_spot)`; SEATED begins (`animation_state_changed`) → the spot is occupied, `follow_camera.settle(preset)`, `hud.set_quiet(true)`; `seat_ended(true)` → `follow_camera.release(release_seconds)`, `hud.set_quiet(false)`, the spot free; `seat_ended(false)` → the spot free only. `_swap_area()` releases the camera at once before placing the player.
+  - The world is never paused or sped up for it (WorldClock, weather, NPC routines, wildlife and ambient props run as always, D-51, D-52); nothing is rewarded or saved.
+  - **The occupied seat (D-56, Option A):** a tap whose ray meets the seat's shape (a 0.45 m sphere 0.3 m up, which also wraps the seated player's lower body) is a no-op; a tap on the player's upper body or the ground around the seat outside that shape stands the player (`stop_requested`). The seat and the seated player overlap on screen and InputManager tries interactables first, so this split follows the seat's shape; see the plan's E1 record for the measured split.
 
 ## 16. Elemental architecture (M11.0 in data; M11.1 in code; the rest direction — Phases 11–12)
 - **In data (M11.0, D-46):** `ElementDefinition` (`scripts/elements/element_definition.gd`: `id`, `display_name`, `order` only) and exactly five static resources in `data/elements/` — Earth 1, Water 2, Fire 3, Air 4, Space 5 (D-05's order). One optional `element_id` on `PlaceDefinition`, `ItemDefinition` and `DiscoveryDefinition` (an item's is its own explicit value; no inheritance). The approved mapping is conservative: `earth` on the garden place (`quiet_farm`) and the eight crop items; every other place, item and discovery is empty — the pond, the hidden places, the Overlook and the mystery finds wait for explicit decisions. **Nothing reads any of it yet:** no loader, autoload, save field, Journal or HUD display, scene use or mechanic; the toolkit validates the five elements, the mapping, every reference, seed/produce and collectible/discovery agreement, and that no runtime code consumes them.

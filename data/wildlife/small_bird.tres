@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="WildlifeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/wildlife_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "small_bird"
+display_name = "Small Bird"
+description = "A little brown bird that hops between the grasses, pecking at seeds. It turns its head to keep an eye on you."
+order = 20

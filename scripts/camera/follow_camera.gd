@@ -41,6 +41,15 @@ var _has_last_position: bool = false
 ## an area loads — replaced, or cleared, on every area change.
 var _bounds: Rect2
 var _has_bounds: bool = false
+## The settle (D-49, D1): one transaction from the first settle() until a
+## release has finished. The base — the distance and framing offset before
+## it — is captured only when a transaction starts, so a settle during a
+## release continues from where the camera is and still restores the
+## original base. Pinch and wheel zoom are ignored while it lasts.
+var _settle_active: bool = false
+var _base_distance: float = 0.0
+var _base_offset := Vector2.ZERO
+var _settle_tween: Tween
 
 func _ready() -> void:
 	if _camera:
@@ -99,8 +108,11 @@ func _clamp_to_bounds(point: Vector3) -> Vector3:
 	point.z = clampf(point.z, _bounds.position.y, _bounds.end.y)
 	return point
 
-## factor < 1 brings the camera closer, > 1 moves it away; clamped.
+## factor < 1 brings the camera closer, > 1 moves it away; clamped. Ignored
+## during a settle transaction.
 func zoom_by(factor: float) -> void:
+	if _settle_active:
+		return
 	if _spring_arm == null or not is_finite(factor) or factor <= 0.0:
 		return
 	set_zoom_distance(_spring_arm.spring_length * factor)
@@ -112,3 +124,48 @@ func set_zoom_distance(distance: float) -> void:
 
 func get_zoom_distance() -> float:
 	return _spring_arm.spring_length if _spring_arm else 0.0
+
+## Eases the distance (through set_zoom_distance(), so within the zoom
+## limits) and the existing screen-space framing offset (Camera3D's h/v
+## offset) to these values over `seconds`. The follow, look-ahead, bounds
+## and FOV are untouched; nothing rotates. Starting a transaction captures
+## the base; during one (even mid-release) the base stays as captured.
+func settle(distance: float, framing_offset: Vector2, seconds: float) -> void:
+	if _camera == null or _spring_arm == null:
+		return
+	if not _settle_active:
+		_settle_active = true
+		_base_distance = get_zoom_distance()
+		_base_offset = Vector2(_camera.h_offset, _camera.v_offset)
+	_ease_to(distance, framing_offset, seconds, false)
+
+## Eases back to exactly the captured base, then ends the transaction;
+## seconds <= 0 restores at once. No-op without a transaction.
+func release(seconds: float) -> void:
+	if not _settle_active:
+		return
+	_ease_to(_base_distance, _base_offset, seconds, true)
+
+## Replaces any running ease, starting from the current values.
+func _ease_to(distance: float, framing_offset: Vector2, seconds: float, ending: bool) -> void:
+	if _settle_tween != null:
+		_settle_tween.kill()
+		_settle_tween = null
+	if seconds <= 0.0:
+		_finish_ease(distance, framing_offset, ending)
+		return
+	_settle_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_settle_tween.tween_method(set_zoom_distance, get_zoom_distance(), distance, seconds)
+	_settle_tween.tween_property(_camera, "h_offset", framing_offset.x, seconds)
+	_settle_tween.tween_property(_camera, "v_offset", framing_offset.y, seconds)
+	_settle_tween.chain().tween_callback(_finish_ease.bind(distance, framing_offset, ending))
+
+## The exact end values (never left to interpolation), and the end of the
+## transaction after a release.
+func _finish_ease(distance: float, framing_offset: Vector2, ending: bool) -> void:
+	_settle_tween = null
+	set_zoom_distance(distance)
+	_camera.h_offset = framing_offset.x
+	_camera.v_offset = framing_offset.y
+	if ending:
+		_settle_active = false

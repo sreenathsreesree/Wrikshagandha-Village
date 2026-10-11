@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="WildlifeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/wildlife_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "rabbit"
+display_name = "Rabbit"
+description = "A soft brown rabbit of the meadow grass. It watches you with one ear up, and bolts if you come too close."
+order = 10

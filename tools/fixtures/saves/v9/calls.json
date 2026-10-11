@@ -1,0 +1,130 @@
+[
+	{
+		"call": "PointsManager.add_points",
+		"args": [
+			7
+		],
+		"result": null
+	},
+	{
+		"call": "DiscoveryManager.discover",
+		"args": [
+			"blue_mushroom"
+		],
+		"result": true
+	},
+	{
+		"call": "DiscoveryManager.discover",
+		"args": [
+			"golden_leaf"
+		],
+		"result": true
+	},
+	{
+		"call": "InputManager.set_tap_to_move",
+		"args": [
+			true
+		],
+		"result": null
+	},
+	{
+		"call": "FarmPlot(farm_plot_01).interact",
+		"args": [],
+		"result": true
+	},
+	{
+		"call": "FarmPlot(farm_plot_01).interact",
+		"args": [],
+		"result": true
+	},
+	{
+		"call": "FarmManager.choose_seed",
+		"args": [
+			"wild_carrot"
+		],
+		"result": true
+	},
+	{
+		"call": "FarmPlot(farm_plot_01).interact",
+		"args": [],
+		"result": true
+	},
+	{
+		"call": "FarmPlot(farm_plot_01).interact",
+		"args": [],
+		"result": true
+	},
+	{
+		"call": "FarmPlot(farm_plot_01).interact",
+		"args": [],
+		"result": true
+	},
+	{
+		"call": "FarmPlot(farm_plot_01).interact",
+		"args": [],
+		"result": true
+	},
+	{
+		"call": "FarmManager.choose_seed",
+		"args": [
+			"wild_carrot"
+		],
+		"result": true
+	},
+	{
+		"call": "Market.sell",
+		"args": [
+			"wild_carrot",
+			1,
+			1
+		],
+		"result": 5
+	},
+	{
+		"call": "ExplorationManager.mark_landmark_reached",
+		"args": [
+			"overlook"
+		],
+		"result": null
+	},
+	{
+		"call": "ExplorationManager.mark_secret_location_found",
+		"args": [
+			"secluded_pond_nook"
+		],
+		"result": null
+	},
+	{
+		"call": "Relationships.record_completed_conversation",
+		"args": [
+			"villager"
+		],
+		"result": true
+	},
+	{
+		"call": "Requests.accept",
+		"args": [
+			"villager_stones"
+		],
+		"result": true
+	},
+	{
+		"call": "WorldClock.advance",
+		"args": [
+			30.0
+		],
+		"result": null
+	},
+	{
+		"call": "JournalManager.record_sighting",
+		"args": [
+			"rabbit"
+		],
+		"result": false
+	},
+	{
+		"call": "SaveManager.save_game",
+		"args": [],
+		"result": null
+	}
+]

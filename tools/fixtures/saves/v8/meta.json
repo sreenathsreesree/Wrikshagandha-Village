@@ -1,0 +1,1 @@
+{"version": "v8", "commit": "adb284c", "milestone": "M09.2", "subject": "M09.2: saved world time - WorldClock, the one authoritative clock", "generator": "tools/fixtures/saves/generate_save_fixture.gd", "godot": "4.7.2.stable.official.ed1daf0bf"}

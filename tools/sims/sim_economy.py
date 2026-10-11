@@ -17,7 +17,9 @@ modelled from the repository. Not the engine.
    code) decide which payments are saved at once and which wait; 3,000
    random players with random crashes and relaunches: nothing is paid twice,
    a crash loses a payment together with its claim, never one without the
-   other.
+   other. Since M15.4 every payment the model makes is saved when it happens
+   (a repeat collection and each exploration reward too), so a crash loses
+   none of them.
 4. Coins (M06.2, D-25): one earn source — selling produce through
    Market.sell(), the only Wallet.credit() caller — and no sink (no debit
    caller). In the random players above, harvests add produce and points
@@ -192,7 +194,13 @@ TRIGGERS = set(re.findall(r"(\w+\.\w+)\.connect\(", gs_ready))
 assert TRIGGERS == {"DiscoveryManager.discovery_made", "FarmManager.crop_planted", "FarmManager.crop_harvested", "FarmManager.seed_found",
                     "FarmManager.milestone_reached", "Market.produce_sold", "InputManager.movement_mode_changed",
                     "Relationships.friendship_changed", "Requests.request_accepted", "Requests.request_completed",
-                    "Market.items_traded"}, f"autosave triggers changed: {TRIGGERS}"  # M08.7: an NPC trade, saved at once  # M08.5: friendship pays nothing, saved at once
+                    "Market.items_traded",
+                    # M15.4: each once-ever exploration reward and the daily bonus at its own signal; a repeat collection
+                    "ExplorationManager.landmark_reached", "ExplorationManager.secret_location_found",
+                    "ExplorationManager.curiosity_bonus_awarded", "ExplorationManager.all_secret_locations_found",
+                    "DailyDiscoveryManager.daily_completed", "DiscoveryManager.discovery_repeated",
+                    # M14.1a: a species seen for the first time (records only, pays nothing), saved at once
+                    "JournalManager.wildlife_sighted"}, f"autosave triggers changed: {TRIGGERS}"  # M08.7: an NPC trade, saved at once  # M08.5: friendship pays nothing, saved at once
 assert "NOTIFICATION_APPLICATION_PAUSED" in F[GS]["_notification"] and "NOTIFICATION_WM_CLOSE_REQUEST" in F[GS]["_notification"]
 AL = re.findall(r'^(\w+)="\*?res://', _src("project.godot").split("[autoload]", 1)[1].split("\n[", 1)[0], re.M)
 assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager", "Inventory", "ExplorationManager", "FarmManager")), \
@@ -201,9 +209,34 @@ assert all(AL.index(x) < AL.index("GameState") for x in ("DailyDiscoveryManager"
 AUTOSAVED = {"first_discovery": "DiscoveryManager.discovery_made" in TRIGGERS, "threshold": "DiscoveryManager.discovery_made" in TRIGGERS,
              "harvest": "FarmManager.crop_harvested" in TRIGGERS, "milestone": "FarmManager.milestone_reached" in TRIGGERS,
              "sale": "Market.produce_sold" in TRIGGERS,
-             "repeat_discovery": False, "landmark": False, "secret": False, "daily_on_repeat": False}
+             # M15.4, traced to the order in the code: discover() pays, then emits discovery_repeated; the collectible
+             # (Inventory), found seeds (FarmManager) and the daily bonus (DailyDiscoveryManager) are added by other
+             # listeners of that signal, so GameState's save on it is deferred until they have run.
+             "repeat_discovery": "DiscoveryManager.discovery_repeated.connect(_save.unbind(1), CONNECT_DEFERRED)" in gs_ready,
+             "daily_on_repeat": "DiscoveryManager.discovery_repeated.connect(_save.unbind(1), CONNECT_DEFERRED)" in gs_ready,
+             # mark_landmark_reached records the place and pays before landmark_reached; mark_secret_location_found
+             # records and pays before secret_location_found, then the curiosity and every-secret bonuses, each recorded
+             # and paid before its own signal — so the last save in the chain follows the last reward paid.
+             "landmark": "ExplorationManager.landmark_reached" in TRIGGERS,
+             "secret": {"ExplorationManager.secret_location_found", "ExplorationManager.curiosity_bonus_awarded",
+                        "ExplorationManager.all_secret_locations_found"} <= TRIGGERS}
 assert AUTOSAVED == {"first_discovery": True, "threshold": True, "harvest": True, "milestone": True, "sale": True,
-                     "repeat_discovery": False, "landmark": False, "secret": False, "daily_on_repeat": False}
+                     "repeat_discovery": True, "landmark": True, "secret": True, "daily_on_repeat": True}
+ex = F["scripts/autoload/exploration_manager.gd"]
+assert ex["mark_landmark_reached"].find("_reached_landmarks.append(") < ex["mark_landmark_reached"].find("PointsManager.add_points(") \
+    < ex["mark_landmark_reached"].find("landmark_reached.emit("), "a landmark is recorded and paid before its signal (its save)"
+ms = ex["mark_secret_location_found"]
+assert ms.find("_found_secret_locations.append(") < ms.find("PointsManager.add_points(bonus)") < ms.find("secret_location_found.emit(") \
+    < ms.find("_maybe_award_curiosity_bonus(") < ms.find("_all_secrets_bonus_awarded = true") < ms.find("PointsManager.add_points(all_bonus)") \
+    < ms.find("all_secret_locations_found.emit("), "a secret, then curiosity, then every secret: each recorded and paid before its signal"
+cb = ex["_maybe_award_curiosity_bonus"]
+assert cb.find("_curiosity_bonus_given = true") < cb.find("PointsManager.add_points(") < cb.find("curiosity_bonus_awarded.emit("), "curiosity: recorded and paid before its signal"
+dd = F["scripts/autoload/discovery_manager.gd"]["discover"]
+assert dd.find("PointsManager.add_points(") < dd.find("discovery_repeated.emit("), "a repeat collection pays before its signal"
+# M14.1a: a sighting is recorded before its signal (its save) and pays nothing — no points, coins or items to account for.
+rs = F["scripts/autoload/journal_manager.gd"]["record_sighting"]
+assert 0 <= rs.find("_sighted_species.append(") < rs.find("wildlife_sighted.emit(") and not re.search(r"PointsManager|Wallet|Inventory|reward", rs), \
+    "a sighting is recorded before its signal and pays nothing"
 
 class Game:
     """Points + the claims that make rewards once-ever/per-day + the wallet; a save is one JSON of all of it."""
@@ -230,7 +263,7 @@ class Game:
             g.session_first += 1
             if g.session_first in THRESH and g.session_first not in g.thresholds:
                 g.thresholds.append(g.session_first); g.pay("threshold", g.session_first, THRESH[g.session_first])
-        return first                                                                # autosave iff first-ever
+        return True                                                                 # first: discovery_made; repeat: discovery_repeated, deferred (M15.4)
     def reach(g, p):
         if p in g.places: return False
         g.places.append(p)
@@ -239,7 +272,7 @@ class Game:
             if not g.curiosity and rnd.random() < 0.3: g.curiosity = True; g.pay("curiosity", p, RULES["curiosity"][0])
             if not g.all_secrets and all(s in g.places for s in SECRETS): g.all_secrets = True; g.pay("all_secrets", "", RULES["all_secret_locations"][0])
         else: g.pay("landmark", p, RULES["landmark"][0])
-        return False                                                                # not autosaved
+        return True                                                                 # each reward saves at its own signal (M15.4)
     def harvest(g, c, q):
         g.pay("harvest", c, harvest_points(c, q))
         k = f"{PRODUCE[c]}:{q}"; g.produce[k] = g.produce.get(k, 0) + 1; g.harvested[k] = g.harvested.get(k, 0) + 1   # produce, never coins
@@ -272,11 +305,13 @@ for _ in range(3000):
             r = rnd.random()
             if r < 0.45:
                 d = rnd.choice(sorted(DISC)); was_new = d not in g.found and not (DISC[d][1] <= 0 and d in g.found)
+                claimed = DISC[d][1] <= 0 and d in g.found     # discover() returns before paying or any signal: nothing to save
                 saved_now = g.collect(d, day)
-                assert saved_now == (AUTOSAVED["first_discovery"] if was_new else AUTOSAVED["repeat_discovery"]), "model vs GameState triggers"
+                assert saved_now == (False if claimed else AUTOSAVED["first_discovery"] if was_new else AUTOSAVED["repeat_discovery"]), "model vs GameState triggers"
             elif r < 0.65:
-                p = rnd.choice(sorted(PLACES)); saved_now = g.reach(p)
-                assert saved_now == AUTOSAVED["secret" if PLACES[p] else "landmark"], "model vs GameState triggers"
+                p = rnd.choice(sorted(PLACES)); known = p in g.places   # mark_* returns before paying or any signal: nothing to save
+                saved_now = g.reach(p)
+                assert saved_now == (False if known else AUTOSAVED["secret" if PLACES[p] else "landmark"]), "model vs GameState triggers"
             elif r < 0.85:
                 before = sum(e["amount"] for e in g.wallet["ledger"])
                 saved_now = g.harvest(rnd.choice(sorted(CROPS)), rnd.randrange(len(SCALE)))
@@ -298,6 +333,8 @@ for _ in range(3000):
         else:
             disk = g.save(); g = Game(disk); check(g)                                # pause/close save, relaunch
         if disk: assert Game(disk).save() == Game(Game(disk).save()).save(), "reload is stable"
+# Since M15.4 every payment above is saved when it happens, so no crash loses earnings (a day passing pays nothing).
+assert all(AUTOSAVED.values()) and lost_together == 0 and crashes > 0, f"a crash lost earnings ({lost_together} of {crashes} crashes)"
 
 # ---------------------------------------------------------------- 4. coins: one source (selling produce), no sinks
 MK, BS = "scripts/autoload/market.gd", "scripts/ui/basket_screen.gd"

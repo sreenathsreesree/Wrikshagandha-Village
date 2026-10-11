@@ -1,4 +1,5 @@
 extends CanvasLayer
+class_name GameHUD
 
 ## Wires the on-screen HUD (points, discovery count, discovery and sale popups, and
 ## the Collection/Journal/Daily Discovery/Basket/Inventory screens) to the autoload
@@ -22,8 +23,11 @@ const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotificati
 const NEW_CROP_CARD_DELAY := 1.1
 ## Canvas-pixel gap kept between the screen (or its safe area) and the HUD.
 const EDGE_MARGIN := 24.0
+## Quiet HUD while seated (D-50, D-56, D2): how long the fade takes.
+const QUIET_FADE_SECONDS := 0.4
 
 @onready var top_area: MarginContainer = $TopArea
+@onready var top_bar: Control = $TopArea/TopColumn/TopBar
 @onready var points_label: Label = $TopArea/TopColumn/TopBar/PointsPill/PointsLabel
 @onready var discoveries_label: Label = $TopArea/TopColumn/TopBar/DiscoveriesLabel
 @onready var notification_root: Control = $TopArea/TopColumn/NotificationRoot
@@ -45,6 +49,10 @@ const EDGE_MARGIN := 24.0
 @onready var daily_screen: DailyDiscoveryScreen = $DailyDiscoveryScreen
 @onready var basket_screen: BasketScreen = $BasketScreen
 @onready var inventory_screen: InventoryScreen = $InventoryScreen
+
+## While quiet: each quieted control's own mouse filter, given back after.
+var _quiet_filters: Dictionary = {}
+var _quiet_tween: Tween
 
 func _ready() -> void:
 	PointsManager.points_changed.connect(_on_points_changed)
@@ -335,3 +343,25 @@ func _update_discoveries_label() -> void:
 	var found := DiscoveryManager.get_discovered_ids().size()
 	var total := DiscoveryDatabase.get_all_definitions().size()
 	discoveries_label.text = "Discoveries %d/%d" % [found, total]
+
+## Quiet HUD (D-50, D-56, D2): the top bar (points, discoveries and the
+## screen buttons, the Movement mode toggle included) and the thumb buttons
+## fade out and stop taking touches, so a stray tap reaches the world; the
+## joystick (MobileControls), notifications and open screens are untouched.
+## Called by Main while the player is seated.
+func set_quiet(quiet: bool) -> void:
+	var quieted: Array[Control] = [top_bar, screen_buttons]
+	if _quiet_tween != null:
+		_quiet_tween.kill()
+	_quiet_tween = create_tween().set_parallel(true)
+	for root in quieted:
+		_quiet_tween.tween_property(root, "modulate:a", 0.0 if quiet else 1.0, QUIET_FADE_SECONDS)
+		for node in [root] + root.find_children("*", "Control", true, false):
+			var control := node as Control
+			if quiet and not _quiet_filters.has(control):
+				_quiet_filters[control] = control.mouse_filter
+				control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			elif not quiet and _quiet_filters.has(control):
+				control.mouse_filter = _quiet_filters[control]
+	if not quiet:
+		_quiet_filters.clear()

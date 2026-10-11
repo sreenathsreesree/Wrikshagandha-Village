@@ -19,11 +19,21 @@ class_name Player
 ## walk; a new tap replaces it.
 ##
 ## Animation hook (for future character rigs): one gameplay state —
-## IDLE / WALK / INTERACT — readable with get_animation_state() and
+## IDLE / WALK / INTERACT / SEATED — readable with get_animation_state() and
 ## announced by animation_state_changed only when it changes. It is derived
 ## from what the player is actually doing (real speed, the real interact()
 ## call) and never feeds back into movement or interaction. The current
-## procedural bob/squash/facing is independent of it and unchanged.
+## procedural bob/squash/facing is independent of it, except that SEATED
+## settles the visual a little lower and wider (a placeholder until rigs).
+##
+## Sitting (D-57, E1): sit(spot) walks the player to the spot with the
+## ordinary navigation — no teleport — and, on arriving, faces the spot's
+## forward and enters SEATED; stand() leaves it. Generic: the player knows
+## nothing of rest spots, cameras or the HUD (Main coordinates them) and
+## sitting is never saved. While seated (D-56): joystick or keyboard
+## movement stands and moves in the same step; tapping the player stands;
+## a ground tap is ignored; tapping the seat it sits on changes nothing;
+## tapping another object stands and carries on with it. seat_ended reports when a sit attempt or a seated spell is over.
 
 const MAX_SPEED := 4.3
 const ACCELERATION := 15.0
@@ -56,13 +66,23 @@ const INPUT_RESPONSE_CURVE := 1.2
 ## Gameplay state for animation. INTERACT lasts exactly as long as the
 ## touched object's own interact() runs (a discovery's harvest beat; an
 ## instant farm-plot action), or until that object leaves the tree.
-enum AnimState { IDLE, WALK, INTERACT }
+## SEATED lasts from arriving at a sit() spot until stand().
+enum AnimState { IDLE, WALK, INTERACT, SEATED }
 signal animation_state_changed(state: AnimState, previous: AnimState)
+## A sit attempt or a seated spell is over: was_seated is false when the
+## walk to the seat was given up before arriving.
+signal seat_ended(was_seated: bool)
 ## WALK starts above the first speed and ends below the second (actual
 ## horizontal speed, m/s) — the gap stops IDLE/WALK flicker while easing
 ## to a stop or nudging the joystick.
 const WALK_START_SPEED := 0.35
 const WALK_STOP_SPEED := 0.15
+## Arriving at a sit() spot: the walk must end this close (horizontally) to
+## it, or the sit is given up (the spot was out of reach).
+const SEAT_ARRIVAL_TOLERANCE := 0.5
+## The seated cue: the visual settles this far down and this much wider.
+const SEATED_VISUAL_DROP := 0.1
+const SEATED_SQUASH := 0.12
 
 @onready var interaction_zone: Area3D = $InteractionZone
 @onready var visual: Node3D = $Visual
@@ -89,6 +109,12 @@ var _interaction_serial: int = 0
 ## The object a tap chose, showing its Indicator as feedback from the tap
 ## until its interaction starts or the walk is cancelled or replaced.
 var _selected_target: Interactable
+## The spot a sit() is walking to, while the walk lasts (_seat_pending), and
+## whatever asked for it (an opaque source: a repeated request from it
+## neither restarts nor cancels the walk).
+var _seat_spot: Transform3D
+var _seat_pending: bool = false
+var _seat_source: Object
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
@@ -104,6 +130,7 @@ func _physics_process(delta: float) -> void:
 	var direction := _shape_input(InputManager.move_vector)
 	if direction != Vector3.ZERO:
 		_stop_navigation()
+		stand()
 	elif _navigating:
 		direction = _navigation_direction()
 
@@ -155,13 +182,16 @@ func _update_walk_bob(delta: float, speed: float) -> void:
 		visual.position.y = abs(sin(_bob_time)) * BOB_HEIGHT
 	else:
 		_bob_time = 0.0
-		visual.position.y = lerp(visual.position.y, 0.0, 10.0 * delta)
+		var rest_height := -SEATED_VISUAL_DROP if _animation_state == AnimState.SEATED else 0.0
+		visual.position.y = lerp(visual.position.y, rest_height, 10.0 * delta)
 
 	# Subtle squash/stretch: a touch shorter and wider while accelerating
 	# hard, a touch taller and thinner at full speed — smoothed so it never
 	# snaps, and kept gentle so it reads as weight, not cartoon bounce.
 	var target_stretch := speed_ratio * SQUASH_AMOUNT
 	var target_scale := Vector3(1.0 - target_stretch * 0.5, 1.0 + target_stretch, 1.0 - target_stretch * 0.5)
+	if _animation_state == AnimState.SEATED:
+		target_scale = Vector3(1.0 + SEATED_SQUASH * 0.5, 1.0 - SEATED_SQUASH, 1.0 + SEATED_SQUASH * 0.5)
 	visual.scale = visual.scale.lerp(target_scale, 8.0 * delta)
 
 func _update_footsteps(delta: float, speed: float) -> void:
@@ -220,10 +250,14 @@ func _on_interaction_zone_area_exited(area: Area3D) -> void:
 ## A tap landed on this exact Interactable (see InputManager). Already in
 ## interaction range: interact now. Otherwise walk toward it (the path ends
 ## on the walkable ground nearest the object, so the player never needs to
-## stand inside it) and interact when it enters InteractionZone.
+## stand inside it) and interact when it enters InteractionZone. A tap on
+## the seat being walked to (D3) or sat on (D-56) changes nothing.
 func _on_interact_target_requested(target: Interactable) -> void:
 	if not is_instance_valid(target):
 		return
+	if target == _seat_source and (_seat_pending or _animation_state == AnimState.SEATED):
+		return
+	stand()
 	if _nearby_interactables.has(target):
 		_stop_navigation()
 		_set_selected_target(target)
@@ -234,6 +268,8 @@ func _on_interact_target_requested(target: Interactable) -> void:
 	_set_selected_target(target)
 
 func _on_move_target_requested(destination: Vector3) -> void:
+	if _animation_state == AnimState.SEATED:
+		return
 	_start_navigation(destination)
 	if _navigating:
 		_spawn_destination_marker(destination)
@@ -242,15 +278,70 @@ func _on_movement_mode_changed(_mode: int) -> void:
 	_stop_navigation()
 
 ## Tapping the player: the deliberate stop. Ends a tap-started walk and
-## drops any pending interaction; harmless when already standing still.
+## drops any pending interaction (or sit); stands a seated player; harmless
+## when already standing still.
 func _on_stop_requested() -> void:
+	stand()
 	_stop_navigation()
+
+# --- Sitting (D-57) ------------------------------------------------------------------
+
+## Walks to `spot` with the ordinary navigation and sits there on arriving
+## (see _finish_navigation). A repeated request from the same source while
+## walking, or any request while seated, changes nothing.
+func sit(spot: Transform3D, source: Object = null) -> void:
+	if _animation_state == AnimState.SEATED:
+		return
+	if _seat_pending and source == _seat_source:
+		return
+	_start_navigation(spot.origin)
+	_seat_spot = spot
+	_seat_source = source
+	_seat_pending = true
+
+## Leaves SEATED (no-op otherwise).
+func stand() -> void:
+	if _animation_state != AnimState.SEATED:
+		return
+	_seat_source = null
+	_set_animation_state(AnimState.IDLE)
+	seat_ended.emit(true)
+
+## A walk ended without arriving at the seat: the sit is given up.
+func _cancel_pending_seat() -> void:
+	if not _seat_pending:
+		return
+	_seat_pending = false
+	_seat_source = null
+	seat_ended.emit(false)
+
+## The walk reached its end. A pending sit is taken if the player really
+## stands at the spot (else given up): the player turns to the spot's
+## forward (-Z, the usual eased turn) and is SEATED.
+func _finish_navigation() -> void:
+	var seat := _seat_pending
+	_seat_pending = false
+	_stop_navigation()
+	if not seat:
+		return
+	var offset: Vector3 = _seat_spot.origin - global_position
+	offset.y = 0.0
+	if offset.length() > SEAT_ARRIVAL_TOLERANCE:
+		_seat_source = null
+		seat_ended.emit(false)
+		return
+	var forward: Vector3 = -_seat_spot.basis.z
+	forward.y = 0.0
+	if forward.length() >= FACE_TARGET_MIN_DISTANCE:
+		_facing_angle = atan2(forward.x, -forward.z)
+	_set_animation_state(AnimState.SEATED)
 
 # --- Tap to Move -----------------------------------------------------------------
 
 ## A new tap simply replaces the destination — the path is recomputed from
 ## wherever the player is now, mid-walk or not.
 func _start_navigation(destination: Vector3) -> void:
+	_cancel_pending_seat()
 	_approach_target = null
 	_set_selected_target(null)
 	nav_agent.target_position = destination
@@ -258,6 +349,7 @@ func _start_navigation(destination: Vector3) -> void:
 	_navigation_stuck_time = 0.0
 
 func _stop_navigation() -> void:
+	_cancel_pending_seat()
 	_navigating = false
 	_approach_target = null
 	_set_selected_target(null)
@@ -277,10 +369,10 @@ func _navigation_direction() -> Vector3:
 		var remaining := next - global_position
 		remaining.y = 0.0
 		if remaining.length() <= nav_agent.target_desired_distance:
-			_stop_navigation()
+			_finish_navigation()
 			return Vector3.ZERO
 	elif nav_agent.is_navigation_finished():
-		_stop_navigation()
+		_finish_navigation()
 		return Vector3.ZERO
 	var to_next := next - global_position
 	to_next.y = 0.0
@@ -362,13 +454,14 @@ func _set_selected_target(target: Interactable) -> void:
 
 ## Puts the player on a spot — e.g. an area entry marker when Main changes
 ## area (M03.2). Ends any tap-started walk and pending interaction (the same
-## stop as tapping the player), drops leftover momentum and faces the spot's
-## forward (-Z), snapped rather than turned since it's a new place. Generic:
-## knows nothing about areas.
+## stop as tapping the player, standing a seated player), drops leftover
+## momentum and faces the spot's forward (-Z), snapped rather than turned
+## since it's a new place. Generic: knows nothing about areas.
 func place_at(spot: Transform3D) -> void:
 	_stop_navigation()
 	velocity = Vector3.ZERO
 	global_position = spot.origin
+	stand()
 	var forward: Vector3 = -spot.basis.z
 	forward.y = 0.0
 	if forward.length() < FACE_TARGET_MIN_DISTANCE:
@@ -411,9 +504,10 @@ func _actual_horizontal_speed() -> float:
 	return Vector2(real.x, real.z).length()
 
 ## IDLE <-> WALK from actual horizontal speed (with hysteresis), evaluated in
-## the existing physics step. INTERACT is left alone until it ends.
+## the existing physics step. INTERACT is left alone until it ends, SEATED
+## until stand().
 func _update_movement_animation_state(speed: float) -> void:
-	if _animation_state == AnimState.INTERACT:
+	if _animation_state == AnimState.INTERACT or _animation_state == AnimState.SEATED:
 		return
 	if _animation_state == AnimState.WALK:
 		if speed < WALK_STOP_SPEED:
@@ -435,6 +529,8 @@ func _end_interaction(serial: int) -> void:
 	if serial != _interaction_serial or _interaction_target == null:
 		return
 	_release_interaction_target()
+	if _animation_state == AnimState.SEATED:
+		return
 	var moving := _actual_horizontal_speed() >= WALK_STOP_SPEED
 	_set_animation_state(AnimState.WALK if moving else AnimState.IDLE)
 

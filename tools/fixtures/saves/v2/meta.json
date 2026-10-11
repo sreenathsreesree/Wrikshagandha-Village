@@ -1,0 +1,1 @@
+{"version": "v2", "commit": "b14b77a", "milestone": "M04.2", "subject": "M04.2: seeds and harvests become items (save v2)", "generator": "tools/fixtures/saves/generate_save_fixture.gd", "godot": "4.7.2.stable.official.ed1daf0bf"}

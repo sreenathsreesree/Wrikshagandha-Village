@@ -39,9 +39,11 @@ extends Node
 ## 8 = M09.2: a "world_time" section (WorldClock's day and fraction, D-42);
 ## older saves have none — day 1 at 0.28, like a new game, nothing to
 ## rewrite.
+## 9 = M14.1a: a "wildlife_sightings" section (the species seen, D-59);
+## older saves have none — no species seen yet, nothing to rewrite.
 
 const SAVE_PATH := "user://save.json"
-const SAVE_VERSION := 8
+const SAVE_VERSION := 9
 const VERSION_KEY := "save_version"
 ## Every section and the JSON types it may have; anything else is ignored.
 const SECTION_TYPES := {
@@ -57,6 +59,7 @@ const SECTION_TYPES := {
 	"relationships": [TYPE_DICTIONARY],
 	"requests": [TYPE_DICTIONARY],
 	"world_time": [TYPE_DICTIONARY],
+	"wildlife_sightings": [TYPE_ARRAY],
 }
 
 ## Set when the file on disk is newer than this build: saving is refused for
@@ -81,6 +84,7 @@ func save_game() -> void:
 		"relationships": Relationships.get_save_data(),
 		"requests": Requests.get_save_data(),
 		"world_time": WorldClock.get_save_data(),
+		"wildlife_sightings": JournalManager.get_sightings_save_data(),
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:
@@ -126,6 +130,7 @@ func load_game() -> bool:
 	Relationships.apply_save_data(data.get("relationships", {}))
 	Requests.apply_save_data(data.get("requests", {}))
 	WorldClock.apply_save_data(data.get("world_time", {}))
+	JournalManager.apply_sightings_save_data(data.get("wildlife_sightings", []))
 	return true
 
 func has_save_file() -> bool:
@@ -168,6 +173,8 @@ func _migrate(save: Dictionary, from_version: int) -> Dictionary:
 				pass  # M08.6: a new "requests" section; absent = no request offered yet
 			7:
 				pass  # M09.2: a new "world_time" section; absent = day 1 at 0.28
+			8:
+				pass  # M14.1a: a new "wildlife_sightings" section; absent = no species seen yet
 			_:
 				push_warning("SaveManager: no migration from save_version %d" % version)
 				return {}

@@ -11,8 +11,9 @@ project's own place data, the Meadow's landmarks and the reward data:
 4. The fifth secret: with no secret found, the four older ones no longer pay "every secret found"; the Hollow as the
    fifth pays it (50) once. A save with the four older secrets found and the bonus unpaid pays 15 + 50 on the Hollow;
    one whose bonus was already paid (the saved flag) pays 15 only — no migration, no retroactive payment.
-5. Nothing else: no coins (Wallet), items (Inventory) or new save field; the exploration save section and SAVE_VERSION
-   (8) are unchanged.
+5. Nothing else: no coins (Wallet), items (Inventory) or new save field; the exploration save section is unchanged and
+   the Hollow added no save version (8 when it shipped; every later version is documented by its own, other milestone —
+   v9 is M14.1a's wildlife sightings).
 Broken designs (mutated sources and data) are shown to fail.
 """
 import glob, os, re, sys
@@ -255,8 +256,10 @@ def run(s):
             p.append(f"{what}: the Hollow pays {want} once and the bonus stays paid after a relaunch (got {got})")
     # ---- 5. the save format
     sm = s["sm"]
-    if int(re.search(r"^const SAVE_VERSION := (\d+)", sm, re.M).group(1)) != 8:
-        p.append("SAVE_VERSION stays 8 — the Hollow is saved in the existing exploration section")
+    history = dict(re.findall(r"^## (\d+) = (M[\d.]+\w*):", sm, re.M))
+    current = int(re.search(r"^const SAVE_VERSION := (\d+)", sm, re.M).group(1))
+    if current < 8 or str(current) not in history or any(m.startswith("M10") for v, m in history.items() if int(v) >= 8):
+        p.append(f"the Hollow added no save version — it is saved in the existing exploration section (SAVE_VERSION {current}, history {history})")
     if [c for c in ledger.calls if c[0] == "other"]:
         p.append(f"no coins, items or other effects ({[c for c in ledger.calls if c[0] == 'other']})")
     return p
@@ -290,7 +293,8 @@ MUTANTS = {
     "the Hollow moved onto the Nook": mutate("meadow", "position = Vector3(19, 0, -24)\nlocation_id = \"hidden_hollow\"", "position = Vector3(15, 0, -14)\nlocation_id = \"hidden_hollow\""),
     "the clues out of order": mutate("meadow", "HollowTrailFootprints1\" parent=\"HiddenPlaces\" instance=ExtResource(\"26\")]\nposition = Vector3(15.8, 0, -16.3)",
                                      "HollowTrailFootprints1\" parent=\"HiddenPlaces\" instance=ExtResource(\"26\")]\nposition = Vector3(17.9, 0, -21.0)"),
-    "the Hollow saved in a new version": mutate("sm", "const SAVE_VERSION := 8", "const SAVE_VERSION := 9"),
+    "the Hollow saved in a new version": mutate("sm", "const SAVE_VERSION := %s" % re.search(r"^const SAVE_VERSION := (\d+)", S["sm"], re.M).group(1),
+                                                "const SAVE_VERSION := %d" % (int(re.search(r"^const SAVE_VERSION := (\d+)", S["sm"], re.M).group(1)) + 1)),
 }
 killed = {}
 for name, s in MUTANTS.items():
@@ -304,6 +308,6 @@ assert not survivors, f"broken designs not caught: {survivors}"
 crashes = [n for n, k in killed.items() if k[0] == "crash"]
 print("hidden hollow: trail Nook -> footprints x2 -> flowers -> motes -> hollow reaches only the Nook (15, + the existing curiosity 20 on a fresh save) then the Hollow (+15, no curiosity); "
       "re-entry 0, relaunch 0 (restored as found); Journal row after the Nook; fifth secret: four older pay no bonus, the fifth pays 15 + 50 once, "
-      "an unpaid four-secret save 15 + 50, a paid one 15; exploration section unchanged, SAVE_VERSION 8; no coins or items")
+      "an unpaid four-secret save 15 + 50, a paid one 15; exploration section unchanged, no Hollow save version; no coins or items")
 print(f"broken designs: {len(MUTANTS)} caught — {len(MUTANTS) - len(crashes)} by behaviour, {len(crashes)} by a crash {crashes}")
 print("ALL HIDDEN HOLLOW SIMULATIONS PASSED")

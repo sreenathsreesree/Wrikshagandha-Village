@@ -681,7 +681,9 @@ EXPECTED_VERBS = {"scripts/interactables/discovery_interactable.gd": {"COLLECT"}
                   # M08.3: an NPC offers TALK.
                   "scripts/npc/npc_talk.gd": {"TALK"},
                   # M11.1 (D-47): the Earth nurture plant offers USE.
-                  "scripts/elements/earth_nurture.gd": {"USE"}, **FIXTURES}
+                  "scripts/elements/earth_nurture.gd": {"USE"},
+                  # E1 (D-56): a rest spot offers the same USE (no new Sit verb).
+                  "scripts/peaceful/rest_spot.gd": {"USE"}, **FIXTURES}
 for f, want in EXPECTED_VERBS.items():
     body = func_body(scripts.get(f, ""), "_get_interaction_verbs") or ""
     have = set(re.findall(r"\bVerb\.([A-Z_]+)", body))
@@ -774,8 +776,9 @@ face_calls = [c for c in face_calls if c[1]]
 if face_calls != [(PL, 1)] or "_face_target(" not in iw:
     err(f"_face_target() must be called only from Player._interact_with (found {face_calls})")
 writers = sorted({m for m in re.findall(r"^func (\w+)\(", pl_src, re.M) if "_facing_angle =" in (func_body(pl_src, m) or "")})
-if writers != ["_face_target", "_ready", "_update_facing", "place_at"]:
-    err(f"{PL}: _facing_angle may only be set in _ready/_update_facing/_face_target/place_at (found {writers})")
+# E1 (D-57) deliberately adds _finish_navigation: arriving at a sit() spot faces the spot's view (the usual eased turn).
+if writers != ["_face_target", "_finish_navigation", "_ready", "_update_facing", "place_at"]:
+    err(f"{PL}: _facing_angle may only be set in _ready/_update_facing/_face_target/place_at/_finish_navigation (found {writers})")
 if re.search(r"_face_target|target\.global_position", func_body(pl_src, "_physics_process") or "") or \
    re.search(r"_approach_target|_interaction_target", func_body(pl_src, "_update_facing") or ""):
     err(f"{PL}: no continuous turning toward a target while walking")
@@ -954,8 +957,8 @@ if found_al != AUTOLOADS:
 # Deliberate-change pins: files a milestone promised not to touch. Changing
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
-PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/input_manager.gd": "23c5bb6ebab73164",
-          "scripts/camera/follow_camera.gd": "b76efe265c7b2004", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
+PINNED = {"scripts/player/player.gd": "700af75d8457b309", "scripts/autoload/input_manager.gd": "277c638316814987",
+          "scripts/camera/follow_camera.gd": "0894edd6623c8d1b", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
           "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "c567a3c097843e8f",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen;
@@ -963,6 +966,14 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           # (player.gd re-pinned deliberately by M08.1: _interact_with() keeps its spent list typed with assign() —
           #  the old "= filter()" raised a script error and aborted every interaction after a one-shot collection.)
           # (HUD.tscn re-pinned deliberately by M08.3: the SpeechPanel instance, docked by _apply_safe_area().)
+          # (player.gd re-pinned deliberately by E1 (D-57): the generic SEATED state — sit() walks to a spot with the ordinary
+          #  navigation and sits on arriving, stand(), seat_ended; seated input per D-56/D3; the seated cue. Player.tscn unchanged.)
+          #  (and again by E1's D-56 fix: a tap on the seat it sits on changes nothing — the D3 guard extended to SEATED.)
+          # (input_manager.gd re-pinned deliberately by E1's D-58: floating joystick touch ownership — a lone left-half finger in
+          #  Joystick mode becomes the joystick after dragging past TAP_MAX_MOVE and is then no tap or pinch finger; joystick_started/
+          #  moved/ended; mode switch, focus loss, a new press on its index end it. Tap routing (_handle_tap) unchanged.)
+          # (follow_camera.gd re-pinned deliberately by E1 (D-49, D1): the settle transaction — settle()/release(), eased distance
+          #  through set_zoom_distance() and the existing h/v offset, pinch ignored while it lasts; CAM_BEHAVIOUR lines unchanged.)
           # (FollowCamera.tscn re-pinned deliberately by M07.3 (D-29): the SpringArm3D ignores geometry,
           #  collision_mask = 0 — the camera no longer collapses against the house or the monolith.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
@@ -972,13 +983,18 @@ PINNED = {"scripts/player/player.gd": "b609b46679af2a19", "scripts/autoload/inpu
           #  by M08.5: it also saves when an NPC's friendship rises, Relationships.friendship_changed;
           #  by M08.6: it also saves when a request is accepted or completed;
           #  and by M08.7: it also saves after an NPC trade, Market.items_traded.)
+          # (GameState re-pinned deliberately by M15.4: it also saves at each once-ever exploration reward and the daily
+          #  bonus, and — deferred — after a repeat discovery collection; save reliability, nothing else changed.)
           # (SaveManager re-pinned deliberately by M08.5: the relationships section, save v6 — D-17, D-38;
           #  and by M08.6: the requests section, save v7 — D-17, D-39;
-          #  and by M09.2: the world_time section (WorldClock's day and fraction), save v8 — D-17, D-42.)
+          #  and by M09.2: the world_time section (WorldClock's day and fraction), save v8 — D-17, D-42;
+          #  and by M14.1a: the wildlife_sightings section (JournalManager's species seen) and its no-op step 8, save v9 — D-59.)
+          # (GameState re-pinned deliberately by M14.1a: it also saves when a species is seen for the first time,
+          #  JournalManager.wildlife_sighted — sighting persistence, nothing else changed; D-59.)
           # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
           #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
           "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
-          "scripts/autoload/save_manager.gd": "81d49237bccad2dd", "scripts/autoload/game_state.gd": "6c25394b3d7a4368",
+          "scripts/autoload/save_manager.gd": "c1a0f5cd9bc631a1", "scripts/autoload/game_state.gd": "82048ee94f56d7cb",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
           #  farm_manager.gd by M05.3: milestone bonuses from reward data;
@@ -1060,8 +1076,9 @@ pa_callers = [f for f, s2 in scripts.items() if f not in (PL,) and re.search(r"\
 if pa_callers != [MAIN_GD]:
     err(f"Player.place_at() is called only by Main's area loader (found {pa_callers})")
 used = set(re.findall(r"\bplayer\.(\w+)", code_only(main_src)))
-if used - {"global_position", "global_transform", "place_at"}:
-    err(f"{MAIN_GD}: Main uses only Player.place_at() and its transform — never Player internals (found {sorted(used)})")
+# E1 (D-57) deliberately adds the generic seated-state API Main coordinates: sit() and the two state signals.
+if used - {"global_position", "global_transform", "place_at", "sit", "seat_ended", "animation_state_changed"}:
+    err(f"{MAIN_GD}: Main uses only Player.place_at(), sit(), its state signals and its transform — never Player internals (found {sorted(used)})")
 for f, s2 in scripts.items():
     if f != PL and re.search(r"\bplayer\._\w+", code_only(s2)):
         err(f"{f}: reaches into Player's private members")
@@ -1176,8 +1193,9 @@ if zcalls_outside != [(MAIN_GD, "zoom_by")] or "InputManager.zoom_requested.conn
    or code_only(main_src).count("zoom_requested.connect") != 1:
     err(f"Main connects InputManager.zoom_requested to FollowCamera.zoom_by once, in _ready (found {zcalls})")
 ui = code_only(func_body(im_src, "_unhandled_input") or "")
-if not re.search(r"_track_touch\(touch\.index, touch\.pressed, touch\.position\)\s*if _world_touches\.size\(\) >= 2:\s*.*?_tap_starts\.clear\(\)\s*return\s*_track_tap\(touch\.index", ui, re.S):
-    err(f"{IM}: with two fingers on the world no touch is a tap (tap candidates cleared before any tap tracking)")
+if not re.search(r"_track_touch\(touch\.index, touch\.pressed, touch\.position\)\s*if _world_touches\.size\(\) >= 2:\s*.*?_tap_starts\.clear\(\)\s*_joystick_candidate = NO_TOUCH\s*return\s*"
+                 r"_track_joystick_candidate\(touch\.index, touch\.pressed, touch\.position\)\s*_track_tap\(touch\.index", ui, re.S):
+    err(f"{IM}: with two fingers on the world no touch is a tap or a joystick candidate (both cleared before any tap tracking)")
 wb = re.search(r"elif event is InputEventMouseButton and _is_wheel\(event as InputEventMouseButton\):(.*?)elif event is InputEventMouseButton and not _mouse_emulates_touch:", ui, re.S)
 if not wb or not re.search(r"if wheel\.pressed:\s*zoom_requested\.emit\(1\.0 / WHEEL_ZOOM_STEP if wheel\.button_index == MOUSE_BUTTON_WHEEL_UP else WHEEL_ZOOM_STEP\)", wb.group(1)) \
    or "_track_tap" in wb.group(1) or not (const_val(im_src, "WHEEL_ZOOM_STEP") or 0) > 1.0:
@@ -3413,8 +3431,13 @@ if not re.search(r"func _ready\(\) -> void:\s*time_of_day\.add_to_group\(TIME_GR
     err(f"{WS_GD}: WorldSimulation drives the clock — _ready switches TimeOfDay's own advance off and gives it the clock's fraction; "
         "_process advances WorldClock and presents it (the weather given the day and fraction first, M09.3; time_updated every frame, phase_changed when the fraction's phase changes); configure() never touches the clock")
 adv_sites, emits, writes = [], [], []
+# (M15.3) The two old-save fixture tools read the clock only to compare a loaded save with what the old version held
+# (save_fixture_check.gd), or advance it inside an exported historical tree, never this project
+# (generate_save_fixture.gd); neither is game code. Checked in the "save fixtures (M15.3)" section.
+SAVE_FIXTURE_TOOLS = ("tools/fixtures/save_fixture_check.gd", "tools/fixtures/saves/generate_save_fixture.gd")
 for f, s2 in scripts.items():
     if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
+    if f in SAVE_FIXTURE_TOOLS: continue
     c = code_only(s2)
     adv_sites += [f] * len(re.findall(r"\bWorldClock\.advance\(", c))
     if f != TOD_GD:
@@ -3750,6 +3773,188 @@ if en_refs != [MEADOW_SCENE] or len(en_inst) != 1 or en_inst[0][1] != "EarthProt
 notes.append(f"earth nurture (M11.1): EarthNurture offers USE; cycle {[e[2] for e in EN_EXPORTS[:4]]} s, dormant {EN_EXPORTS[4][2]}; "
              f"{len(en_growth)} growth parts; {len(en_inst)} instance under EarthPrototype; no reward, save, farming, HUD or element data")
 
+# ------------------------------------------------------------ rest spot (E1, D-48–D-57)
+# The Pond Rest Spot: one reusable RestSpot (scenes/peaceful/RestSpot.tscn) offering D-09's Use, which only asks to
+# be sat on. Main carries it out: Player.sit() walks there (ordinary navigation, no snap) and SEATED begins on arrival;
+# while seated the FollowCamera settles (eased distance + screen-space framing offset, D-49/D1) and the HUD is quiet
+# (D-56/D2); stand() — joystick/keyboard movement, tapping the player, another object, a place_at — releases both.
+# No reward, progression, save, audio or new camera. Behaviour: sim_rest_spot.py.
+RS_GD, RS_SCENE = "scripts/peaceful/rest_spot.gd", "scenes/peaceful/RestSpot.tscn"
+rs_src = scripts.get(RS_GD, "")
+rs_code = code_only(rs_src)
+rs_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", rs_code, re.M | re.S)}
+rs_exports = re.findall(r"^@export(?:_range\(([^)]*)\))? var (\w+)(?:: (\w+))? :?= (.+)$", rs_src, re.M)
+RS_EXPORTS = [("7.0, 15.0", "settle_distance", "float"), ("", "framing_offset", ""), ("1.0, 2.0", "settle_seconds", "float"), ("1.0, 2.0", "release_seconds", "float")]
+rs_vals = {n: v for _, n, _, v in rs_exports}
+def _rs_num(v):
+    try: return float(v)
+    except ValueError: return None
+rs_off = re.fullmatch(r"Vector2\((-?[\d.]+), (-?[\d.]+)\)", rs_vals.get("framing_offset", ""))
+if not re.search(r"^extends Interactable\s*\nclass_name RestSpot", rs_src, re.M) \
+   or [(r, n, t) for r, n, t, _ in rs_exports] != RS_EXPORTS \
+   or not (7.0 <= (_rs_num(rs_vals.get("settle_distance", "")) or 0) <= 15.0) \
+   or not all(1.0 <= (_rs_num(rs_vals.get(k, "")) or 0) <= 2.0 for k in ("settle_seconds", "release_seconds")) \
+   or not rs_off or max(abs(float(rs_off.group(1))), abs(float(rs_off.group(2)))) > 2.5 \
+   or sorted(rs_fn) != ["_get_interaction_verbs", "_ready", "get_seat_transform", "interact", "set_occupied"] \
+   or not re.search(r"remove_on_harvest = false\s*add_to_group\(GROUP\)", rs_fn.get("_ready", "")) \
+   or 'const GROUP := &"rest_spot"' not in rs_src or not re.search(r"^signal sit_requested\(rest_spot: RestSpot\)$", rs_src, re.M) \
+   or not re.search(r"if _occupied:\s*return false\s*sit_requested\.emit\(self\)\s*return true\s*$", rs_fn.get("interact", "")) \
+   or not re.search(r"if not _occupied:\s*verbs\.append\(Verb\.USE\)\s*return verbs\s*$", rs_fn.get("_get_interaction_verbs", "")) \
+   or "return _seat_point.global_transform" not in rs_fn.get("get_seat_transform", "") \
+   or not re.search(r"_occupied = occupied\s*$", rs_fn.get("set_occupied", "")) or rs_code.count("_occupied =") != 1 \
+   or re.search(r"monitorable\s*=", rs_code):
+    err(f"{RS_GD}: RestSpot extends Interactable with exactly the preset exports (distance 7–15 m, framing offset within "
+        f"2.5 m, ease times 1–2 s), persistent, in the rest_spot group; interact() refuses and no verb is offered while "
+        f"occupied, otherwise it only asks to be sat on; occupied only through set_occupied(), which never touches "
+        f"availability — the occupied seat stays tappable so the Player can ignore it (D-48, D-49, D3, D-56)")
+m = re.search(r"\b(PointsManager|Wallet|Market|Inventory|DiscoveryManager|DiscoveryDatabase|JournalManager|CollectionManager|"
+              r"DailyDiscoveryManager|FarmManager|ExplorationManager|SaveManager|GameState|Requests|Relationships|Services|"
+              r"WorldClock|AmbientAudioManager|AreaRouter|InputManager|Player|FollowCamera|GameHUD|HUD|Main|set_quiet|settle|"
+              r"release|sit\(|stand\(|create_tween|create_timer|Timer|_process|_physics_process|queue_free|get_tree|get_parent|"
+              r"AudioStream|HarvestBurst\w*|_play_harvest_sound|element_id|ElementDefinition)\b|\$(?!SeatPoint\b)", rs_code)
+if m:
+    err(f"{RS_GD}: '{m.group(0)}' — a rest spot knows no Player, camera, Main or HUD, rewards, saves and plays nothing (D-48)")
+rss = open(RS_SCENE, encoding="utf-8").read() if os.path.exists(RS_SCENE) else ""
+rs_nodes = re.findall(r'^\[node name="(\w+)"(?: type="(\w+)")?(?: parent="([^"]*)")?(?: instance=ExtResource\("(\w+)"\))?\]', rss, re.M)
+if not re.search(r'^\[ext_resource type="Script" path="res://scripts/peaceful/rest_spot\.gd" id="1"\]$', rss, re.M) \
+   or not re.search(r'^\[ext_resource type="PackedScene" path="res://scenes/interactables/DiscoveryIndicator\.tscn" id="2"\]$', rss, re.M) \
+   or not re.search(r'^\[node name="RestSpot" type="Area3D"\]\ncollision_layer = 4\ncollision_mask = 0\nscript = ExtResource\("1"\)\n', rss, re.M) \
+   or sorted((n, t, par) for n, t, par, _ in rs_nodes) != sorted([("RestSpot", "Area3D", ""), ("CollisionShape3D", "CollisionShape3D", "."),
+                                                                  ("Indicator", "", "."), ("SeatPoint", "Marker3D", "."), ("Seat", "MeshInstance3D", ".")]) \
+   or not re.search(r'^\[node name="SeatPoint" type="Marker3D" parent="\."\]\n\n', rss, re.M) \
+   or re.search(r"StaticBody3D|CharacterBody3D|RigidBody3D|Navigation\w*3D|Particles|AudioStream|ShaderMaterial|Shader\b|Light3D|"
+                r"emission_enabled|HarvestBurst|GlowingMotes|element_id|Camera3D", rss):
+    err(f"{RS_SCENE}: an Area3D on the interactables layer (mask 0) with one shape, the shared Indicator, a SeatPoint marker at "
+        f"its origin and one placeholder Seat mesh — no collider for the seat, no obstacle, particles, audio, light, shader or camera")
+rs_refs = [f for f in glob.glob("scenes/**/*.tscn", recursive=True) if 'path="res://scenes/peaceful/RestSpot.tscn"' in open(f, encoding="utf-8").read()]
+rs_ext = re.search(r'^\[ext_resource type="PackedScene" path="res://scenes/peaceful/RestSpot\.tscn" id="(\w+)"\]$', mtx, re.M)
+rs_inst = re.findall(r'^\[node name="(\w+)" parent="([^"]*)" instance=ExtResource\("%s"\)\]\n((?:[^\[\n].*\n?)*)' % (rs_ext.group(1) if rs_ext else "@none@"), mtx, re.M)
+if rs_refs != [MEADOW_SCENE] or len(rs_inst) != 1 or rs_inst[0][1] != "PeacefulPlaces" \
+   or not re.fullmatch(r"position = Vector3\([-0-9., ]+\)\nrotation_degrees = Vector3\(0, -?[0-9.]+, 0\)\n*", rs_inst[0][2]) \
+   or not re.search(r'^\[node name="PeacefulPlaces" type="Node3D" parent="\."\]\n\n', mtx, re.M) \
+   or len(re.findall(r'^\[node name="PeacefulPlaces" ', mtx, re.M)) != 1 or len(re.findall(r'parent="PeacefulPlaces', mtx)) != 1:
+    err(f"{MEADOW_SCENE}: exactly one RestSpot in the project — the Meadow's Pond Rest Spot, under a top-level PeacefulPlaces node "
+        f"that holds nothing else, placed by position and a yaw only (no preset override; E1)")
+# The Player's generic seated state (D-57, D-56).
+pl_seat = {fn: code_only(func_body(pl_src, fn) or "") for fn in ("sit", "stand", "_finish_navigation", "_cancel_pending_seat",
+           "_on_move_target_requested", "_on_stop_requested", "_on_interact_target_requested", "_physics_process", "place_at",
+           "_update_movement_animation_state", "_start_navigation", "_stop_navigation", "_navigation_direction", "_end_interaction")}
+seated_setters = sorted(fn for fn in re.findall(r"^func (\w+)\(", pl_src, re.M)
+                        if "_set_animation_state(AnimState.SEATED)" in code_only(func_body(pl_src, fn) or ""))
+if seated_setters != ["_finish_navigation"] \
+   or not re.search(r"if _animation_state == AnimState\.SEATED:\s*return\s*if _seat_pending and source == _seat_source:\s*return\s*"
+                    r"_start_navigation\(spot\.origin\)\s*_seat_spot = spot\s*_seat_source = source\s*_seat_pending = true", pl_seat["sit"]) \
+   or not re.search(r"if _animation_state != AnimState\.SEATED:\s*return.*_set_animation_state\(AnimState\.IDLE\)\s*seat_ended\.emit\(true\)", pl_seat["stand"], re.S) \
+   or not re.search(r"var seat := _seat_pending\s*_seat_pending = false\s*_stop_navigation\(\)\s*if not seat:\s*return.*SEAT_ARRIVAL_TOLERANCE.*seat_ended\.emit\(false\)", pl_seat["_finish_navigation"], re.S) \
+   or "seat_ended.emit(false)" not in pl_seat["_cancel_pending_seat"] \
+   or not pl_seat["_start_navigation"].lstrip().split("\n", 1)[1].strip().startswith("_cancel_pending_seat()") \
+   or not pl_seat["_stop_navigation"].lstrip().split("\n", 1)[1].strip().startswith("_cancel_pending_seat()") \
+   or pl_seat["_navigation_direction"].count("_finish_navigation()") != 2 or "_stop_navigation()" in pl_seat["_navigation_direction"] \
+   or not re.search(r"if _animation_state == AnimState\.SEATED:\s*return\s*_start_navigation\(destination\)", pl_seat["_on_move_target_requested"]) \
+   or not re.search(r"stand\(\)\s*_stop_navigation\(\)", pl_seat["_on_stop_requested"]) \
+   or not re.search(r"if target == _seat_source and \(_seat_pending or _animation_state == AnimState\.SEATED\):\s*return\s*stand\(\)\s*if _nearby_interactables\.has\(target\):", pl_seat["_on_interact_target_requested"]) \
+   or not re.search(r"if direction != Vector3\.ZERO:\s*_stop_navigation\(\)\s*stand\(\)", pl_seat["_physics_process"]) \
+   or not re.search(r"global_position = spot\.origin\s*stand\(\)", pl_seat["place_at"]) \
+   or "_animation_state == AnimState.SEATED" not in pl_seat["_update_movement_animation_state"] \
+   or not re.search(r"_release_interaction_target\(\)\s*if _animation_state == AnimState\.SEATED:\s*return", pl_seat["_end_interaction"]) \
+   or [f for f, s2 in scripts.items() if "seat_ended.emit" in s2] != [PL] \
+   or re.search(r"\b(RestSpot|FollowCamera|GameHUD|HUD|set_quiet|settle|SaveManager|GameState)\b", code_only(pl_src)):
+    err(f"{PL}: the generic seated state (D-57): sit() walks there with the ordinary navigation (a repeat from the same source "
+        f"changes nothing) and SEATED begins only on arriving within SEAT_ARRIVAL_TOLERANCE; stand() ends it; joystick/keyboard "
+        f"movement, tapping the player, another object and place_at stand; a ground tap, or a tap on the seat being walked to or "
+        f"sat on, is ignored; any other end of the walk gives the sit up; the Player knows no rest spot, camera, HUD or save (D-56, D3)")
+# The settle transaction (D-49, D1) in the camera, routed by Main.
+cam_fn = {fn: code_only(func_body(cam_src, fn) or "") for fn in ("settle", "release", "_ease_to", "_finish_ease", "zoom_by")}
+if not re.search(r"func zoom_by\(factor: float\) -> void:\s*if _settle_active:\s*return", cam_fn["zoom_by"]) \
+   or not re.search(r"if not _settle_active:\s*_settle_active = true\s*_base_distance = get_zoom_distance\(\)\s*_base_offset = Vector2\(_camera\.h_offset, _camera\.v_offset\)\s*_ease_to\(distance, framing_offset, seconds, false\)", cam_fn["settle"]) \
+   or not re.search(r"if not _settle_active:\s*return\s*_ease_to\(_base_distance, _base_offset, seconds, true\)", cam_fn["release"]) \
+   or "tween_method(set_zoom_distance, get_zoom_distance(), distance, seconds)" not in cam_fn["_ease_to"] \
+   or "_settle_tween.kill()" not in cam_fn["_ease_to"] \
+   or not re.search(r"set_zoom_distance\(distance\)\s*_camera\.h_offset = framing_offset\.x\s*_camera\.v_offset = framing_offset\.y\s*if ending:\s*_settle_active = false", cam_fn["_finish_ease"]) \
+   or sorted(fn for fn in re.findall(r"^func (\w+)\(", cam_src, re.M) if re.search(r"_base_distance =|_base_offset =", code_only(func_body(cam_src, fn) or ""))) != ["settle"] \
+   or re.search(r"\brotation\w*\s*=|rotate\w*\(|look_at\(|\bbasis\s*=|projection|PROJECTION_ORTHOGONAL|\bfov\s*=", "\n".join(cam_fn.values())):
+    err(f"{CAM_GD}: the settle transaction (D-49, D1): base captured only when one starts, eased distance through set_zoom_distance() "
+        f"and the existing h/v offset, exact end values, release restores the base, pinch/wheel ignored while it lasts; nothing rotates")
+off_writers = sorted({f for f, s2 in scripts.items() if re.search(r"\b[hv]_offset\s*=|\"[hv]_offset\"", code_only(s2))})
+if off_writers != [CAM_GD]:
+    err(f"the camera's screen-space framing offset is written only by FollowCamera (found {off_writers})")
+settle_calls = sorted({(f, fn) for f, s2 in scripts.items() if f != CAM_GD for fn in re.findall(r"^func (\w+)\(", s2, re.M)
+                       if re.search(r"follow_camera\.(settle|release)\(", code_only(func_body(s2, fn) or ""))})
+quiet_calls = sorted({(f, fn) for f, s2 in scripts.items() if f != "scripts/ui/hud.gd" for fn in re.findall(r"^func (\w+)\(", s2, re.M)
+                      if re.search(r"\.set_quiet\(", code_only(func_body(s2, fn) or ""))})
+if settle_calls != [(MAIN_GD, "_on_player_state_changed"), (MAIN_GD, "_on_seat_ended"), (MAIN_GD, "_swap_area")] \
+   or quiet_calls != [(MAIN_GD, "_on_player_state_changed"), (MAIN_GD, "_on_seat_ended")] \
+   or "follow_camera.release(0.0)" not in code_only(func_body(main_src, "_swap_area") or "") \
+   or not all(k in code_only(func_body(main_src, "_connect_rest_spots") or "") for k in ("get_nodes_in_group(RestSpot.GROUP)", "in_area.is_ancestor_of(rest_spot)", "is_connected(_on_sit_requested)")) \
+   or sorted(fn for fn in re.findall(r"^func (\w+)\(", main_src, re.M) if "_connect_rest_spots(area)" in code_only(func_body(main_src, fn) or "")) != ["_ready", "_swap_area"] \
+   or not re.search(r"player\.sit\(rest_spot\.get_seat_transform\(\), rest_spot\)\s*_rest_spot = rest_spot", code_only(func_body(main_src, "_on_sit_requested") or "")):
+    err(f"{MAIN_GD}: Main routes rest spots: connects each area's RestSpots once, walks the player there with sit(), settles the "
+        f"camera and quiets the HUD when SEATED begins, releases both when seated time ends, releases instantly on an area swap (E1)")
+main_seat = "\n".join(code_only(func_body(main_src, fn) or "") for fn in ("_connect_rest_spots", "_on_sit_requested", "_on_player_state_changed", "_on_seat_ended"))
+m = re.search(r"\b(" + "|".join(AUTOLOADS) + r")\b", main_seat)
+if m:
+    err(f"{MAIN_GD}: '{m.group(0)}' in the rest-spot routing — sitting rewards, saves and announces nothing (D-48)")
+hq = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "set_quiet") or "")
+if not re.search(r"var quieted: Array\[Control\] = \[top_bar, screen_buttons\]", hq) or "MOUSE_FILTER_IGNORE" not in hq \
+   or re.search(r"mobile_controls|joystick|notification_root|speech_panel|seed_picker|_screen\b", hq) \
+   or '@onready var top_bar: Control = $TopArea/TopColumn/TopBar' not in scripts.get("scripts/ui/hud.gd", ""):
+    err("scripts/ui/hud.gd: set_quiet() quiets only the top bar (Movement toggle included, D2) and the thumb buttons, which stop "
+        "taking touches; the joystick, notifications and screens are untouched (D-56)")
+notes.append(f"rest spot (E1): RestSpot offers USE; preset {rs_vals.get('settle_distance')} m, offset {rs_vals.get('framing_offset')}, "
+             f"{rs_vals.get('settle_seconds')} / {rs_vals.get('release_seconds')} s; 1 instance under PeacefulPlaces; Player SEATED "
+             f"via sit()/stand(); camera settle transaction; HUD quiet; no reward, save or audio")
+
+# ------------------------------------------------------------ floating joystick (D-58)
+# The joystick owns no screen area: InputManager alone decides which finger is the joystick's — a lone finger that lands on
+# the left JOYSTICK_ZONE_FRACTION of the screen in Joystick mode and drags past TAP_MAX_MOVE — and from then on it is no tap
+# and no pinch finger. A short touch anywhere is still a tap; a second finger first makes a pinch; switching mode, losing
+# focus or a new press on its index ends it. VirtualJoystick only draws it (ring at the touch-down point, kept on screen,
+# direction measured from the touch-down point) and writes set_move_vector, as before.
+JOY_GD, JOY_TSCN = "scripts/ui/virtual_joystick.gd", "scenes/ui/VirtualJoystick.tscn"
+im_code = code_only(im_src)
+joy_src = scripts.get(JOY_GD, "")
+joy_code = code_only(joy_src)
+im_fn = {fn: code_only(func_body(im_src, fn) or "") for fn in ("_unhandled_input", "_track_joystick_candidate", "_start_joystick",
+                                                              "_end_joystick", "set_movement_mode", "_notification", "_handle_tap")}
+if "const JOYSTICK_ZONE_FRACTION := 0.5" not in im_src or "const NO_TOUCH := -1" not in im_src \
+   or not all(re.search(rf"^signal {sg}$", im_src, re.M) for sg in (r"joystick_started\(origin: Vector2, position: Vector2\)",
+                                                                   r"joystick_moved\(position: Vector2\)", "joystick_ended")) \
+   or not re.search(r"if movement_mode != MovementMode\.JOYSTICK or _joystick_index != NO_TOUCH:\s*return\s*"
+                    r"if screen_position\.x < get_viewport\(\)\.get_visible_rect\(\)\.size\.x \* JOYSTICK_ZONE_FRACTION:\s*"
+                    r"_joystick_candidate = index\s*_joystick_origin = screen_position", im_fn["_track_joystick_candidate"]) \
+   or not re.search(r"_joystick_candidate = NO_TOUCH\s*_joystick_index = index\s*_tap_starts\.erase\(index\)\s*_world_touches\.erase\(index\)\s*"
+                    r"joystick_started\.emit\(_joystick_origin, screen_position\)", im_fn["_start_joystick"]) \
+   or not re.search(r"_joystick_candidate = NO_TOUCH\s*if _joystick_index == NO_TOUCH:\s*return\s*_joystick_index = NO_TOUCH\s*joystick_ended\.emit\(\)", im_fn["_end_joystick"]) \
+   or not re.search(r"if touch\.index == _joystick_index:\s*_end_joystick\(\)\s*if not touch\.pressed:\s*return\s*_track_touch\(", im_fn["_unhandled_input"]) \
+   or not re.search(r"if drag\.index == _joystick_index:\s*joystick_moved\.emit\(drag\.position\)\s*"
+                    r"elif drag\.index == _joystick_candidate and drag\.position\.distance_to\(_joystick_origin\) > TAP_MAX_MOVE:\s*"
+                    r"_start_joystick\(drag\.index, drag\.position\)\s*else:\s*_track_pinch\(drag\.index, drag\.position\)", im_fn["_unhandled_input"]) \
+   or "_end_joystick()" not in im_fn["set_movement_mode"] or "_end_joystick()" not in im_fn["_notification"] \
+   or re.search(r"joystick", im_fn["_handle_tap"]) \
+   or sorted(fn for fn in re.findall(r"^func (\w+)\(", im_src, re.M) if "joystick_started.emit" in (func_body(im_src, fn) or "")) != ["_start_joystick"]:
+    err(f"{IM}: the floating joystick (D-58): a lone finger on the left half in Joystick mode becomes the joystick only after "
+        f"dragging past TAP_MAX_MOVE, and is then no tap or pinch finger; two fingers first make a pinch; mode switch, focus loss "
+        f"or a new press on its index end it; tap routing knows nothing of it")
+joy_wiring = sorted({f for f, s2 in scripts.items() if re.search(r"joystick_(started|moved|ended)\.connect", s2)})
+if re.search(r"func _(gui_input|input|unhandled_input|unhandled_key_input)\(", joy_src) \
+   or not all(f"InputManager.{sg}.connect(" in joy_code for sg in ("joystick_started", "joystick_moved", "joystick_ended")) \
+   or "var offset := (screen_position - _origin).limit_length(knob_max_distance)" not in joy_code \
+   or "base.global_position = _ring_centre(origin) - base.size / 2.0" not in joy_code \
+   or joy_code.count("_ring_centre(") != 2 \
+   or not re.search(r"func _process\(delta: float\) -> void:.*InputManager\.set_move_vector\(_smoothed_vector\)", joy_code, re.S) \
+   or [f for f, s2 in scripts.items() if "set_move_vector(" in code_only(s2) and f != IM] != [JOY_GD] \
+   or not re.search(r"@export var knob_max_distance: float", joy_src) \
+   or joy_wiring != [JOY_GD]:
+    err(f"{JOY_GD}: the joystick is a view (D-58): it takes no input itself, follows InputManager's joystick signals, appears at "
+        f"the touch-down point (the ring kept on screen), measures direction from that point within knob_max_distance and alone "
+        f"writes set_move_vector (wired: {joy_wiring})")
+joy_tscn = open(JOY_TSCN, encoding="utf-8").read() if os.path.exists(JOY_TSCN) else ""
+if not re.search(r'\[node name="Joystick" type="Control"\][^\[]*\nmouse_filter = 2\n', joy_tscn) \
+   or not re.search(r'\[node name="Base" type="Panel" parent="\."\]\nvisible = false\nmouse_filter = 2\n', joy_tscn) \
+   or not re.search(r'\[node name="Thumb" type="Panel" parent="Base"\]\nmouse_filter = 2\n', joy_tscn):
+    err(f"{JOY_TSCN}: the floating joystick never takes a touch (every node ignores the mouse) and starts hidden (D-58)")
+notes.append("floating joystick (D-58): left half, after a drag past TAP_MAX_MOVE, in Joystick mode; a view only; taps and pinch elsewhere kept")
+
 # ------------------------------------------------------------ save versioning (M04.0, P-01)
 # One versioned save file, written and read only by SaveManager: every save
 # carries save_version; a load validates it (absent = 0, malformed rejected,
@@ -3813,6 +4018,174 @@ for f, s2 in scripts.items():
         err(f"{f}: reaches into SaveManager internals")
 notes.append(f"save: save_version {int(sv) if sv is not None else sv} ({SM}); migration steps {steps}; sections {sorted(typed)}")
 
+# ------------------------------------------------------------ save fixtures (M15.3)
+# Old-save compatibility: every save format the game has had keeps a real fixture — written by the commit that
+# introduced it, running its own code (tools/fixtures/saves/generate_all.sh) — that today's build must load. Bumping
+# SAVE_VERSION without adding the new format's fixture (and its commit in generate_all.sh) fails here. The fixture
+# runner only starts the game (whose GameState loads the save) and asks SaveManager to save; it never loads, migrates
+# or writes a save itself. Results: tools/fixtures/run_save_fixtures.sh (real Godot), tools/sims/sim_save_fixtures.py.
+import json
+FX_DIR = "tools/fixtures/saves"
+fx_sv = int(re.search(r"^const SAVE_VERSION := (\d+)", scripts.get(SM, ""), re.M).group(1)) if re.search(r"^const SAVE_VERSION := (\d+)", scripts.get(SM, ""), re.M) else -1
+fx_gen = open(os.path.join(FX_DIR, "generate_all.sh"), encoding="utf-8").read() if os.path.exists(os.path.join(FX_DIR, "generate_all.sh")) else ""
+fx_commits = dict(re.findall(r"\bv(\d+):([0-9a-f]{7}):M\d", fx_gen))
+fx_bad = []
+fx_pending = []
+for n in range(fx_sv + 1):
+    d = os.path.join(FX_DIR, f"v{n}")
+    files = {k: os.path.join(d, k) for k in ("save.json", "expected.json", "calls.json", "meta.json")}
+    if not all(os.path.isfile(p) for p in files.values()):
+        fx_bad.append(f"v{n}: save/expected/calls/meta"); continue
+    try:
+        save = json.load(open(files["save.json"], encoding="utf-8"))
+        meta = json.load(open(files["meta.json"], encoding="utf-8"))
+        json.load(open(files["expected.json"], encoding="utf-8")); json.load(open(files["calls.json"], encoding="utf-8"))
+    except ValueError:
+        fx_bad.append(f"v{n}: unreadable JSON"); continue
+    stamp = save.get("save_version") if isinstance(save, dict) else None
+    if not isinstance(save, dict) or (n == 0 and stamp is not None) or (n > 0 and stamp != n):
+        fx_bad.append(f"v{n}: stamped {stamp}")
+    # PENDING exception (M14.1a; removed once the introducing commit exists and v<N> is regenerated from it): only the
+    # current SAVE_VERSION's fixture may be pending — from the working tree, labelled pending and not historical, with
+    # no commit in meta.json or generate_all.sh. Every other check on it still applies; it is reported as PENDING.
+    if meta.get("pending") is not None or meta.get("historical") is not None:
+        if n == fx_sv and meta.get("pending") is True and meta.get("historical") is False and meta.get("commit") is None \
+           and str(n) not in fx_commits and meta.get("version") == f"v{n}":
+            fx_pending.append(f"v{n}")
+        else:
+            fx_bad.append(f"v{n}: a pending fixture is allowed only for the current SAVE_VERSION {fx_sv}, labelled pending and not historical, with no commit")
+    elif meta.get("commit") is None or meta.get("commit") != fx_commits.get(str(n)) or meta.get("version") != f"v{n}":
+        fx_bad.append(f"v{n}: meta commit {meta.get('commit')} vs generate_all.sh {fx_commits.get(str(n))}")
+extra = sorted(int(k) for k in fx_commits if int(k) > fx_sv)
+if extra: fx_bad.append(f"generate_all.sh lists versions beyond SAVE_VERSION {extra}")
+try:
+    newer = json.load(open(os.path.join(FX_DIR, "newer", "save.json"), encoding="utf-8"))
+    if not (isinstance(newer.get("save_version"), int) and newer["save_version"] > fx_sv): fx_bad.append("newer is not newer than SAVE_VERSION")
+except (OSError, ValueError):
+    fx_bad.append("newer/save.json")
+try:
+    json.load(open(os.path.join(FX_DIR, "malformed", "save.json"), encoding="utf-8")); fx_bad.append("malformed/save.json parses")
+except ValueError:
+    pass
+except OSError:
+    fx_bad.append("malformed/save.json")
+if fx_bad:
+    err(f"{FX_DIR}: one real fixture per save format v0..v{fx_sv}, each written by the commit generate_all.sh names "
+        f"and stamped with its version, plus a newer and a malformed fixture ({fx_bad})")
+FX_CHECK = "tools/fixtures/save_fixture_check.gd"
+fx_src = code_only(scripts.get(FX_CHECK, ""))
+if not fx_src or re.search(r"load_game\(|_migrate\(|_valid_sections\(|read_version\(|apply_save_data\(", fx_src) \
+   or fx_src.count("SaveManager\").save_game()") != 2 or not os.path.isfile("tools/fixtures/run_save_fixtures.sh") \
+   or not os.path.isfile("tools/sims/sim_save_fixtures.py"):
+    err(f"{FX_CHECK}: the fixture runner only lets the game load the save at boot and asks SaveManager to save (resave, and "
+        f"the newer-save refusal); run_save_fixtures.sh and sim_save_fixtures.py exist")
+for f, s2 in scripts.items():
+    if not f.startswith("tools/") and re.search(r"res://tools/", s2):
+        err(f"{f}: game code never loads anything from tools/ (fixtures are tooling)")
+notes.append(f"save fixtures (M15.3): v0..v{fx_sv} fixtures, {len(fx_commits)} real saves from their commits, + newer and malformed"
+             + (f"; PENDING (not historical, from the working tree): {fx_pending}" if fx_pending else ""))
+
+# ------------------------------------------------------------ session vs persistent (M15.2)
+# Every autoload member variable is classified in the state registry (docs/ARCHITECTURE.md §11, ```state-registry):
+# persistent:<section> / derived / session / data; FarmPlot.capture() is the only saved world object; only GameState
+# saves; the current M15.3 fixture holds every section; the deferred items (elemental and Rishi progression, world
+# changes, player memories) have no state until designed and classified. The rules live in one place,
+# tools/sims/sim_state_registry.py (also run with its broken copies by run_all.sh); this section applies them.
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location("sim_state_registry", os.path.join("tools", "sims", "sim_state_registry.py"))
+_sr = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_sr)
+for problem in _sr.violations(_sr.load_sources(os.getcwd())):
+    err(f"state registry (M15.2): {problem}")
+notes.append("session vs persistent (M15.2): every autoload variable classified; FarmPlot the only saved world object; only GameState saves; 4 items deferred")
+
+# ------------------------------------------------------------ save reliability (M15.4)
+# Progress that pays or records something is saved when it happens (a force-stop can't lose it): GameState saves at
+# each once-ever exploration reward and the daily bonus (synchronously — their state and points are set before the
+# signal), and after a repeat discovery collection deferred (the collectible, found seeds and daily bonus are added
+# by other listeners of that signal). Real-Godot evidence: tools/fixtures/run_force_stop.sh (kill -9 after each moment).
+M154_TRIGGERS = ["ExplorationManager.landmark_reached.connect(_save.unbind(2))",
+                 "ExplorationManager.secret_location_found.connect(_save.unbind(2))",
+                 "ExplorationManager.curiosity_bonus_awarded.connect(_save.unbind(2))",
+                 "ExplorationManager.all_secret_locations_found.connect(_save.unbind(1))",
+                 "DailyDiscoveryManager.daily_completed.connect(_save.unbind(2))",
+                 "DiscoveryManager.discovery_repeated.connect(_save.unbind(1), CONNECT_DEFERRED)"]
+gs154 = code_only(func_body(scripts.get("scripts/autoload/game_state.gd", ""), "_ready") or "")
+missing154 = [t for t in M154_TRIGGERS if t not in gs154]
+if missing154 or re.search(r"func _process|func _physics_process|Timer|create_timer", code_only(scripts.get("scripts/autoload/game_state.gd", ""))) \
+   or not os.path.isfile("tools/fixtures/run_force_stop.sh") or not os.path.isfile("tools/fixtures/force_stop_check.gd"):
+    err(f"scripts/autoload/game_state.gd: saves at every once-ever exploration reward, the daily bonus and (deferred) a repeat "
+        f"discovery collection, with no periodic save (world time saves with every save, by decision) — missing {missing154}")
+notes.append(f"save reliability (M15.4): {len(M154_TRIGGERS) - len(missing154)}/{len(M154_TRIGGERS)} save triggers; no periodic save")
+
+# ------------------------------------------------------------ wildlife journal (M14.1a, D-59)
+# Three species as data (data/wildlife/, WildlifeDefinition), each creature scene naming its species. An actor reports
+# its species once in its life, the first frame the player is within its existing alert_distance (checked before the
+# flee step); WildlifeController relays that to JournalManager.record_sighting(), which keeps a known species once ever
+# and emits wildlife_sighted only the first time; GameState saves at once on it (save v9 "wildlife_sightings"). A
+# sighting pays nothing — no points, coins, items or rewards anywhere on its path — and the Journal only displays it
+# ("???" until seen). Behaviour: tools/sims/sim_wildlife_journal.py; force-stop: run_force_stop.sh case "sighting".
+WJ_SPECIES = {"rabbit": "scenes/wildlife/Rabbit.tscn", "small_bird": "scenes/wildlife/SmallBird.tscn", "butterfly": "scenes/wildlife/WildlifeButterfly.tscn"}
+wj_bad = []
+wj_defs = {}
+for path in sorted(glob.glob("data/wildlife/*.tres")):
+    t = open(path, encoding="utf-8").read()
+    vals = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', t, re.M))
+    if 'script_class="WildlifeDefinition"' not in t or not vals.get("id") or not vals.get("display_name") or not vals.get("description") \
+       or not re.fullmatch(r"\d+", vals.get("order", "")) or vals["id"] in wj_defs or os.path.basename(path) != vals["id"] + ".tres":
+        wj_bad.append(f"{path}: a WildlifeDefinition with a unique id (its file name), a name, a note and an order")
+    wj_defs[vals.get("id", "")] = int(vals.get("order", "0") or 0)
+if sorted(wj_defs) != sorted(WJ_SPECIES) or len(set(wj_defs.values())) != len(wj_defs):
+    wj_bad.append(f"data/wildlife: exactly the species {sorted(WJ_SPECIES)} with unique orders (found {wj_defs})")
+for sid, scene in WJ_SPECIES.items():
+    st = open(scene, encoding="utf-8").read() if os.path.exists(scene) else ""
+    if re.findall(r'^species_id = "(\w*)"$', st, re.M) != [sid]:
+        wj_bad.append(f"{scene}: species_id = \"{sid}\" on its root")
+if re.search(r"^species_id = ", mtx, re.M):
+    wj_bad.append(f"{MEADOW_SCENE}: no instance overrides a creature's species_id")
+WA = code_only(scripts.get("scripts/world_simulation/wildlife_actor.gd", ""))
+wa_proc = code_only(func_body(scripts.get("scripts/world_simulation/wildlife_actor.gd", ""), "_process") or "")
+if not re.search(r"player_distance = position\.distance_to\(player\.global_position\)\s*"
+                 r"if not _sighting_reported and player_distance < alert_distance and species_id != \"\":\s*"
+                 r"_sighting_reported = true\s*sighted\.emit\(species_id\)\s*if state != \"flee\" and player_distance < flee_distance:", wa_proc) \
+   or WA.count("_sighting_reported = true") != 1 or WA.count("sighted.emit(") != 1 or "signal sighted(species_id: String)" not in WA \
+   or '@export var species_id: String = ""' not in WA:
+    wj_bad.append("wildlife_actor.gd: the sighting is reported once per actor, the first frame the player is inside alert_distance, before the flee step")
+wc = code_only(scripts.get("scripts/world_simulation/wildlife_controller.gd", ""))
+if not re.search(r"if not actor\.sighted\.is_connected\(_on_actor_sighted\):\s*actor\.sighted\.connect\(_on_actor_sighted\)", func_body(wc, "wire_actors") or "") \
+   or not re.fullmatch(r"func _on_actor_sighted\(species_id: String\) -> void:\s*JournalManager\.record_sighting\(species_id\)\s*", func_body(wc, "_on_actor_sighted") or ""):
+    wj_bad.append("wildlife_controller.gd: each actor's sighting goes to JournalManager.record_sighting() and nowhere else")
+jm = code_only(scripts.get("scripts/autoload/journal_manager.gd", ""))
+if not re.search(r"if _sighted_species\.has\(species_id\) or get_species\(species_id\) == null:\s*return false\s*"
+                 r"_sighted_species\.append\(species_id\)\s*wildlife_sighted\.emit\(species_id\)\s*return true", func_body(jm, "record_sighting") or "") \
+   or jm.count("wildlife_sighted.emit(") != 1:
+    wj_bad.append("journal_manager.gd: record_sighting() keeps a known species once ever and emits wildlife_sighted only then")
+# The sighting path: the actor, the controller, the definition, and JournalManager's sighting functions (its
+# discovery entries record the points a discovery earned — that is M01's, not a sighting's).
+wj_path = {f: code_only(scripts.get(f, "")) for f in ("scripts/world_simulation/wildlife_actor.gd",
+           "scripts/world_simulation/wildlife_controller.gd", "scripts/world_simulation/wildlife_definition.gd")}
+wj_path["scripts/autoload/journal_manager.gd (sightings)"] = "".join(func_body(jm, fn) or "" for fn in (
+    "_load_species", "record_sighting", "has_sighted", "get_sighted_ids", "get_all_species", "get_species",
+    "get_sightings_save_data", "apply_sightings_save_data"))
+for f, c in wj_path.items():
+    m = re.search(r"\b(PointsManager|Wallet|Market|Inventory|add_points|credit|reward\w*|points_value|SaveManager|FarmManager|ExplorationManager|"
+                  r"DailyDiscoveryManager|CollectionManager)\b", c)
+    if m or not c:
+        wj_bad.append(f"{f}: '{m.group(0) if m else 'missing'}' — a sighting pays, saves or rewards nothing itself")
+wj_callers = [f for f, s2 in scripts.items() if not f.startswith("tools/") and "record_sighting(" in code_only(s2) and f not in
+              ("scripts/autoload/journal_manager.gd", "scripts/world_simulation/wildlife_controller.gd")]
+if wj_callers: wj_bad.append(f"only WildlifeController records a sighting (also: {wj_callers})")
+if "JournalManager.wildlife_sighted.connect(_save.unbind(1))" not in gs154:
+    wj_bad.append("game_state.gd: saves at once when a species is first seen (JournalManager.wildlife_sighted)")
+js_w = code_only(scripts.get("scripts/ui/journal_screen.gd", ""))
+if 'row.text = "✓ %s" % species.display_name if seen else "???"' not in js_w or "apply_sightings_save_data" in js_w \
+   or "var seen := JournalManager.has_sighted(species.id)" not in js_w:
+    wj_bad.append("journal_screen.gd: the Wildlife list names a species only once seen (\"???\" until then) and changes nothing")
+if not os.path.isfile("tools/sims/sim_wildlife_journal.py"):
+    wj_bad.append("tools/sims/sim_wildlife_journal.py exists")
+for b in wj_bad:
+    err(f"wildlife journal (M14.1a, D-59): {b}")
+notes.append(f"wildlife journal (M14.1a): {len(wj_defs)} species as data; once-ever sighting at alert_distance; saved at once (v9); no reward")
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).
@@ -3822,8 +4195,9 @@ if len(anim_enums) != 1 or anim_enums[0][0] != PL or anim_enums[0][1] != "AnimSt
     err(f"animation state: expected exactly one 'enum AnimState' in {PL}, found {[(f, n) for f, n, _ in anim_enums]}")
 else:
     states = {x.strip() for x in anim_enums[0][2].split(",") if x.strip()}
-    if states != {"IDLE", "WALK", "INTERACT"}:
-        err(f"{PL}: AnimState must be exactly IDLE, WALK, INTERACT (found {sorted(states)})")
+    # E1 (D-57) deliberately adds SEATED: from arriving at a sit() spot until stand().
+    if states != {"IDLE", "WALK", "INTERACT", "SEATED"}:
+        err(f"{PL}: AnimState must be exactly IDLE, WALK, INTERACT, SEATED (found {sorted(states)})")
 emitters = [f for f, s2 in scripts.items() if "animation_state_changed.emit" in s2]
 if emitters != [PL] or scripts[PL].count("animation_state_changed.emit") != 1:
     err(f"animation_state_changed must be emitted in exactly one place in {PL} (found in {emitters})")

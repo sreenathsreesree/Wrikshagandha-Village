@@ -72,7 +72,7 @@ SOLID_R = {"TreeRound.tscn": 1.5, "TreeTall.tscn": 1.2, "TreeWide.tscn": 1.8, "R
 SOFT_R = {"GrassClump.tscn": 0.4, "GlowingMotes.tscn": 0.5, "Footprints.tscn": 0.5, "DriftingLeaf.tscn": 0.3, "Butterfly.tscn": 0.3}
 MOVING = ("Wildlife", "Ambient", "EnvironmentalEvents", "WorldSimulation")   # actors that move or carry no footprint
 SLICE = "VerticalSlice"
-ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces", "EarthPrototype")   # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places, M11.1 Earth prototype: outside the existing-world digest
+ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces", "EarthPrototype", "PeacefulPlaces")   # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places, M11.1 Earth prototype, E1 rest spot: outside the existing-world digest
 def in_slice(par, name): return any(par == r or par.startswith(r + "/") or (par == "." and name == r) for r in ADDED)
 NODES, OBJECTS, PATCHES, GEOM, BASE_GEOM, PLACED = {}, [], [], [], [], []
 for m in re.finditer(r'^\[node name="([^"]+)"([^\]]*)\]\n(.*?)(?=^\[|\Z)', SCENE, re.M | re.S):
@@ -127,6 +127,7 @@ for line in BLOCK[0].splitlines():
     elif k == "routine_spot": plan.setdefault("routine", {})[a[0]] = (float(a[1]), float(a[2]))   # M09.1
     elif k == "hidden": plan.setdefault("hidden", []).append((a[0], a[1], float(a[2]), float(a[3])))  # M10 (D-45)
     elif k == "earth": plan.setdefault("earth", []).append((a[0], a[1], float(a[2]), float(a[3])))  # M11.1 (D-47)
+    elif k == "rest": plan.setdefault("rest", []).append((a[0], a[1], float(a[2]), float(a[3]), float(a[4])))  # E1 (D-48)
     elif k == "forest": plan["forest"][a[0]] = tuple(float(v) for v in a[1:])
     elif k == "path": plan["path"][a[0]] = [tuple(float(c) for c in p.split(",")) for p in a[1:]]
     else: raise AssertionError(f"unknown layout line: {k}")
@@ -459,4 +460,28 @@ print(f"hidden places (M10): Hidden Hollow at ({hx}, {hz}), {math.dist(nook, (hx
       f"{len(new_objs)} props, clearance >= {min(hclear):.2f} m")
 print(f"earth prototype (M11.1): EarthNurture at ({ex}, {ez}), {math.hypot(ex - qx, ez - qz):.2f} m from the Quiet Garden; "
       f"clearance >= {eclear:.2f} m beyond the rules; path edge {egap:.2f} m")
+# E1 (D-48–D-57): the Pond Rest Spot — exactly one RestSpot under PeacefulPlaces, as planned, on the pond's west side
+# (no layout exception: the camera-facing south side has no compliant cell): a 0.5 m footprint clear of the existing
+# world by the usual rules (and of the Earth plant), inside the bounds by 1.5 m, 0.8 m from every path edge, 6.2–7.0 m
+# from the pond centre, west of the water, and facing the pond (its yaw within 5° of the pond centre).
+def _yaw(body):
+    m = re.search(r"^rotation_degrees = Vector3\(([^)]*)\)$", body, re.M)
+    return float(m.group(1).split(",")[1]) if m else 0.0
+rest = [(n, inst_of(a), *vec(pr, "position")[0::2], _yaw(b)) for n, (par, a, b, pr) in placed.items() if par == "PeacefulPlaces"]
+assert rest == plan.get("rest") and len(rest) == 1 and rest[0][1] == "RestSpot.tscn", f"the Pond Rest Spot is exactly the planned RestSpot ({rest} vs {plan.get('rest')})"
+_, _, rx, rz, ryaw = rest[0]
+assert not re.search(r"^(scale|transform) = ", placed[rest[0][0]][2], re.M), "the rest spot is placed by position and yaw only"
+assert inside(rx, rz, 1.5), "the rest spot lies inside the bounds"
+rclear = min(math.hypot(rx - ox, rz - oz) - ER - orr - NEED[ok] for _, ox, oz, orr, ok in OBJECTS + [("EarthNurtureSpot", ex, ez, ER, "solid")])
+assert rclear >= 0, f"the rest spot keeps the clearance rules (short by {-rclear:.2f} m) — no layout exception"
+rgap = patch_gap(rx, rz, ER)
+assert rgap >= 0.8 and all(path_dist(rx, rz, pts) - ER >= 0.8 for pts in plan["path"].values()), f"the rest spot stays 0.8 m off every path ({rgap:.2f} m)"
+rdist = math.hypot(rx - pond_x, rz - pond_z)
+assert 6.2 <= rdist <= 7.0 and rx < pond_x - water_r, f"the rest spot is the pond's west-side spot ({rdist:.2f} m from the centre, x {rx})"
+fwd = (-math.sin(math.radians(ryaw)), -math.cos(math.radians(ryaw)))          # a Node3D's forward (-Z) after its yaw
+to_pond = ((pond_x - rx) / rdist, (pond_z - rz) / rdist)
+rface = math.degrees(math.acos(max(-1.0, min(1.0, fwd[0] * to_pond[0] + fwd[1] * to_pond[1]))))
+assert rface <= 5.0, f"the rest spot faces the pond (off by {rface:.1f}°)"
+print(f"rest spot (E1): RestSpot at ({rx}, {rz}), yaw {ryaw}°, {rdist:.2f} m from the pond centre (west side), facing it within "
+      f"{rface:.1f}°; clearance >= {rclear:.2f} m beyond the rules; path edge {rgap:.2f} m")
 print("ALL SLICE LAYOUT SIMULATIONS PASSED")

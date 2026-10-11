@@ -15,6 +15,7 @@ size = Vector3(0.03, 0.03, 0.06)
 
 [node name="SmallBird" type="Node3D" groups=["wildlife_actor"]]
 script = ExtResource("1")
+species_id = "small_bird"
 wander_radius = 1.2
 move_speed = 0.5
 idle_time_min = 2.0

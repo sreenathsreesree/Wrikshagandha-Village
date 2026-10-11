@@ -67,6 +67,16 @@ class_name WildlifeActor
 @export var keep_out_center: Vector3 = Vector3.ZERO
 @export var keep_out_radius: float = 0.0
 
+## The species (data/wildlife/) this creature is, for the Wildlife Journal
+## (M14.1a, D-59). Empty = never reported.
+@export var species_id: String = ""
+
+## Emitted once in this actor's life: the first frame the player is within
+## alert_distance (the distance at which it already turns to watch them).
+## WildlifeController relays it to the Journal, which keeps each species once
+## ever; the actor itself records, pays and saves nothing.
+signal sighted(species_id: String)
+
 ## Set by WildlifeController once, after every actor in the scene exists —
 ## never touched by the actor itself.
 var player: Node3D
@@ -81,6 +91,7 @@ var _idle_base_rotation: float = 0.0
 var _current_interest_index: int = -1
 var _attraction: float = 0.0
 var _activity: float = 1.0
+var _sighting_reported: bool = false
 
 func _ready() -> void:
 	_home_position = position
@@ -90,6 +101,10 @@ func _process(delta: float) -> void:
 	var player_distance := INF
 	if player:
 		player_distance = position.distance_to(player.global_position)
+		# Before the flee check, so a player who arrives inside flee_distance at once is still seen.
+		if not _sighting_reported and player_distance < alert_distance and species_id != "":
+			_sighting_reported = true
+			sighted.emit(species_id)
 		if state != "flee" and player_distance < flee_distance:
 			_enter_flee()
 			return

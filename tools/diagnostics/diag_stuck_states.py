@@ -136,19 +136,22 @@ print(f"    20 normal taps afterwards -> taps recognised: {im.taps} (tap-to-move
 print(f"    one-finger drag afterwards -> zoom steps: {im.zooms} (single-finger drag zooms the camera: the signature)")
 print("    exit without restart: none (only a press+release of the lost index clears it)")
 
-# ---------------------------------------------------------------- 4. joystick ghost index (pre-existing)
-GI = _body(JOY, "_gui_input")
-assert "if touch.pressed and _touch_index == -1:" in GI and "_release()" in _body(JOY, "_on_visibility_changed")
+# ---------------------------------------------------------------- 4. joystick ghost index (floating joystick, D-58)
+# The joystick's finger is owned by InputManager since D-58; a lost release leaves _joystick_index set.
+UJ = _body(IM, "_unhandled_input")
+assert "if touch.index == _joystick_index:" in UJ and "_end_joystick()" in UJ
+assert "_end_joystick()" in _body(IM, "_notification") and "_end_joystick()" in _body(IM, "set_movement_mode")
 class Joy:
-    def __init__(j): j.index, j.raw = -1, (0.0, 0.0)
+    def __init__(j): j.index, j.raw, j.started = -1, (0.0, 0.0), 0
     def touch(j, i, pressed, vec=(0, 0)):
-        if pressed and j.index == -1: j.index, j.raw = i, vec
-        elif not pressed and i == j.index: j.index, j.raw = -1, (0.0, 0.0)
+        if i == j.index: j.index, j.raw = -1, (0.0, 0.0)      # its release, or a new press on its index
+        elif pressed and j.index == -1: j.index, j.raw, j.started = i, vec, j.started + 1   # (after a 24 px drag)
     def drag(j, i, vec):
         if i == j.index: j.raw = vec
-    def hide(j): j.index, j.raw = -1, (0.0, 0.0)
-jy = Joy(); jy.touch(1, True, (0.0, -1.0))   # thumb pushing up with finger index 1 ... release lost
+    def end(j): j.index, j.raw = -1, (0.0, 0.0)              # mode switch / focus loss
+jy = Joy(); jy.touch(1, True, (0.0, -1.0))   # finger index 1 steering up ... release lost
 jy.touch(0, True, (1.0, 0.0)); jy.drag(0, (1.0, 0.0)); jy.touch(0, False)
-print("\n[4] a joystick touch whose release is lost (virtual_joystick.gd):")
-print(f"    new joystick touches with another index are ignored; move_vector stays {jy.raw} -> the player walks by itself forever")
-jy.hide(); print(f"    switching to Tap to Move hides the joystick and releases it: {jy.raw}")
+print("\n[4] a joystick touch whose release is lost (InputManager, D-58):")
+print(f"    while the ghost holds, a finger with another index is no joystick and the old deflection stays: {jy.raw}")
+jy.touch(1, True); print(f"    a new press reusing the lost index (Android restarts indices at 0/1 once all fingers lift) ends it: {jy.raw}")
+jy.touch(1, True, (0.0, -1.0)); jy.end(); print(f"    switching mode or losing focus also ends it: {jy.raw}")

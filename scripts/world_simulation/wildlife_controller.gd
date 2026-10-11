@@ -5,6 +5,8 @@ class_name WildlifeController
 ## "wildlife_actor" group — no direct node-path coupling needed) and gives
 ## each one the player reference it needs to flee. Called once by
 ## WorldSimulation.configure(), after the whole scene is ready.
+## Each actor's one sighting (M14.1a, D-59) is relayed to the Journal, which
+## keeps a species once ever; nothing here pays, saves or remembers.
 
 ## TimeOfDay phase -> how dark it is for wildlife (0 = day, 1 = night).
 ## Unknown phases read as day.
@@ -17,6 +19,11 @@ func wire_actors() -> void:
 		if node is WildlifeActor:
 			var actor: WildlifeActor = node
 			actor.player = player
+			if not actor.sighted.is_connected(_on_actor_sighted):
+				actor.sighted.connect(_on_actor_sighted)
+
+func _on_actor_sighted(species_id: String) -> void:
+	JournalManager.record_sighting(species_id)
 
 ## Relays an outside pull (e.g. FarmManager's garden interest) to every
 ## actor; each decides for itself whether the key concerns it. Called on

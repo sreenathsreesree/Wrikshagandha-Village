@@ -1,0 +1,138 @@
+{
+	"discovered_ids": [
+		"blue_mushroom",
+		"golden_leaf"
+	],
+	"godot": "4.7.2-stable (official)",
+	"journal_has_entry": [
+		[
+			"blue_mushroom",
+			true
+		],
+		[
+			"golden_leaf",
+			true
+		]
+	],
+	"landmark_reached": true,
+	"milestones": [
+		{
+			"id": "first_seed",
+			"label": "First Seed",
+			"reached": true
+		},
+		{
+			"id": "first_harvest",
+			"label": "First Harvest",
+			"reached": true
+		},
+		{
+			"id": "first_fine",
+			"label": "A Fine Harvest",
+			"reached": false
+		},
+		{
+			"id": "grown:wild_carrot",
+			"label": "Wild Carrot Grown",
+			"reached": true
+		},
+		{
+			"id": "grown:meadow_herb",
+			"label": "Meadow Herb Grown",
+			"reached": false
+		},
+		{
+			"id": "grown:golden_sunflower",
+			"label": "Golden Sunflower Grown",
+			"reached": false
+		},
+		{
+			"id": "all_starter_crops",
+			"label": "All Three Crops",
+			"reached": false
+		},
+		{
+			"id": "garden_complete",
+			"label": "Starter Garden Complete",
+			"reached": false
+		},
+		{
+			"id": "garden_in_bloom",
+			"label": "Garden in Bloom",
+			"reached": false
+		}
+	],
+	"movement_mode": "tap_to_move",
+	"plots": {
+		"farm_plot_01": {
+			"care": 2,
+			"crop": "wild_carrot",
+			"longest_thirst": 0.0,
+			"needs_water": true,
+			"quality": 1,
+			"soil": 0,
+			"soil_memory": [
+				"wild_carrot"
+			],
+			"stage": 0,
+			"stage_time_left": 0.0,
+			"state": "PLANTED",
+			"thirsty_for": 0.624
+		},
+		"farm_plot_02": {
+			"soil_memory": [],
+			"state": "EMPTY"
+		},
+		"farm_plot_03": {
+			"soil_memory": [],
+			"state": "EMPTY"
+		},
+		"farm_plot_04": {
+			"soil_memory": [],
+			"state": "EMPTY"
+		},
+		"farm_plot_05": {
+			"soil_memory": [],
+			"state": "EMPTY"
+		},
+		"farm_plot_06": {
+			"soil_memory": [],
+			"state": "EMPTY"
+		},
+		"farm_plot_07": {
+			"soil_memory": [],
+			"state": "EMPTY"
+		}
+	},
+	"points": 196,
+	"produce": {
+		"elderbloom": [
+			0,
+			0,
+			0
+		],
+		"golden_sunflower": [
+			0,
+			0,
+			0
+		],
+		"meadow_herb": [
+			0,
+			0,
+			0
+		],
+		"wild_carrot": [
+			0,
+			1,
+			0
+		]
+	},
+	"save_version_written": 0,
+	"secret_found": true,
+	"seeds": {
+		"elderbloom": 0,
+		"golden_sunflower": 1,
+		"meadow_herb": 2,
+		"wild_carrot": 1
+	}
+}

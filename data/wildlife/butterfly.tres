@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="WildlifeDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world_simulation/wildlife_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "butterfly"
+display_name = "Butterfly"
+description = "A golden butterfly drifting from flower to flower. Now and then it settles, wings slowly folding."
+order = 30

@@ -54,7 +54,8 @@ assert re.search(r"^\t\t\t3:\s*pass", _body("_migrate"), re.M) and re.search(r"^
 assert re.search(r"^\t\t\t5:\s*pass", _body("_migrate"), re.M)  # M08.5: the relationships section, absent = every NPC at 0
 assert re.search(r"^\t\t\t6:\s*pass", _body("_migrate"), re.M)  # M08.6: the requests section, absent = no request offered
 assert re.search(r"^\t\t\t7:\s*pass", _body("_migrate"), re.M)  # M09.2: the world_time section, absent = day 1 at 0.28 (sim_world_clock)
-STEP_PORTS = {0: lambda data: None, 1: step_1, 2: lambda data: None, 3: lambda data: None, 4: lambda data: None, 5: lambda data: None, 6: lambda data: None, 7: lambda data: None}  # 2 -> 3 ... 7 -> 8: nothing to rewrite
+assert re.search(r"^\t\t\t8:\s*pass", _body("_migrate"), re.M)  # M14.1a: the wildlife_sightings section, absent = none seen (sim_wildlife_journal)
+STEP_PORTS = {0: lambda data: None, 1: step_1, 2: lambda data: None, 3: lambda data: None, 4: lambda data: None, 5: lambda data: None, 6: lambda data: None, 7: lambda data: None, 8: lambda data: None}  # 2 -> 3 ... 8 -> 9: nothing to rewrite
 LG = _body("load_game")
 assert LG.find("read_version(parsed)") < LG.find("if version > SAVE_VERSION:") < LG.find("_migrate(parsed, version)") \
     < LG.find("_valid_sections(data)") < LG.find("PointsManager.set_points(")
@@ -76,9 +77,9 @@ def gd_type(v):
     if isinstance(v, bool): return bool
     return type(v)
 class Systems:  # the six sections' owners, with typed apply functions
-    def __init__(s): s.state = {"points": 0, "discovered_ids": [], "journal_entries": {}, "daily_discovery": {}, "farm": {}, "settings": {}, "items": {}, "wallet": {}, "exploration": {}, "relationships": {}, "requests": {}, "world_time": {}}
+    def __init__(s): s.state = {"points": 0, "discovered_ids": [], "journal_entries": {}, "daily_discovery": {}, "farm": {}, "settings": {}, "items": {}, "wallet": {}, "exploration": {}, "relationships": {}, "requests": {}, "world_time": {}, "wildlife_sightings": []}
     def apply(s, key, value):
-        want = {"points": (int, float), "discovered_ids": (list,)}.get(key, (dict,))
+        want = {"points": (int, float), "discovered_ids": (list,), "wildlife_sightings": (list,)}.get(key, (dict,))
         if gd_type(value) not in want: raise TypeError(f"{key}: wrong type reached the system")
         s.state[key] = int(value) if key == "points" else copy.deepcopy(value)
 class SaveManager:
@@ -116,7 +117,7 @@ class SaveManager:
         if not data: return False
         valid = {k: data[k] for k in SECTIONS if k in data and gd_type(data[k]) in SECTIONS[k]}
         for k in SECTIONS:
-            systems.apply(k, valid.get(k, {"points": 0, "discovered_ids": []}.get(k, {})))
+            systems.apply(k, valid.get(k, {"points": 0, "discovered_ids": [], "wildlife_sightings": []}.get(k, {})))
         return True
 SAVE_VERSION_MODEL = [SAVE_VERSION]
 
@@ -137,7 +138,7 @@ def full_state():
                                   exploration={"landmarks": ["overlook"], "secrets": ["stone_ring"], "all_secrets_bonus": False, "curiosity_bonus": True},
                                   relationships={"villager": {"friendship": 3, "last_gain_date": "2026-10-03"}},
                                   requests={"villager_stones": "accepted"},
-                                  world_time={"day": 4, "fraction": 0.6125})
+                                  world_time={"day": 4, "fraction": 0.6125}, wildlife_sightings=["rabbit", "butterfly"])
     return s
 def roundtrip_equal(a, b): return godot_json(json.dumps(a)) == godot_json(json.dumps(b))
 

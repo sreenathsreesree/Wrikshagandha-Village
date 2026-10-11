@@ -1,0 +1,1 @@
+{"version": "v0", "commit": "b76e49c", "milestone": "M03.6", "subject": "refactor(world): place data out of code (M03.6, A5)", "generator": "tools/fixtures/saves/generate_save_fixture.gd", "godot": "4.7.2.stable.official.ed1daf0bf"}

@@ -132,13 +132,17 @@ A top-level `HiddenPlaces` node (outside the existing-world digest) holds the Hi
 
 A top-level `EarthPrototype` node (outside the existing-world digest) holds the one `EarthNurture` plant at (6.6, -0.5): open meadow on the Quiet Garden's west approach, beside the fallen log, between the Garden and the path to the pond. It is the closest ground to the Garden that keeps every existing clearance rule — no compliant cell lies within 6.0 m of the Garden's centre in any direction (its 5 m zone and the Wildflower Clearing's bound this pocket); the plant's 0.5 m footprint sits 0.63 m outside both zones, 1.66 m from the fallen log and 1.52 m from the path's nearest edge. It has no collider, so the navigation mesh is unchanged (checked by `sim_slice_layout.py`).
 
+## Pond Rest Spot (E1, D-48–D-57)
+
+A top-level `PeacefulPlaces` node (outside the existing-world digest) holds the one `RestSpot`, `PondRestSpot`, at (4.3, -12.12) with a yaw of -118.7°: open ground on the pond's west side, 6.50 m from the pond centre (2.9 m from the water), facing the pond. It is the nearest cell to the pond that keeps every clearance rule with a 0.30 m margin (pond 4.2 m solid, Reed4 2.9 m, Reed3 3.35 m, Rock4 3.88 m; 3.48 m from the path). The camera-facing south side has no compliant cell (the best fell 0.10–0.13 m short), so no layout exception was taken. The seat has no collider, so the navigation mesh is unchanged; its `SeatPoint` is the spot itself.
+
 ## Machine-readable plan
 
 ```slice-layout
-# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents, HiddenPlaces and EarthPrototype) — unchanged by M07.2, M07.3, M09.1, M09.4, M10 and M11.1
+# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents, HiddenPlaces, EarthPrototype and PeacefulPlaces) — unchanged by M07.2, M07.3, M09.1, M09.4, M10, M11.1 and E1
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4), HiddenPlaces (M10) and EarthPrototype (M11.1) included
-scene_digest b03dc4ae99ac6b03
+# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4), HiddenPlaces (M10), EarthPrototype (M11.1) and PeacefulPlaces (E1) included
+scene_digest 74b798c48a19466b
 # M09.1 (D-41): the villager's routine spots — dawn/evening/night at home (the NPC spot), morning/afternoon by the pond path
 routine_spot villager_home -19.5 2.2
 routine_spot villager_pond 4.0 -7.0
@@ -154,6 +158,8 @@ hidden HollowTree3 TreeRound.tscn 23.3 -25.8
 hidden HollowMushrooms MushroomCluster.tscn 22.9 -22.4
 # M11.1 (D-47): the Earth prototype — one EarthNurture plant by the Quiet Garden's west approach (EarthPrototype)
 earth EarthNurtureSpot EarthNurture.tscn 6.6 -0.5
+# E1 (D-48–D-57): the Pond Rest Spot — one RestSpot on the pond's west side, facing the pond (PeacefulPlaces): name scene x z yaw
+rest PondRestSpot RestSpot.tscn 4.3 -12.12 -118.7
 # existing Meadow nodes the plan relies on (checked against Meadow.tscn)
 existing PlayerSpawn 0.0 5.0
 existing Patch1 0.5 3.2

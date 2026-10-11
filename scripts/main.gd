@@ -11,11 +11,18 @@ extends Node3D
 ## or free, restore, place, reveal — and tells AreaRouter where the player
 ## now is. load_area() stays the plain swap with no fade, for the remote
 ## debugger.
+##
+## Rest spots (Group E, D-48–D-57; E1): a RestSpot only asks to be sat on;
+## Main carries it out — the player walks there and sits (Player.sit), and
+## while seated the camera settles with the spot's preset (D-49) and the HUD
+## goes quiet; standing (or giving up the walk) releases both. The world is
+## never paused for it and nothing is saved.
 
 @onready var player: Player = $Player
 @onready var follow_camera: FollowCamera = $FollowCamera
 @onready var transition_fade: TransitionFade = $TransitionFade
 @onready var area: GameArea = $Meadow
+@onready var hud: GameHUD = $HUD
 
 ## Areas kept alive while the player is elsewhere (D-33), out of the tree:
 ## scene path -> the same GameArea instance, put back when travelled to.
@@ -23,12 +30,17 @@ var _parked_areas: Dictionary = {}
 ## The player's own zoom, kept while an area with a fixed camera distance
 ## (an interior, D-32) is current; < 0 = none kept.
 var _free_zoom_distance: float = -1.0
+## The rest spot the player is walking to or sitting at; null otherwise.
+var _rest_spot: RestSpot
 
 func _ready() -> void:
 	follow_camera.target = player
 	_apply_camera_bounds()
 	follow_camera.snap_to_target()
 	area.attach_player(player)
+	_connect_rest_spots(area)
+	player.animation_state_changed.connect(_on_player_state_changed)
+	player.seat_ended.connect(_on_seat_ended)
 	InputManager.zoom_requested.connect(follow_camera.zoom_by)
 	AreaRouter.travel_requested.connect(_on_travel_requested)
 	AreaRouter.notify_arrived(area.area_id)
@@ -101,6 +113,8 @@ func _swap_area(scene: PackedScene, entry_id: String) -> bool:
 		_reregister_plots(area)
 	else:
 		area.attach_player(player)
+	_connect_rest_spots(area)
+	follow_camera.release(0.0)
 	var entry := _find_entry(area, entry_id)
 	if entry != null:
 		player.place_at(entry.global_transform)
@@ -175,3 +189,38 @@ func _find_entry(in_area: Node, entry_id: String) -> AreaEntry:
 	if first != null:
 		push_warning("Main.load_area: no entry '%s'; using '%s'" % [entry_id, first.entry_id])
 	return first
+
+## Every RestSpot in this area asks Main to be sat on — connected once (a
+## parked area keeps its connections when it is put back).
+func _connect_rest_spots(in_area: Node) -> void:
+	for node in get_tree().get_nodes_in_group(RestSpot.GROUP):
+		var rest_spot := node as RestSpot
+		if rest_spot != null and in_area.is_ancestor_of(rest_spot) and not rest_spot.sit_requested.is_connected(_on_sit_requested):
+			rest_spot.sit_requested.connect(_on_sit_requested)
+
+## The player walks to the spot's seat and sits on arriving (Player.sit);
+## a repeated request while walking there changes nothing.
+func _on_sit_requested(rest_spot: RestSpot) -> void:
+	player.sit(rest_spot.get_seat_transform(), rest_spot)
+	_rest_spot = rest_spot
+
+## Seated: the spot is occupied, the camera settles with its preset and the
+## HUD goes quiet.
+func _on_player_state_changed(state: Player.AnimState, _previous: Player.AnimState) -> void:
+	if state != Player.AnimState.SEATED or _rest_spot == null:
+		return
+	_rest_spot.set_occupied(true)
+	follow_camera.settle(_rest_spot.settle_distance, _rest_spot.framing_offset, _rest_spot.settle_seconds)
+	hud.set_quiet(true)
+
+## Stood up (or gave up the walk): the camera eases back to its exact base,
+## the HUD returns and the spot is free again.
+func _on_seat_ended(was_seated: bool) -> void:
+	var rest_spot := _rest_spot
+	_rest_spot = null
+	if rest_spot == null:
+		return
+	if was_seated:
+		follow_camera.release(rest_spot.release_seconds)
+		hud.set_quiet(false)
+	rest_spot.set_occupied(false)

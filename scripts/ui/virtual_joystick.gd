@@ -1,14 +1,18 @@
 extends Control
 
-## Fixed mobile joystick: Base and Thumb are always visible at a fixed
-## bottom-left position (never hidden, never repositioned to the touch
-## point). This Control itself is only the touch-capture zone — dragging
-## anywhere inside it moves the Thumb, clamped to the Base's radius, and
-## releasing snaps the Thumb back to center. Includes a dead zone (stops
-## idle drift) and per-frame smoothing (stops twitchy movement). Output
-## goes through InputManager, same as always — player.gd is untouched.
-## "Emulate touch from mouse" (project setting) lets this be tested with a
-## mouse in the editor.
+## Floating mobile joystick (D-58): a view only — it takes no touches, so
+## the world under it stays tappable. InputManager decides which finger is
+## the joystick's (a lone finger on the left half of the screen that has
+## dragged past a tap) and reports it; this appears at the point that finger
+## first touched, its Thumb follows the drag within knob_max_distance (the
+## configurable radius), and it disappears on release. Includes a dead zone
+## (stops idle drift) and per-frame smoothing (stops twitchy movement).
+## Output goes through InputManager, same as always — player.gd is untouched.
+##
+## Near a screen edge the ring is moved inward just enough to be seen whole;
+## movement is still measured from the real touch-down point, so the
+## direction never changes with the ring's position. "Emulate touch from
+## mouse" (project setting) lets this be tested with a mouse drag.
 
 @export var knob_max_distance: float = 50.0
 @export var dead_zone: float = 0.15
@@ -17,14 +21,18 @@ extends Control
 @onready var base: Control = $Base
 @onready var thumb: Control = $Base/Thumb
 
-var _touch_index: int = -1
-var _base_center: Vector2 = Vector2.ZERO
+var _active: bool = false
+## Where the joystick's finger first touched (canvas pixels): the centre
+## every deflection is measured from.
+var _origin: Vector2 = Vector2.ZERO
 var _raw_vector: Vector2 = Vector2.ZERO
 var _smoothed_vector: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
-	_base_center = base.size / 2.0
-	_reset_thumb()
+	_release()
+	InputManager.joystick_started.connect(_on_joystick_started)
+	InputManager.joystick_moved.connect(_on_joystick_moved)
+	InputManager.joystick_ended.connect(_release)
 	visibility_changed.connect(_on_visibility_changed)
 
 ## Hidden (Tap to Move selected): let go of any touch in progress so no
@@ -34,40 +42,36 @@ func _on_visibility_changed() -> void:
 		_release()
 		_smoothed_vector = Vector2.ZERO
 
-func _gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch:
-		var touch: InputEventScreenTouch = event
-		if touch.pressed and _touch_index == -1:
-			_touch_index = touch.index
-			_update_thumb(_to_base_local(touch.position))
-		elif not touch.pressed and touch.index == _touch_index:
-			_release()
-	elif event is InputEventScreenDrag:
-		var drag: InputEventScreenDrag = event
-		if drag.index == _touch_index:
-			_update_thumb(_to_base_local(drag.position))
+func _on_joystick_started(origin: Vector2, screen_position: Vector2) -> void:
+	if not is_visible_in_tree():
+		return
+	_active = true
+	_origin = origin
+	base.global_position = _ring_centre(origin) - base.size / 2.0
+	base.visible = true
+	_on_joystick_moved(screen_position)
 
-## event.position arrives relative to this Control (the touch zone); Base
-## is a fixed-position child of it, so shift into Base-local space before
-## measuring the offset from its center.
-func _to_base_local(zone_local_position: Vector2) -> Vector2:
-	return zone_local_position - base.position
+## The ring's centre: the touch-down point, moved inward only as far as it
+## takes for the whole ring to be on screen.
+func _ring_centre(origin: Vector2) -> Vector2:
+	var half := base.size / 2.0
+	var screen := get_viewport_rect().size
+	return Vector2(clampf(origin.x, half.x, maxf(screen.x - half.x, half.x)),
+			clampf(origin.y, half.y, maxf(screen.y - half.y, half.y)))
 
-func _update_thumb(base_local_position: Vector2) -> void:
-	var offset := base_local_position - _base_center
-	if offset.length() > knob_max_distance:
-		offset = offset.normalized() * knob_max_distance
-	thumb.position = _base_center + offset - thumb.size / 2.0
+func _on_joystick_moved(screen_position: Vector2) -> void:
+	if not _active:
+		return
+	var offset := (screen_position - _origin).limit_length(knob_max_distance)
+	thumb.position = base.size / 2.0 + offset - thumb.size / 2.0
 	var normalized := offset / knob_max_distance
 	_raw_vector = normalized if normalized.length() >= dead_zone else Vector2.ZERO
 
 func _release() -> void:
-	_touch_index = -1
-	_reset_thumb()
+	_active = false
+	base.visible = false
+	thumb.position = base.size / 2.0 - thumb.size / 2.0
 	_raw_vector = Vector2.ZERO
-
-func _reset_thumb() -> void:
-	thumb.position = _base_center - thumb.size / 2.0
 
 func _process(delta: float) -> void:
 	_smoothed_vector = _smoothed_vector.lerp(_raw_vector, clamp(smoothing_speed * delta, 0.0, 1.0))

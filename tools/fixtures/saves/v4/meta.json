@@ -1,0 +1,1 @@
+{"version": "v4", "commit": "da04f52", "milestone": "M05.1", "subject": "M05.1: Wallet + append-only ledger (save v4)", "generator": "tools/fixtures/saves/generate_save_fixture.gd", "godot": "4.7.2.stable.official.ed1daf0bf"}

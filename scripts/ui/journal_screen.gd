@@ -9,6 +9,10 @@ class_name JournalScreen
 ## for a landscape phone in two columns that scroll on their own — on the
 ## left where the player has been (Places, then the garden's record), on
 ## the right what they have found (one card per discovery). Displays only.
+##
+## Wildlife (M14.1a, D-59): under Places, every species in the wildlife data in
+## its order — a seen one by name with its note, an unseen one "???", as an
+## unvisited place. Read from JournalManager; a sighting is never made here.
 
 ## Leaf green for a visited place; an unvisited one stays "???" (secrets
 ## stay secret).
@@ -23,6 +27,7 @@ func _ready() -> void:
 	visible = false
 	close_button.pressed.connect(_on_close_pressed)
 	JournalManager.entry_added.connect(_on_entry_added)
+	JournalManager.wildlife_sighted.connect(_on_wildlife_sighted)
 	_refresh()
 
 func open() -> void:
@@ -35,6 +40,10 @@ func _on_close_pressed() -> void:
 func _on_entry_added(_entry: Dictionary) -> void:
 	_refresh()
 
+func _on_wildlife_sighted(_species_id: String) -> void:
+	if visible:
+		_refresh()
+
 func _refresh() -> void:
 	for list in [left_list, list_container]:
 		for child in list.get_children():
@@ -42,6 +51,7 @@ func _refresh() -> void:
 			child.queue_free()
 
 	left_list.add_child(_build_places_section())
+	left_list.add_child(_build_wildlife_section())
 	if FarmManager.is_garden_found() or int(FarmManager.get_activity_counts().planted) > 0:
 		left_list.add_child(_build_garden_section())
 
@@ -51,7 +61,8 @@ func _refresh() -> void:
 	for place: Dictionary in places:
 		if place.visited:
 			visited += 1
-	summary_label.text = "%d %s · %d of %d places" % [entries.size(), "discovery" if entries.size() == 1 else "discoveries", visited, places.size()]
+	summary_label.text = "%d %s · %d of %d places · %d of %d wildlife" % [entries.size(), "discovery" if entries.size() == 1 else "discoveries", visited, places.size(),
+			JournalManager.get_sighted_ids().filter(func(id: String) -> bool: return JournalManager.get_species(id) != null).size(), JournalManager.get_all_species().size()]
 
 	list_container.add_child(_build_heading("Discoveries"))
 	if entries.is_empty():
@@ -87,6 +98,30 @@ func _build_places_section() -> Control:
 	card.add_child(rows)
 	box.add_child(card)
 
+	return box
+
+## Every species in the wildlife data, in order: a seen one by name (leaf
+## green) with its note, an unseen one "???" — nothing unseen is named.
+func _build_wildlife_section() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	box.add_child(_build_heading("Wildlife"))
+	var card := _build_card()
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 10)
+	for species: WildlifeDefinition in JournalManager.get_all_species():
+		var seen := JournalManager.has_sighted(species.id)
+		var row := Label.new()
+		row.text = "✓ %s" % species.display_name if seen else "???"
+		if seen:
+			row.add_theme_color_override("font_color", VISITED_COLOR)
+		else:
+			row.modulate.a = 0.45
+		rows.add_child(row)
+		if seen and species.description != "":
+			rows.add_child(_build_note(species.description))
+	card.add_child(rows)
+	box.add_child(card)
 	return box
 
 ## The garden's small record (saved with the farm), shown once the garden has been

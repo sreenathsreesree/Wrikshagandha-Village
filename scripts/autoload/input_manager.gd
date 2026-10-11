@@ -18,13 +18,25 @@ extends Node
 ##   4. otherwise a ray against the world, snapped onto the navigation mesh:
 ##      move_target_requested gives the destination.
 ## movement_mode (Joystick / Tap to Move) only chooses whether the joystick
-## is shown; taps work in both. Joystick or keyboard input always takes over
-## from a tap-started walk (see Player).
+## is available; taps work in both. Joystick or keyboard input always takes
+## over from a tap-started walk (see Player).
 ##
 ## Taps are read in _unhandled_input, so anything the GUI consumes never
-## reaches the world: the joystick's touch zone, HUD buttons, the seed
-## picker and every open screen all stop their own touches. Desktop: the
-## project emulates touch from the mouse, so a click takes the same path.
+## reaches the world: HUD buttons, the seed picker and every open screen all
+## stop their own touches. Desktop: the project emulates touch from the
+## mouse, so a click (and a drag) takes the same path.
+##
+## The floating joystick (D-58) owns no screen area — it is drawn, not
+## touched — so a short touch anywhere on the world is still a tap. In
+## Joystick mode a single finger that lands on the left
+## JOYSTICK_ZONE_FRACTION of the screen starts as an ordinary tap; once it
+## has moved farther than TAP_MAX_MOVE it can no longer be one and becomes
+## the joystick's: no longer a tap or a pinch finger, reported through
+## joystick_started / joystick_moved / joystick_ended (the VirtualJoystick
+## draws it and writes set_move_vector). Other fingers keep tapping and
+## pinching while it is held. A second finger before that point makes a
+## pinch, as always. Switching mode, losing focus, or a new press with the
+## joystick's touch index (its release was lost) ends it.
 ##
 ## Zoom (M03.5): two fingers on the world pinch — the change in their
 ## distance becomes zoom_requested(factor) — and the mouse wheel does the
@@ -41,6 +53,11 @@ signal stop_requested
 signal movement_mode_changed(mode: MovementMode)
 ## factor < 1 = closer (zoom in), > 1 = farther (zoom out); the camera clamps.
 signal zoom_requested(factor: float)
+## The floating joystick's finger (D-58), in screen (canvas) pixels: where it
+## first touched (the centre movement is measured from) and where it is now.
+signal joystick_started(origin: Vector2, position: Vector2)
+signal joystick_moved(position: Vector2)
+signal joystick_ended
 
 ## A tap, not a drag: released close to where it started, and quickly.
 const TAP_MAX_MOVE := 24.0
@@ -67,6 +84,10 @@ const PLAYER_GROUP := &"player"
 const MOUSE_TAP_INDEX := -100
 ## One mouse-wheel notch changes the camera distance by this factor.
 const WHEEL_ZOOM_STEP := 1.1
+## The floating joystick starts only from this left part of the screen (D-58).
+const JOYSTICK_ZONE_FRACTION := 0.5
+## No touch (touch indices are never negative).
+const NO_TOUCH := -1
 ## Keyboard movement actions (project.godot [input]: WASD + arrow keys).
 const MOVE_LEFT := &"move_left"
 const MOVE_RIGHT := &"move_right"
@@ -89,6 +110,11 @@ var _keyboard_vector: Vector2 = Vector2.ZERO
 ## GUI), and the two-finger distance a pinch is measured from (0 = none).
 var _world_touches: Dictionary = {}
 var _pinch_distance: float = 0.0
+## The finger that may yet become the joystick (still a tap or pinch finger)
+## and where it touched down; the finger that is the joystick.
+var _joystick_candidate: int = NO_TOUCH
+var _joystick_origin: Vector2 = Vector2.ZERO
+var _joystick_index: int = NO_TOUCH
 
 func _ready() -> void:
 	_mouse_emulates_touch = bool(ProjectSettings.get_setting("input_devices/pointing/emulate_touch_from_mouse", false))
@@ -105,6 +131,7 @@ func set_movement_mode(mode: MovementMode) -> void:
 	if mode == movement_mode:
 		return
 	movement_mode = mode
+	_end_joystick()
 	_joystick_vector = Vector2.ZERO
 	_update_move_vector()
 	movement_mode_changed.emit(mode)
@@ -142,20 +169,33 @@ func _input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_keyboard_vector = Vector2.ZERO
+		_end_joystick()
 		_update_move_vector()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var touch: InputEventScreenTouch = event
+		if touch.index == _joystick_index:
+			# Its release, or a new press on its index (the release was lost).
+			_end_joystick()
+			if not touch.pressed:
+				return
 		_track_touch(touch.index, touch.pressed, touch.position)
 		if _world_touches.size() >= 2:
 			# A second finger: this is a pinch, not a tap — for every finger.
 			_tap_starts.clear()
+			_joystick_candidate = NO_TOUCH
 			return
+		_track_joystick_candidate(touch.index, touch.pressed, touch.position)
 		_track_tap(touch.index, touch.pressed, touch.position)
 	elif event is InputEventScreenDrag:
 		var drag: InputEventScreenDrag = event
-		_track_pinch(drag.index, drag.position)
+		if drag.index == _joystick_index:
+			joystick_moved.emit(drag.position)
+		elif drag.index == _joystick_candidate and drag.position.distance_to(_joystick_origin) > TAP_MAX_MOVE:
+			_start_joystick(drag.index, drag.position)
+		else:
+			_track_pinch(drag.index, drag.position)
 	elif event is InputEventMouseButton and _is_wheel(event as InputEventMouseButton):
 		var wheel: InputEventMouseButton = event
 		if wheel.pressed:
@@ -166,6 +206,39 @@ func _unhandled_input(event: InputEvent) -> void:
 		var click: InputEventMouseButton = event
 		if click.button_index == MOUSE_BUTTON_LEFT and click.device != InputEvent.DEVICE_ID_EMULATION:
 			_track_tap(MOUSE_TAP_INDEX, click.pressed, click.position)
+
+## A lone finger landing on the joystick's side of the screen, in Joystick
+## mode with no joystick held, may become the joystick; lifting it first
+## leaves it a tap.
+func _track_joystick_candidate(index: int, pressed: bool, screen_position: Vector2) -> void:
+	if not pressed:
+		if index == _joystick_candidate:
+			_joystick_candidate = NO_TOUCH
+		return
+	_joystick_candidate = NO_TOUCH
+	if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH:
+		return
+	if screen_position.x < get_viewport().get_visible_rect().size.x * JOYSTICK_ZONE_FRACTION:
+		_joystick_candidate = index
+		_joystick_origin = screen_position
+
+## The candidate moved past a tap: it is the joystick's from now on, and no
+## longer a tap or a world (pinch) finger. (A candidate is always the only
+## finger on the world, so there is no pinch to restart.)
+func _start_joystick(index: int, screen_position: Vector2) -> void:
+	_joystick_candidate = NO_TOUCH
+	_joystick_index = index
+	_tap_starts.erase(index)
+	_world_touches.erase(index)
+	joystick_started.emit(_joystick_origin, screen_position)
+
+## Lets go of the joystick (and any finger that might have become it).
+func _end_joystick() -> void:
+	_joystick_candidate = NO_TOUCH
+	if _joystick_index == NO_TOUCH:
+		return
+	_joystick_index = NO_TOUCH
+	joystick_ended.emit()
 
 func _is_wheel(event: InputEventMouseButton) -> bool:
 	return event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN
