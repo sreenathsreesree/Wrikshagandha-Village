@@ -21,26 +21,28 @@ extends SceneTree
 ## The limits live here and nowhere else. Prints ORGANIC_CHECK PASS|FAIL lines.
 
 const ROOT_BAND_TOP := 0.15
-const FOLIAGE_MATERIALS := ["res://assets/organic/materials/organic_foliage.tres", "res://assets/organic/materials/organic_grass.tres"]
+const FOLIAGE_MATERIALS := ["res://assets/organic/materials/organic_foliage.tres", "res://assets/organic/materials/organic_grass.tres",
+	"res://assets/organic/materials/organic_foliage_landmark.tres"]
 const MESH_DIR := "res://assets/organic/meshes"
 
 ## kind tree: low_allow = the existing collider radius + 0.05 m (the low band's
 ## reach limit), low_top = the placeholder's canopy bottom (the low band's top
 ## and the foliage's lowest allowed point), root_reach, canopy_r (the layout's
 ## clearance radius). kind body: reach and height limits (the placeholder's).
+## Budgets (B0.1, developer-approved): 2,000 triangles per ordinary tree, 400
+## per rock, 12,000 for the Great Tree; bush and grass unchanged.
 const PROPS := {
-	"res://scenes/world/props/TreeRound.tscn": {"kind": "tree", "budget": 1500, "low_allow": 0.25, "low_top": 1.2, "root_reach": 0.6, "canopy_r": 1.5},
-	"res://scenes/world/props/TreeTall.tscn": {"kind": "tree", "budget": 1500, "low_allow": 0.21, "low_top": 1.2, "root_reach": 0.5, "canopy_r": 1.2},
-	"res://scenes/world/props/TreeWide.tscn": {"kind": "tree", "budget": 1500, "low_allow": 0.29, "low_top": 1.1, "root_reach": 0.7, "canopy_r": 1.8},
-	"res://scenes/world/props/Rock.tscn": {"kind": "body", "budget": 300, "reach": 0.6, "height": 0.6},
+	"res://scenes/world/props/TreeRound.tscn": {"kind": "tree", "budget": 2000, "low_allow": 0.25, "low_top": 1.2, "root_reach": 0.6, "canopy_r": 1.5},
+	"res://scenes/world/props/TreeTall.tscn": {"kind": "tree", "budget": 2000, "low_allow": 0.21, "low_top": 1.2, "root_reach": 0.5, "canopy_r": 1.2},
+	"res://scenes/world/props/TreeWide.tscn": {"kind": "tree", "budget": 2000, "low_allow": 0.29, "low_top": 1.1, "root_reach": 0.7, "canopy_r": 1.8},
+	"res://scenes/world/props/Rock.tscn": {"kind": "body", "budget": 400, "reach": 0.6, "height": 0.6},
 	"res://scenes/world/props/Bush.tscn": {"kind": "body", "budget": 600, "reach": 0.5, "height": 0.7},
 	"res://scenes/world/props/GrassClump.tscn": {"kind": "body", "budget": 60, "reach": 0.4, "height": 0.45},
-	"res://scenes/dev/organic_preview/GreatTree.tscn": {"kind": "landmark", "budget": 8000},
+	"res://scenes/dev/organic_preview/GreatTree.tscn": {"kind": "landmark", "budget": 12000},
 }
 ## Meshes shown only in the preview (budget only; rock_b keeps rock A's limits).
 const PREVIEW_MESHES := {
-	"rock_b": {"budget": 300, "reach": 0.6, "height": 0.6},
-	"ground_sample": {"budget": 2000}, "path_sample": {"budget": 600},
+	"rock_b": {"budget": 400, "reach": 0.6, "height": 0.6},
 }
 
 var args := {}

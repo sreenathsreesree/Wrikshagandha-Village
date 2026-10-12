@@ -1,4 +1,4 @@
-[gd_scene load_steps=35 format=3]
+[gd_scene load_steps=20 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/props/TreeRound.tscn" id="1"]
 
@@ -14,121 +14,61 @@
 
 [ext_resource type="PackedScene" path="res://scenes/dev/organic_preview/GreatTree.tscn" id="7"]
 
-[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/ground_sample.res" id="8"]
+[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/rock_b.res" id="8"]
 
-[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/path_sample.res" id="9"]
+[ext_resource type="Shader" path="res://shaders/organic_ground.gdshader" id="9"]
 
-[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/rock_b.res" id="10"]
+[ext_resource type="Shader" path="res://shaders/organic_path.gdshader" id="10"]
 
-[ext_resource type="Shader" path="res://shaders/sway.gdshader" id="11"]
+[sub_resource type="ProceduralSkyMaterial" id="Sky_material"]
+sky_top_color = Color(0.32, 0.53, 0.82, 1)
+sky_horizon_color = Color(0.74, 0.82, 0.86, 1)
+sky_curve = 0.12
+ground_bottom_color = Color(0.26, 0.31, 0.22, 1)
+ground_horizon_color = Color(0.74, 0.82, 0.86, 1)
+sun_angle_max = 20.0
+sun_curve = 0.1
+
+[sub_resource type="Sky" id="Sky_preview"]
+sky_material = SubResource("Sky_material")
 
 [sub_resource type="Environment" id="Environment_preview"]
-background_mode = 1
-background_color = Color(0.62, 0.78, 0.9, 1)
-ambient_light_source = 2
-ambient_light_color = Color(0.85, 0.82, 0.65, 1)
-ambient_light_energy = 0.7
+background_mode = 2
+sky = SubResource("Sky_preview")
+ambient_light_source = 3
+ambient_light_color = Color(0.85, 0.85, 0.8, 1)
+ambient_light_sky_contribution = 0.75
+ambient_light_energy = 0.5
+tonemap_mode = 2
+tonemap_white = 6.0
+tonemap_exposure = 0.85
 fog_enabled = true
-fog_light_color = Color(0.75, 0.82, 0.78, 1)
-fog_density = 0.009
+fog_light_color = Color(0.74, 0.82, 0.86, 1)
+fog_density = 0.008
+fog_sky_affect = 0.2
 
-[sub_resource type="CylinderMesh" id="OldTreeRound_CylinderMesh_trunk"]
-top_radius = 0.16
-bottom_radius = 0.22
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(200, 200)
+
+[sub_resource type="ShaderMaterial" id="Material_ground"]
+shader = ExtResource("9")
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_path"]
+top_radius = 1.0
+bottom_radius = 1.0
+height = 0.03
+radial_segments = 10
+
+[sub_resource type="ShaderMaterial" id="Material_path"]
+shader = ExtResource("10")
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_player"]
+radius = 0.3
 height = 1.6
 
-[sub_resource type="StandardMaterial3D" id="OldTreeRound_Material_trunk"]
-albedo_color = Color(0.36, 0.24, 0.16, 1)
-roughness = 0.9
-
-[sub_resource type="SphereMesh" id="OldTreeRound_SphereMesh_canopy_a"]
-radius = 0.95
-height = 1.5
-
-[sub_resource type="SphereMesh" id="OldTreeRound_SphereMesh_canopy_b"]
-radius = 0.68
-height = 1.1
-
-[sub_resource type="StandardMaterial3D" id="OldTreeRound_Material_canopy"]
-albedo_color = Color(0.27, 0.5, 0.24, 1)
-roughness = 0.85
-
-[sub_resource type="CylinderMesh" id="OldTreeTall_CylinderMesh_trunk"]
-top_radius = 0.13
-bottom_radius = 0.18
-height = 1.4
-
-[sub_resource type="StandardMaterial3D" id="OldTreeTall_Material_trunk"]
-albedo_color = Color(0.32, 0.22, 0.15, 1)
-roughness = 0.9
-
-[sub_resource type="CylinderMesh" id="OldTreeTall_CylinderMesh_tier1"]
-top_radius = 0.0
-bottom_radius = 0.85
-height = 1.3
-
-[sub_resource type="CylinderMesh" id="OldTreeTall_CylinderMesh_tier2"]
-top_radius = 0.0
-bottom_radius = 0.6
-height = 1.1
-
-[sub_resource type="CylinderMesh" id="OldTreeTall_CylinderMesh_tier3"]
-top_radius = 0.0
-bottom_radius = 0.35
-height = 0.9
-
-[sub_resource type="StandardMaterial3D" id="OldTreeTall_Material_foliage"]
-albedo_color = Color(0.16, 0.36, 0.22, 1)
-roughness = 0.85
-
-[sub_resource type="CylinderMesh" id="OldTreeWide_CylinderMesh_trunk"]
-top_radius = 0.2
-bottom_radius = 0.26
-height = 1.1
-
-[sub_resource type="StandardMaterial3D" id="OldTreeWide_Material_trunk"]
-albedo_color = Color(0.4, 0.28, 0.18, 1)
-roughness = 0.9
-
-[sub_resource type="SphereMesh" id="OldTreeWide_SphereMesh_canopy"]
-radius = 1.5
-height = 1.4
-
-[sub_resource type="StandardMaterial3D" id="OldTreeWide_Material_canopy"]
-albedo_color = Color(0.38, 0.58, 0.26, 1)
-roughness = 0.85
-
-[sub_resource type="SphereMesh" id="OldRock_SphereMesh_rock_a"]
-radius = 0.45
-height = 0.7
-
-[sub_resource type="SphereMesh" id="OldRock_SphereMesh_rock_b"]
-radius = 0.3
-height = 0.5
-
-[sub_resource type="StandardMaterial3D" id="OldRock_Material_rock"]
-albedo_color = Color(0.55, 0.54, 0.52, 1)
-roughness = 0.95
-
-[sub_resource type="SphereMesh" id="OldBush_SphereMesh_bush_a"]
-radius = 0.4
-height = 0.65
-
-[sub_resource type="StandardMaterial3D" id="OldBush_Material_bush"]
-albedo_color = Color(0.2, 0.42, 0.2, 1)
-roughness = 0.85
-
-[sub_resource type="ShaderMaterial" id="OldGrassClump_ShaderMaterial_grass"]
-shader = ExtResource("11")
-shader_parameter/base_color = Color(0.42, 0.66, 0.27, 1)
-shader_parameter/sway_speed = 1.6
-shader_parameter/sway_amount = 0.05
-shader_parameter/roughness_value = 0.9
-
-[sub_resource type="CylinderMesh" id="OldGrassClump_CylinderMesh_blade"]
-top_radius = 0.01
-bottom_radius = 0.045
-height = 0.32
+[sub_resource type="StandardMaterial3D" id="Material_player"]
+albedo_color = Color(0.93, 0.55, 0.22, 1)
+roughness = 0.8
 
 [node name="OrganicArtPreview" type="Node3D"]
 
@@ -136,284 +76,305 @@ height = 0.32
 environment = SubResource("Environment_preview")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-position = Vector3(0, 12, 0)
-rotation_degrees = Vector3(-50, 35, 0)
-light_color = Color(1, 0.96, 0.85, 1)
-light_energy = 1.1
+rotation_degrees = Vector3(-48, 32, 0)
+light_color = Color(1, 0.95, 0.84, 1)
+light_energy = 0.9
 shadow_enabled = true
+directional_shadow_max_distance = 60.0
 
-[node name="GroundSample" type="MeshInstance3D" parent="."]
-mesh = ExtResource("8")
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_ground")
+surface_material_override/0 = SubResource("Material_ground")
 
-[node name="PathSample" type="MeshInstance3D" parent="."]
-mesh = ExtResource("9")
+[node name="Paths" type="Node3D" parent="."]
+
+[node name="Patch1" type="MeshInstance3D" parent="Paths"]
+position = Vector3(1, 0.015, 10.5)
+rotation_degrees = Vector3(0, 10, 0)
+scale = Vector3(1.2, 1, 2)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch2" type="MeshInstance3D" parent="Paths"]
+position = Vector3(0.2, 0.015, 8)
+rotation_degrees = Vector3(0, 25, 0)
+scale = Vector3(1.1, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch3" type="MeshInstance3D" parent="Paths"]
+position = Vector3(-0.9, 0.015, 5.2)
+rotation_degrees = Vector3(0, 15, 0)
+scale = Vector3(1.2, 1, 2.1)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch4" type="MeshInstance3D" parent="Paths"]
+position = Vector3(-1.8, 0.015, 2.4)
+rotation_degrees = Vector3(0, 30, 0)
+scale = Vector3(1.1, 1, 2)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch5" type="MeshInstance3D" parent="Paths"]
+position = Vector3(-3.2, 0.015, 0.2)
+rotation_degrees = Vector3(0, 40, 0)
+scale = Vector3(1.2, 1, 1.9)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch6" type="MeshInstance3D" parent="Paths"]
+position = Vector3(-4.4, 0.015, -1.6)
+rotation_degrees = Vector3(0, 20, 0)
+scale = Vector3(1, 1, 1.7)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch7" type="MeshInstance3D" parent="Paths"]
+position = Vector3(2.4, 0.015, 4.4)
+rotation_degrees = Vector3(0, 75, 0)
+scale = Vector3(1, 1, 2)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
+
+[node name="Patch8" type="MeshInstance3D" parent="Paths"]
+position = Vector3(5, 0.015, 3.4)
+rotation_degrees = Vector3(0, 95, 0)
+scale = Vector3(0.9, 1, 1.8)
+mesh = SubResource("CylinderMesh_path")
+surface_material_override/0 = SubResource("Material_path")
 
 [node name="GreatTree" parent="." instance=ExtResource("7")]
-position = Vector3(-3.5, 0, -4)
+position = Vector3(-6, 0, -8)
 
-[node name="OldPlaceholders" type="Node3D" parent="."]
+[node name="PlayerScale" type="MeshInstance3D" parent="."]
+position = Vector3(-4.6, 0.8, -2.6)
+mesh = SubResource("CapsuleMesh_player")
+surface_material_override/0 = SubResource("Material_player")
 
-[node name="OldTreeRound" type="Node3D" parent="OldPlaceholders"]
-position = Vector3(-9.0, 0, 6.5)
+[node name="Gallery" type="Node3D" parent="."]
 
-[node name="Trunk" type="MeshInstance3D" parent="OldPlaceholders/OldTreeRound"]
-position = Vector3(0, 0.8, 0)
-mesh = SubResource("OldTreeRound_CylinderMesh_trunk")
-surface_material_override/0 = SubResource("OldTreeRound_Material_trunk")
+[node name="TreeRound" parent="Gallery" instance=ExtResource("1")]
+position = Vector3(-7, 0, 6.5)
 
-[node name="CanopyLower" type="MeshInstance3D" parent="OldPlaceholders/OldTreeRound"]
-position = Vector3(0, 1.95, 0)
-mesh = SubResource("OldTreeRound_SphereMesh_canopy_a")
-surface_material_override/0 = SubResource("OldTreeRound_Material_canopy")
+[node name="TreeRoundLabel" type="Label3D" parent="Gallery"]
+position = Vector3(-7, 0.25, 8)
+pixel_size = 0.004
+text = "Round tree"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
-[node name="CanopyUpper" type="MeshInstance3D" parent="OldPlaceholders/OldTreeRound"]
-position = Vector3(0.1, 2.55, 0.05)
-mesh = SubResource("OldTreeRound_SphereMesh_canopy_b")
-surface_material_override/0 = SubResource("OldTreeRound_Material_canopy")
+[node name="TreeTall" parent="Gallery" instance=ExtResource("2")]
+position = Vector3(-3.6, 0, 6.5)
 
-[node name="OldTreeTall" type="Node3D" parent="OldPlaceholders"]
-position = Vector3(-5.0, 0, 6.5)
+[node name="TreeTallLabel" type="Label3D" parent="Gallery"]
+position = Vector3(-3.6, 0.25, 8)
+pixel_size = 0.004
+text = "Tall tree"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
-[node name="Trunk" type="MeshInstance3D" parent="OldPlaceholders/OldTreeTall"]
-position = Vector3(0, 0.7, 0)
-mesh = SubResource("OldTreeTall_CylinderMesh_trunk")
-surface_material_override/0 = SubResource("OldTreeTall_Material_trunk")
+[node name="TreeWide" parent="Gallery" instance=ExtResource("3")]
+position = Vector3(0.6, 0, 6.5)
 
-[node name="Tier1" type="MeshInstance3D" parent="OldPlaceholders/OldTreeTall"]
-position = Vector3(0, 1.85, 0)
-mesh = SubResource("OldTreeTall_CylinderMesh_tier1")
-surface_material_override/0 = SubResource("OldTreeTall_Material_foliage")
+[node name="TreeWideLabel" type="Label3D" parent="Gallery"]
+position = Vector3(0.6, 0.25, 8)
+pixel_size = 0.004
+text = "Wide tree"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
-[node name="Tier2" type="MeshInstance3D" parent="OldPlaceholders/OldTreeTall"]
-position = Vector3(0, 2.7, 0)
-mesh = SubResource("OldTreeTall_CylinderMesh_tier2")
-surface_material_override/0 = SubResource("OldTreeTall_Material_foliage")
+[node name="Rock" parent="Gallery" instance=ExtResource("4")]
+position = Vector3(3.9, 0, 6.5)
+rotation_degrees = Vector3(0, 20, 0)
 
-[node name="Tier3" type="MeshInstance3D" parent="OldPlaceholders/OldTreeTall"]
-position = Vector3(0, 3.4, 0)
-mesh = SubResource("OldTreeTall_CylinderMesh_tier3")
-surface_material_override/0 = SubResource("OldTreeTall_Material_foliage")
+[node name="RockLabel" type="Label3D" parent="Gallery"]
+position = Vector3(3.9, 0.25, 8)
+pixel_size = 0.004
+text = "Rock A"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
-[node name="OldTreeWide" type="Node3D" parent="OldPlaceholders"]
-position = Vector3(-1.2, 0, 6.5)
+[node name="RockB" type="MeshInstance3D" parent="Gallery"]
+position = Vector3(5.3, 0, 6.5)
+mesh = ExtResource("8")
 
-[node name="Trunk" type="MeshInstance3D" parent="OldPlaceholders/OldTreeWide"]
-position = Vector3(0, 0.55, 0)
-mesh = SubResource("OldTreeWide_CylinderMesh_trunk")
-surface_material_override/0 = SubResource("OldTreeWide_Material_trunk")
+[node name="RockBLabel" type="Label3D" parent="Gallery"]
+position = Vector3(5.3, 0.25, 8)
+pixel_size = 0.004
+text = "Rock B"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
-[node name="Canopy" type="MeshInstance3D" parent="OldPlaceholders/OldTreeWide"]
-position = Vector3(0, 1.55, 0)
-scale = Vector3(1, 0.6, 1)
-mesh = SubResource("OldTreeWide_SphereMesh_canopy")
-surface_material_override/0 = SubResource("OldTreeWide_Material_canopy")
+[node name="Bush" parent="Gallery" instance=ExtResource("5")]
+position = Vector3(7, 0, 6.5)
 
-[node name="OldRock" type="Node3D" parent="OldPlaceholders"]
-position = Vector3(3.0, 0, 6.5)
+[node name="BushLabel" type="Label3D" parent="Gallery"]
+position = Vector3(7, 0.25, 8)
+pixel_size = 0.004
+text = "Bush"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
-[node name="RockA" type="MeshInstance3D" parent="OldPlaceholders/OldRock"]
-position = Vector3(0, 0.28, 0)
-scale = Vector3(1, 0.72, 0.9)
-mesh = SubResource("OldRock_SphereMesh_rock_a")
-surface_material_override/0 = SubResource("OldRock_Material_rock")
+[node name="GrassClump" parent="Gallery" instance=ExtResource("6")]
+position = Vector3(8.8, 0, 6.5)
 
-[node name="RockB" type="MeshInstance3D" parent="OldPlaceholders/OldRock"]
-position = Vector3(0.32, 0.18, 0.18)
-rotation_degrees = Vector3(0, 25, 0)
-scale = Vector3(0.8, 0.55, 0.75)
-mesh = SubResource("OldRock_SphereMesh_rock_b")
-surface_material_override/0 = SubResource("OldRock_Material_rock")
-
-[node name="OldBush" type="Node3D" parent="OldPlaceholders"]
-position = Vector3(6.2, 0, 6.5)
-
-[node name="BushA" type="MeshInstance3D" parent="OldPlaceholders/OldBush"]
-position = Vector3(0, 0.32, 0)
-scale = Vector3(1, 0.85, 1)
-mesh = SubResource("OldBush_SphereMesh_bush_a")
-surface_material_override/0 = SubResource("OldBush_Material_bush")
-
-[node name="BushB" type="MeshInstance3D" parent="OldPlaceholders/OldBush"]
-position = Vector3(0.22, 0.24, 0.12)
-scale = Vector3(0.65, 0.55, 0.65)
-mesh = SubResource("OldBush_SphereMesh_bush_a")
-surface_material_override/0 = SubResource("OldBush_Material_bush")
-
-[node name="OldGrassClump" type="Node3D" parent="OldPlaceholders"]
-position = Vector3(9.0, 0, 6.5)
-
-[node name="Blade1" type="MeshInstance3D" parent="OldPlaceholders/OldGrassClump"]
-position = Vector3(0, 0.16, 0)
-mesh = SubResource("OldGrassClump_CylinderMesh_blade")
-surface_material_override/0 = SubResource("OldGrassClump_ShaderMaterial_grass")
-
-[node name="Blade2" type="MeshInstance3D" parent="OldPlaceholders/OldGrassClump"]
-position = Vector3(0.08, 0.14, 0.05)
-rotation_degrees = Vector3(4, 30, -3)
-scale = Vector3(0.9, 0.85, 0.9)
-mesh = SubResource("OldGrassClump_CylinderMesh_blade")
-surface_material_override/0 = SubResource("OldGrassClump_ShaderMaterial_grass")
-
-[node name="Blade3" type="MeshInstance3D" parent="OldPlaceholders/OldGrassClump"]
-position = Vector3(-0.07, 0.13, -0.04)
-rotation_degrees = Vector3(-3, -40, 2)
-scale = Vector3(0.85, 0.75, 0.85)
-mesh = SubResource("OldGrassClump_CylinderMesh_blade")
-surface_material_override/0 = SubResource("OldGrassClump_ShaderMaterial_grass")
-
-[node name="Blade4" type="MeshInstance3D" parent="OldPlaceholders/OldGrassClump"]
-position = Vector3(0.02, 0.12, -0.08)
-rotation_degrees = Vector3(2, 110, 0)
-scale = Vector3(0.8, 0.7, 0.8)
-mesh = SubResource("OldGrassClump_CylinderMesh_blade")
-surface_material_override/0 = SubResource("OldGrassClump_ShaderMaterial_grass")
-
-[node name="NewAssets" type="Node3D" parent="."]
-
-[node name="NewTreeRound" parent="NewAssets" instance=ExtResource("1")]
-position = Vector3(-7.3, 0, 6.5)
-
-[node name="NewTreeTall" parent="NewAssets" instance=ExtResource("2")]
-position = Vector3(-3.4, 0, 6.5)
-
-[node name="NewTreeWide" parent="NewAssets" instance=ExtResource("3")]
-position = Vector3(1.2, 0, 6.5)
-
-[node name="NewRock" parent="NewAssets" instance=ExtResource("4")]
-position = Vector3(4.1, 0, 6.5)
-
-[node name="NewBush" parent="NewAssets" instance=ExtResource("5")]
-position = Vector3(7.3, 0, 6.5)
-
-[node name="NewGrassClump" parent="NewAssets" instance=ExtResource("6")]
-position = Vector3(9.8, 0, 6.5)
-
-[node name="RockB" type="MeshInstance3D" parent="NewAssets"]
-position = Vector3(5.1, 0, 6.5)
-mesh = ExtResource("10")
+[node name="GrassClumpLabel" type="Label3D" parent="Gallery"]
+position = Vector3(8.8, 0.25, 8)
+pixel_size = 0.004
+text = "Grass"
+font_size = 64
+outline_size = 18
+modulate = Color(1, 1, 1, 1)
+outline_modulate = Color(0.15, 0.12, 0.08, 1)
 
 [node name="Grove" type="Node3D" parent="."]
 
 [node name="GroveTreeRound0" parent="Grove" instance=ExtResource("1")]
-position = Vector3(6.0, 0, -4.5)
+position = Vector3(8, 0, -4.5)
 rotation_degrees = Vector3(0, 0, 0)
 
 [node name="GroveTreeTall1" parent="Grove" instance=ExtResource("2")]
-position = Vector3(8.6, 0, -6.2)
+position = Vector3(10.6, 0, -6.2)
 rotation_degrees = Vector3(0, 40, 0)
 
 [node name="GroveTreeWide2" parent="Grove" instance=ExtResource("3")]
-position = Vector3(4.6, 0, -8.2)
+position = Vector3(6.6, 0, -8.2)
 rotation_degrees = Vector3(0, 110, 0)
 
 [node name="GroveTreeRound3" parent="Grove" instance=ExtResource("1")]
-position = Vector3(9.4, 0, -2.8)
+position = Vector3(11.4, 0, -2.8)
 rotation_degrees = Vector3(0, 200, 0)
 
 [node name="GroveTreeTall4" parent="Grove" instance=ExtResource("2")]
-position = Vector3(6.8, 0, -9.6)
+position = Vector3(8.8, 0, -9.6)
 rotation_degrees = Vector3(0, 300, 0)
 
 [node name="GroveRock5" parent="Grove" instance=ExtResource("4")]
-position = Vector3(7.4, 0, -3.0)
+position = Vector3(9.4, 0, -3)
 rotation_degrees = Vector3(0, 20, 0)
 
 [node name="GroveRock6" parent="Grove" instance=ExtResource("4")]
-position = Vector3(3.6, 0, -5.6)
+position = Vector3(5.6, 0, -5.6)
 rotation_degrees = Vector3(0, 140, 0)
 
 [node name="GroveBush7" parent="Grove" instance=ExtResource("5")]
-position = Vector3(5.2, 0, -2.6)
+position = Vector3(7.2, 0, -2.6)
 rotation_degrees = Vector3(0, 0, 0)
 
 [node name="GroveBush8" parent="Grove" instance=ExtResource("5")]
-position = Vector3(8.2, 0, -4.2)
+position = Vector3(10.2, 0, -4.2)
 rotation_degrees = Vector3(0, 70, 0)
 
 [node name="GroveBush9" parent="Grove" instance=ExtResource("5")]
-position = Vector3(3.4, 0, -9.6)
+position = Vector3(5.4, 0, -9.6)
 rotation_degrees = Vector3(0, 160, 0)
 
 [node name="GroveRockB" type="MeshInstance3D" parent="Grove"]
-position = Vector3(9.8, 0, -7.4)
+position = Vector3(11.8, 0, -7.4)
 rotation_degrees = Vector3(0, 65, 0)
-mesh = ExtResource("10")
+mesh = ExtResource("8")
 
 [node name="GroveGrass0" parent="Grove" instance=ExtResource("6")]
-position = Vector3(7.80, 0, -5.60)
+position = Vector3(10.04, 0, -5.8)
 rotation_degrees = Vector3(0, 0, 0)
 
 [node name="GroveGrass1" parent="Grove" instance=ExtResource("6")]
-position = Vector3(5.48, 0, -4.57)
+position = Vector3(6.85, 0, -4.38)
 rotation_degrees = Vector3(0, 47, 0)
 
 [node name="GroveGrass2" parent="Grove" instance=ExtResource("6")]
-position = Vector3(6.76, 0, -7.43)
+position = Vector3(8.61, 0, -8.21)
 rotation_degrees = Vector3(0, 94, 0)
 
 [node name="GroveGrass3" parent="Grove" instance=ExtResource("6")]
-position = Vector3(7.91, 0, -3.89)
+position = Vector3(10.03, 0, -3.67)
 rotation_degrees = Vector3(0, 141, 0)
 
 [node name="GroveGrass4" parent="Grove" instance=ExtResource("6")]
-position = Vector3(4.16, 0, -6.03)
+position = Vector3(5.54, 0, -6.31)
 rotation_degrees = Vector3(0, 188, 0)
 
 [node name="GroveGrass5" parent="Grove" instance=ExtResource("6")]
-position = Vector3(8.96, 0, -7.10)
+position = Vector3(11.02, 0, -7.47)
 rotation_degrees = Vector3(0, 235, 0)
 
 [node name="GroveGrass6" parent="Grove" instance=ExtResource("6")]
-position = Vector3(5.79, 0, -2.59)
+position = Vector3(7.54, 0, -2.62)
 rotation_degrees = Vector3(0, 282, 0)
 
 [node name="GroveGrass7" parent="Grove" instance=ExtResource("6")]
-position = Vector3(5.01, 0, -8.65)
+position = Vector3(6.8, 0, -8.87)
 rotation_degrees = Vector3(0, 329, 0)
 
 [node name="GroveGrass8" parent="Grove" instance=ExtResource("6")]
-position = Vector3(10.13, 0, -4.31)
+position = Vector3(11.8, 0, -4.56)
 rotation_degrees = Vector3(0, 16, 0)
 
 [node name="GroveGrass9" parent="Grove" instance=ExtResource("6")]
-position = Vector3(2.83, 0, -4.04)
+position = Vector3(4.91, 0, -4.36)
 rotation_degrees = Vector3(0, 63, 0)
 
 [node name="GroveGrass10" parent="Grove" instance=ExtResource("6")]
-position = Vector3(8.46, 0, -9.59)
+position = Vector3(10.06, 0, -9.35)
 rotation_degrees = Vector3(0, 110, 0)
 
 [node name="GroveGrass11" parent="Grove" instance=ExtResource("6")]
-position = Vector3(8.01, 0, -1.10)
+position = Vector3(9.61, 0, -1.93)
 rotation_degrees = Vector3(0, 157, 0)
 
 [node name="GroveGrass12" parent="Grove" instance=ExtResource("6")]
-position = Vector3(2.24, 0, -8.13)
+position = Vector3(4.78, 0, -7.9)
 rotation_degrees = Vector3(0, 204, 0)
 
 [node name="GroveGrass13" parent="Grove" instance=ExtResource("6")]
-position = Vector3(11.83, 0, -6.75)
+position = Vector3(12.61, 0, -6.72)
 rotation_degrees = Vector3(0, 251, 0)
+
+[node name="GroveGrass14" parent="Grove" instance=ExtResource("6")]
+position = Vector3(5.85, 0, -2.18)
+rotation_degrees = Vector3(0, 298, 0)
+
+[node name="GroveGrass15" parent="Grove" instance=ExtResource("6")]
+position = Vector3(7.82, 0, -10.31)
+rotation_degrees = Vector3(0, 345, 0)
 
 [node name="Cameras" type="Node3D" parent="."]
 
-[node name="GameAngleCamera" type="Camera3D" parent="Cameras"]
-position = Vector3(0.0, 8.76, 14.2)
-rotation_degrees = Vector3(-42, 0, 0)
+[node name="GalleryCamera" type="Camera3D" parent="Cameras"]
+position = Vector3(1, 2.7, 16)
+rotation_degrees = Vector3(-11, 0, 0)
 fov = 50.0
 current = true
 
+[node name="GameAngleCamera" type="Camera3D" parent="Cameras"]
+position = Vector3(0, 8.76, 14.2)
+rotation_degrees = Vector3(-42, 0, 0)
+fov = 50.0
+
 [node name="OverviewCamera" type="Camera3D" parent="Cameras"]
-position = Vector3(0.0, 26.0, 22.0)
-rotation_degrees = Vector3(-48, 0, 0)
+position = Vector3(0, 30, 26)
+rotation_degrees = Vector3(-50, 0, 0)
 fov = 50.0
 
-[node name="GroundLevelCamera" type="Camera3D" parent="Cameras"]
-position = Vector3(1.0, 1.6, 4.0)
-rotation_degrees = Vector3(-4, 40, 0)
+[node name="GreatTreeCamera" type="Camera3D" parent="Cameras"]
+position = Vector3(-1, 3.2, 11)
+rotation_degrees = Vector3(4, 14, 0)
 fov = 50.0
 
-[node name="ComparisonCamera" type="Camera3D" parent="Cameras"]
-position = Vector3(0.4, 2.8, 12.6)
-rotation_degrees = Vector3(-13, 0, 0)
+[node name="GroveCamera" type="Camera3D" parent="Cameras"]
+position = Vector3(3.4, 2, 2.4)
+rotation_degrees = Vector3(-3, -34, 0)
 fov = 50.0

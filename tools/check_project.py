@@ -4210,6 +4210,12 @@ for pth in [p2 for p2 in glob.glob("scenes/**/*.tscn", recursive=True) if not p2
         + glob.glob("scripts/**/*.gd", recursive=True) + glob.glob("data/**/*.tres", recursive=True) + ["project.godot"]:
     if "scenes/dev/" in open(pth, encoding="utf-8").read():
         b0_bad.append(f"{pth}: refers to scenes/dev/ — the art preview is never part of the game")
+# B0.1: the Great Tree's canopy fade is opt-in — the landmark foliage material ships with it off (fade_radius 0).
+lm = "assets/organic/materials/organic_foliage_landmark.tres"
+lm_txt = open(lm, encoding="utf-8").read() if os.path.exists(lm) else ""
+lm_fade = re.search(r"^shader_parameter/fade_radius = (\S+)$", lm_txt, re.M)
+if not lm_txt or (lm_fade and float(lm_fade.group(1)) != 0.0):
+    b0_bad.append(f"{lm}: missing, or the canopy fade is on (fade_radius must stay 0 until the developer enables it)")
 for b in b0_bad:
     err(f"organic art (B0, D-60): {b}")
 notes.append(f"organic art (B0): {len(B0_COLLIDER_BLOCKS)} props keep their 3f2cfaf colliders; meshes from assets/organic/; preview isolated")
