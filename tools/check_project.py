@@ -4176,6 +4176,44 @@ for b in wj_bad:
     err(f"wildlife journal (M14.1a, D-59): {b}")
 notes.append(f"wildlife journal (M14.1a): {len(wj_defs)} species as data; once-ever sighting at alert_distance; saved at once (v9); no reward")
 
+# ------------------------------------------------------------ organic art (Stage B0, D-60)
+# The organic prototype changes only how six props look: each keeps its root node, its CollisionShape3D and the
+# shape it uses exactly as they were at 3f2cfaf (hashes of those blocks below, recorded from git; GrassClump has no
+# collider), so collision, navigation (baked from static colliders) and the layout's clearance radii are untouched.
+# Their meshes and materials come only from assets/organic/ (written once, offline, by
+# tools/art/generate_organic_assets.gd). The art preview in scenes/dev/ is never part of the game: no gameplay scene,
+# script or data file and not project.godot refers to it. Geometry (triangle budgets, measured bounds), the runtime
+# collider comparison and generator reproducibility are checked in real Godot by tools/art/run_organic_checks.sh.
+B0_COLLIDER_BLOCKS = {"TreeRound": "022658529d9e2ad3", "TreeTall": "5977ed62e67743bf", "TreeWide": "d4aff2e5d3b185c9",
+                      "Rock": "8461ebc9bde133d9", "Bush": "bfa306bda2944811", "GrassClump": "cdf1554eba11c717"}
+def b0_collider_block(text):
+    bl = [b.strip("\n") for b in re.split(r"\n(?=\[)", text.strip("\n"))]
+    nodes = [b for b in bl if b.startswith("[node")]
+    cols = [b for b in nodes[1:] if 'type="CollisionShape3D"' in b]
+    shapes = set(re.findall(r'shape = SubResource\("([^"]+)"\)', "\n".join(cols)))
+    subs = [b for b in bl if b.startswith("[sub_resource") and re.search(r'id="([^"]+)"', b).group(1) in shapes]
+    return "\n\n".join(nodes[:1] + subs + cols)
+b0_bad = []
+for prop, want in B0_COLLIDER_BLOCKS.items():
+    pth = f"scenes/world/props/{prop}.tscn"
+    txt = open(pth, encoding="utf-8").read() if os.path.exists(pth) else ""
+    if hashlib.sha256(b0_collider_block(txt).encode()).hexdigest()[:16] != want:
+        b0_bad.append(f"{pth}: its root, CollisionShape3D or collision shape differs from 3f2cfaf")
+    for kind, path in re.findall(r'^\[ext_resource type="(\w+)" path="([^"]+)"', txt, re.M):
+        if not path.startswith("res://assets/organic/"):
+            b0_bad.append(f"{pth}: {kind} {path} is not from res://assets/organic/")
+        elif not os.path.exists(path[len("res://"):]):
+            b0_bad.append(f"{pth}: {path} does not exist")
+    if re.search(r'^\[sub_resource type="(?!\w*Shape3D")', txt, re.M):
+        b0_bad.append(f"{pth}: a mesh or material defined in the scene — the organic props take theirs from assets/organic/")
+for pth in [p2 for p2 in glob.glob("scenes/**/*.tscn", recursive=True) if not p2.startswith("scenes/dev/")] \
+        + glob.glob("scripts/**/*.gd", recursive=True) + glob.glob("data/**/*.tres", recursive=True) + ["project.godot"]:
+    if "scenes/dev/" in open(pth, encoding="utf-8").read():
+        b0_bad.append(f"{pth}: refers to scenes/dev/ — the art preview is never part of the game")
+for b in b0_bad:
+    err(f"organic art (B0, D-60): {b}")
+notes.append(f"organic art (B0): {len(B0_COLLIDER_BLOCKS)} props keep their 3f2cfaf colliders; meshes from assets/organic/; preview isolated")
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).

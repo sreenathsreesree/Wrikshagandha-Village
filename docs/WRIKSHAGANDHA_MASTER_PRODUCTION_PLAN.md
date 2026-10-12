@@ -1892,6 +1892,14 @@ Goal: the small playable test area (placeholders).
 - **Limits:** the fixtures' `daily_discovery` dates are the generation day, so that section is not compared (a later day re-rolls it); regenerating reproduces the method, not the bytes (timings and dates differ). The real-Godot runner is not in `run_all.sh` (it needs a Godot binary).
 - **Commit:** — (not committed; awaiting review).
 
+### ORGANIC WORLD REDESIGN — Stage B0 (art prototype)
+**Stage B0 — Organic art prototype** `[~]` Implemented and verified on desktop on `prototype/organic-world` (from `3f2cfaf`); visual review on PC and Android pending; not committed. Decision record: D-60. Stage A (expansion to ~128 × 96 m, growing west and north) is separate and not started.
+- **Assets (offline, `tools/art/generate_organic_assets.gd`, fixed seeds, byte-reproducible):** organic round, tall (columnar) and wide (spreading) trees; two faceted rocks; a layered bush with fronds; a grass tuft; the Great Tree (banyan-peepal on a stone katte, buttress and aerial roots, layered umbrella canopy on spreading limbs, kalava threads, diyas); ground and path samples. Shared materials: bark, rock, earth (vertex colour), foliage and grass on `shaders/organic_foliage.gdshader` (`sway.gdshader` unchanged).
+- **Game change:** six prop scenes (`TreeRound`, `TreeTall`, `TreeWide`, `Rock`, `Bush`, `GrassClump`) show the new meshes; their root, `CollisionShape3D` and shape blocks are identical to `3f2cfaf`. The Great Tree, rock B and the ground/path samples live only in `scenes/dev/organic_preview/` (not loaded by the game). `Meadow.tscn`, its materials, the digests, `project.godot`, `export_presets.cfg`, `data/`, `scripts/` and the save fixtures unchanged.
+- **Measured (real Godot, the actual meshes):** triangles — round 1,251 / tall 738 / wide 1,138 (budget 1,500 each), rock A 240 / rock B 240 (300), bush 400 (600), grass 30 (60), Great Tree 6,293 (8,000). Bounds — low-band (trunk) reach 0.209 / 0.166 / 0.258 m against 0.25 / 0.21 / 0.29; root band 0.508 / 0.387 / 0.627 m against 0.60 / 0.50 / 0.70; canopy bottom 1.60 / 1.44 / 1.40 m against at least 1.20 / 1.20 / 1.10; canopy reach 1.16 / 0.94 / 1.56 m against 1.50 / 1.20 / 1.80; rock 0.50 m reach, 0.50 m high (0.60 / 0.60); bush 0.45 / 0.61 m (0.50 / 0.70); grass 0.21 / 0.39 m (0.40 / 0.45).
+- **Verification:** see the Stage B0 report (checker, run_all, `tools/art/run_organic_checks.sh`, save fixtures, force-stop, regression vs `3f2cfaf`, navigation-mesh hash, mutations, relative render measurements, screenshots).
+- **Commit:** — (not committed; awaiting visual and technical review).
+
 ### PHASE 16 — VERTICAL SLICE GATE
 The small area must feel like a coherent real game. All must pass **on Android**:
 
