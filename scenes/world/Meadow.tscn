@@ -1,4 +1,4 @@
-[gd_scene load_steps=57 format=3]
+[gd_scene load_steps=59 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
@@ -47,6 +47,8 @@
 [ext_resource type="Script" path="res://scripts/npc/npc_routine_spot.gd" id="routine_spot"]
 [ext_resource type="PackedScene" path="res://scenes/elements/EarthNurture.tscn" id="43"]
 [ext_resource type="PackedScene" path="res://scenes/peaceful/RestSpot.tscn" id="44"]
+[ext_resource type="Shader" path="res://shaders/organic_ground.gdshader" id="organic_ground_shader"]
+[ext_resource type="Shader" path="res://shaders/organic_path.gdshader" id="organic_path_shader"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -61,9 +63,8 @@ fog_density = 0.009
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(64, 64)
 
-[sub_resource type="StandardMaterial3D" id="Material_ground"]
-albedo_color = Color(0.36, 0.56, 0.28, 1)
-roughness = 0.95
+[sub_resource type="ShaderMaterial" id="Material_ground"]
+shader = ExtResource("organic_ground_shader")
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
 size = Vector3(64, 0.2, 64)
@@ -74,9 +75,8 @@ bottom_radius = 1.0
 height = 0.03
 radial_segments = 10
 
-[sub_resource type="StandardMaterial3D" id="Material_path"]
-albedo_color = Color(0.55, 0.44, 0.3, 1)
-roughness = 1.0
+[sub_resource type="ShaderMaterial" id="Material_path"]
+shader = ExtResource("organic_path_shader")
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_rim_x"]
 size = Vector3(66, 1.6, 1)

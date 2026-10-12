@@ -4214,6 +4214,40 @@ for b in b0_bad:
     err(f"organic art (B0, D-60): {b}")
 notes.append(f"organic art (B0): {len(B0_COLLIDER_BLOCKS)} props keep their 3f2cfaf colliders; meshes from assets/organic/; preview isolated")
 
+# ------------------------------------------------------------ organic ground and paths (Stage B0.1, D-61)
+# The one live-game visual change of B0.1: the meadow's ground and path materials become shader materials (world-space
+# grass patches; worn, ragged-edged earth paths). Nothing else in Meadow.tscn may change: with the scene's load_steps,
+# the two shader ext_resources and the bodies of the Material_ground and Material_path sub_resources masked, the scene
+# hashes exactly as at 3f2cfaf (D61_MEADOW_REST, recorded from git) — so every node, transform, mesh, collider, the
+# layout digests and the navigation source are untouched. Both shaders are opaque (no ALPHA, no discard).
+D61_MEADOW_REST = "644723524ad9b0dc"
+D61_MATERIALS = {"Material_ground": "res://shaders/organic_ground.gdshader", "Material_path": "res://shaders/organic_path.gdshader"}
+def d61_meadow_rest(text):
+    text = re.sub(r"\A\[gd_scene load_steps=\d+ format=3\]", "[gd_scene format=3]", text)
+    text = re.sub(r'^\[ext_resource type="Shader" path="res://shaders/organic_(?:ground|path)\.gdshader" id="[^"]+"\]\n', "", text, flags=re.M)
+    for mid in D61_MATERIALS:
+        text = re.sub(r'^\[sub_resource type="\w+" id="%s"\]\n(?:[^\[\n].*\n)*' % mid, '[sub_resource id="%s"]\n' % mid, text, flags=re.M)
+    return text
+d61_bad = []
+d61_txt = open(MEADOW_SCENE, encoding="utf-8").read()
+if hashlib.sha256(d61_meadow_rest(d61_txt).encode()).hexdigest()[:16] != D61_MEADOW_REST:
+    d61_bad.append(f"{MEADOW_SCENE}: differs from 3f2cfaf outside the ground and path materials")
+d61_ext = dict((i, p2) for p2, i in re.findall(r'^\[ext_resource type="Shader" path="([^"]+)" id="([^"]+)"\]', d61_txt, re.M))
+for mid, shader in D61_MATERIALS.items():
+    blk = re.search(r'^\[sub_resource type="(\w+)" id="%s"\]\n((?:[^\[\n].*\n)*)' % mid, d61_txt, re.M)
+    sm = re.fullmatch(r'shader = ExtResource\("([^"]+)"\)\n', blk.group(2)) if blk else None
+    if not blk or blk.group(1) != "ShaderMaterial" or not sm or d61_ext.get(sm.group(1)) != shader:
+        d61_bad.append(f"{MEADOW_SCENE}: {mid} is a ShaderMaterial on {shader} and nothing else")
+    src = shader[len("res://"):]
+    code = open(src, encoding="utf-8").read() if os.path.exists(src) else ""
+    code = code + "".join(open(inc[len("res://"):], encoding="utf-8").read() for inc in re.findall(r'^#include "([^"]+)"', code, re.M)
+                          if os.path.exists(inc[len("res://"):]))
+    if not code or re.search(r"\bALPHA\b|\bdiscard\b", re.sub(r"//.*", "", code)):
+        d61_bad.append(f"{src}: missing, or not opaque (ALPHA or discard)")
+for b in d61_bad:
+    err(f"organic ground and paths (B0.1, D-61): {b}")
+notes.append("organic ground and paths (B0.1): Meadow.tscn equals 3f2cfaf except Material_ground/Material_path (opaque shader materials)")
+
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from
 # real movement/interaction and never driving them (docs/ARCHITECTURE.md §4).
