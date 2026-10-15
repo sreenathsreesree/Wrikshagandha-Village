@@ -4,7 +4,8 @@ generator yield) and run against a model of the engine pieces it uses — tweens
 sequential steps, delays, intervals, callbacks; paused while the area is parked), the scene's Growth children read from
 EarthNurture.tscn, the Player's refusal of unavailable objects (read from player.gd) and a ledger of every autoload call.
 1. A fresh plant is dormant (every Growth child at dormant_scale of its authored size) and offers exactly USE.
-2. One use: unavailable at once; interact() returns true when the grow-in has played (0.7 s + 0.2 s stagger per later
+2. One use: a second use in the same frame refused by the cycling guard, unavailable from the end of that frame
+   (the switch-off is deferred, P0.1b); interact() returns true when the grow-in has played (0.7 s + 0.2 s stagger per later
    child), every child then at its awake size; it holds 6 s, relaxes over 1.5 s back to dormant, then is available again
    — D-47's timeline, frame by frame.
 3. While the cycle runs, taps are refused (the Player's rule) and a direct interact() returns false without touching
@@ -102,14 +103,19 @@ class Tween:
             t.done = True
 
 class Engine:
-    def __init__(e): e.tweens, e.parked, e.now = [], False, 0.0
+    def __init__(e): e.tweens, e.parked, e.now, e.deferred = [], False, 0.0, []
+    def flush(e):
+        """set_deferred() writes land at the end of the frame they were made in (P0.1b), in order."""
+        for obj, prop, value in e.deferred: setattr(obj, prop, value)
+        e.deferred = []
     def tick(e):
+        e.flush()
         e.now += DT
         if not e.parked:
             for t in list(e.tweens): t.advance(DT)
 
 def build(sources):
-    gd_port.NODE_METHODS[:] = ["get_tree", "get_node_or_null", "add_to_group", "create_tween", "queue_free"]
+    gd_port.NODE_METHODS[:] = ["get_tree", "get_node_or_null", "add_to_group", "create_tween", "queue_free", "set_deferred"]
     src = sources["en"]
     src = re.sub(r"\\\n\s*", "", src)                                   # backslash line continuations
     src = re.sub(r"^(\s*)await (\w+)\.finished\s*$", r"\1yield \2", src, flags=re.M)
@@ -137,6 +143,7 @@ def build(sources):
         en.engine = engine
         en.create_tween = lambda: Tween(en)
         en.queue_free = lambda: setattr(en, "freed", True)
+        en.set_deferred = lambda prop, value: engine.deferred.append((en, prop, value))
         en._growth = Growth([Part(n, authored(b)) for n, b in names])
         en.awake = [p.scale for p in en._growth.parts]
         en._ready()
@@ -181,7 +188,12 @@ def run(sources):
     def cycle(tag, parked_for=0.0, taps=True):
         start = eng.now
         u = Use(en, refuse)
-        if en.monitorable: p.append(f"{tag}: unavailable as soon as it is used")
+        # The switch-off is deferred (a walk-up Use runs inside a physics signal, where a direct write is blocked), so
+        # until the frame ends the guard alone must refuse: a second Use and a direct interact() in the same frame.
+        same = Use(en, refuse)
+        if same.result is not False: p.append(f"{tag}: a second Use in the same frame is refused by the guard (got {same.result})")
+        eng.flush()
+        if en.monitorable: p.append(f"{tag}: unavailable from the end of the frame it is used in")
         refused, direct = 0, []
         returned_at, awake_ok, avail_at, park_done = None, None, None, parked_for <= 0
         while eng.now - start < 60 + parked_for:
@@ -248,16 +260,19 @@ MUTANTS = {
     "no stagger": mutate("en", ".set_delay(i * stagger_seconds)", ".set_delay(0.0)"),
     "hold 60 s": mutate("en", "var hold_seconds: float = 6.0", "var hold_seconds: float = 60.0"),
     "no relaxation (stays awake)": mutate("en", "_awake_scales[i] * dormant_scale, relax_seconds", "_awake_scales[i], relax_seconds"),
-    "never available again": mutate("en", "func _on_dormant() -> void:\n\tmonitorable = true", "func _on_dormant() -> void:\n\tpass"),
-    "no guard, never unavailable": mutate("en", "\tif not monitorable:\n\t\treturn false\n\tmonitorable = false\n", ""),
-    "never made unavailable (guard kept)": mutate("en", "\tmonitorable = false\n\tvar parts", "\tvar parts"),
+    "never available again": mutate("en", "func _on_dormant() -> void:\n\t_cycling = false\n\tmonitorable = true", "func _on_dormant() -> void:\n\tpass"),
+    "no guard, never unavailable": {**S, "en": S["en"].replace("\tif _cycling or not monitorable:\n\t\treturn false\n\t_cycling = true\n", "", 1)
+                                                     .replace('\tset_deferred("monitorable", false)\n', "", 1)},
+    "never made unavailable (guard kept)": mutate("en", '\tset_deferred("monitorable", false)\n\tvar parts', "\tvar parts"),
+    "cycling guard removed (deferred switch-off kept)": mutate("en", "\tif _cycling or not monitorable:", "\tif not monitorable:"),
+    "cycling guard never released": mutate("en", "func _on_dormant() -> void:\n\t_cycling = false\n", "func _on_dormant() -> void:\n"),
     "returns before the grow-in": mutate("en", "\tawait grow.finished\n\t_hold_then_relax()", "\t_hold_then_relax()"),
     "the root's scale animated": mutate("en", "\tawait grow.finished", "\tscale = scale * 1.2\n\tawait grow.finished"),
     "a reward": mutate("en", "\t_hold_then_relax()\n\treturn true", "\t_hold_then_relax()\n\tPointsManager.add_points(5)\n\treturn true"),
     "a save": mutate("en", "\t_hold_then_relax()\n\treturn true", "\t_hold_then_relax()\n\tSaveManager.save_game()\n\treturn true"),
-    "a farming call": mutate("en", "\tmonitorable = false\n\tvar parts", "\tmonitorable = false\n\tFarmManager.notify_place_reached(\"x\")\n\tvar parts"),
+    "a farming call": mutate("en", '\tset_deferred("monitorable", false)\n\tvar parts', '\tset_deferred("monitorable", false)\n\tFarmManager.notify_place_reached("x")\n\tvar parts'),
     "a Journal entry": mutate("en", "\t_hold_then_relax()\n\treturn true", "\t_hold_then_relax()\n\tJournalManager.add_entry(null)\n\treturn true"),
-    "freed after use": mutate("en", "func _on_dormant() -> void:\n\tmonitorable = true", "func _on_dormant() -> void:\n\tmonitorable = true\n\tqueue_free()"),
+    "freed after use": mutate("en", "func _on_dormant() -> void:\n\t_cycling = false\n\tmonitorable = true", "func _on_dormant() -> void:\n\t_cycling = false\n\tmonitorable = true\n\tqueue_free()"),
     "one-shot (remove_on_harvest stays true)": mutate("en", "\tremove_on_harvest = false\n", ""),
     "offers COLLECT": mutate("en", "verbs.append(Verb.USE)", "verbs.append(Verb.COLLECT)"),
     "a single growth child": {**S, "scene": S["scene"].replace('[node name="Leaves" type="Node3D" parent="Growth"]', '[node name="Leaves" type="Node3D" parent="Growth/Stem"]')
@@ -274,7 +289,7 @@ survivors = [n for n, k in killed.items() if k is None]
 assert not survivors, f"broken designs not caught: {survivors}"
 crashes = [n for n, k in killed.items() if k[0] == "crash"]
 n_parts = len(re.findall(r'parent="Growth"\]', S["scene"]))
-print(f"earth nurture: {n_parts} growth parts dormant at 0.4; use -> unavailable at once, interact() true after "
+print(f"earth nurture: {n_parts} growth parts dormant at 0.4; use -> same-frame repeat refused, unavailable at frame end, interact() true after "
       f"{D47['grow'] + D47['stagger'] * (n_parts - 1):.1f} s (awake), hold {D47['hold']:.0f} s, relax {D47['relax']} s, available again; "
       f"taps and direct calls refused while active; 5 cycles alike; parked 30 s mid-cycle -> 30 s later; root scale never "
       f"written; no autoload called; never freed; a new instance is dormant")

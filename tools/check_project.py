@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Static verification suite for the Wrikshagandha Godot project (no engine)."""
 import os, re, sys, glob, configparser
+import subprocess
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 os.chdir(ROOT)
@@ -957,9 +958,9 @@ if found_al != AUTOLOADS:
 # Deliberate-change pins: files a milestone promised not to touch. Changing
 # one is allowed only on purpose — update its pin in the same commit and
 # say why in the plan.
-PINNED = {"scripts/player/player.gd": "700af75d8457b309", "scripts/autoload/input_manager.gd": "277c638316814987",
-          "scripts/camera/follow_camera.gd": "0894edd6623c8d1b", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
-          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "c567a3c097843e8f",
+PINNED = {"scripts/player/player.gd": "1871a0d3db410eb0", "scripts/autoload/input_manager.gd": "9a1a7d769e6c97cf",
+          "scripts/camera/follow_camera.gd": "994ab800f629ce00", "scenes/camera/FollowCamera.tscn": "c2887e1f37ed6277",
+          "scenes/player/Player.tscn": "815b6bcf1df69d36", "scenes/ui/HUD.tscn": "41ce37e770a448a7",
           # M03.2 must not pull M03.3 forward: farm, save and game-state code untouched.
           # (HUD.tscn re-pinned deliberately by M04.5: Inventory button + screen;
           #  and by M06.3: the top-anchored top bar, bottom-right thumb buttons, the shared theme.)
@@ -974,6 +975,26 @@ PINNED = {"scripts/player/player.gd": "700af75d8457b309", "scripts/autoload/inpu
           #  moved/ended; mode switch, focus loss, a new press on its index end it. Tap routing (_handle_tap) unchanged.)
           # (follow_camera.gd re-pinned deliberately by E1 (D-49, D1): the settle transaction — settle()/release(), eased distance
           #  through set_zoom_distance() and the existing h/v offset, pinch ignored while it lasts; CAM_BEHAVIOUR lines unchanged.)
+          # (player.gd, follow_camera.gd and HUD.tscn re-pinned deliberately by R1 (D-62), developer-approved: while seated
+          #  joystick/keyboard movement is ignored (it no longer stands) and set_movement_locked() holds it until Main says the
+          #  camera has restored; FollowCamera announces settle_ended when a release finishes (CAM_BEHAVIOUR lines unchanged); the HUD gains a hidden StandUpButton under its root, outside the quieted groups.)
+          # (follow_camera.gd re-pinned deliberately by R2 (D-62), developer-approved: settle() also takes the seated zoom
+          #  range; once the settle has eased in, zoom_by() goes to _zoom_seated(), which is ignored while an ease runs and
+          #  clamps to that range — the base is untouched, so the release restores the pre-sit view exactly. zoom_by()'s
+          #  path outside a transaction, set_zoom_distance() and the CAM_BEHAVIOUR lines are unchanged.)
+          # (follow_camera.gd and input_manager.gd re-pinned deliberately by R3 (D-62), developer-approved: seated, a one-finger
+          #  world drag turns the view — the FollowCamera node's yaw, written only by _set_yaw() — within the spot's yaw limit of
+          #  the base yaw the transaction captured; every settle and release eases the yaw back to that base, so settle_ended
+          #  (and with it movement) comes only once distance, framing and yaw are all restored; pitch, follow, look-ahead,
+          #  bounds, FOV and the CAM_BEHAVIOUR lines are unchanged. InputManager reports a lone world finger past a tap as
+          #  world_dragged and, while Main has turned the joystick off (seated), lets no finger become the joystick; tap
+          #  routing (TAP_ROUTING) is unchanged.)
+          # (input_manager.gd re-pinned deliberately by the R3 input audit, developer-requested: a lone world finger past a
+          #  tap's reach stays the drag until it lifts (_drag_index, reset in _track_touch) so its way back is reported too, and
+          #  while the joystick is off (seated) its tap start is dropped — a look-around that ends near where it began is never
+          #  a tap that stands the player; standing behaviour and TAP_ROUTING unchanged.)
+          # (HUD.tscn re-pinned deliberately by R4 (D-62), developer-approved: a hidden MuteButton beside the StandUpButton,
+          #  directly under the HUD and outside the quieted groups — the seated ambience's session-only mute toggle.)
           # (FollowCamera.tscn re-pinned deliberately by M07.3 (D-29): the SpringArm3D ignores geometry,
           #  collision_mask = 0 — the camera no longer collapses against the house or the monolith.)
           # (FarmManager and SaveManager re-pinned deliberately by M04.2: seeds/basket -> ItemStore, save v2;
@@ -993,7 +1014,12 @@ PINNED = {"scripts/player/player.gd": "700af75d8457b309", "scripts/autoload/inpu
           #  JournalManager.wildlife_sighted — sighting persistence, nothing else changed; D-59.)
           # (farm_plot.gd re-pinned deliberately by M08.1: restore() replaces a crop visual the plot already shows,
           #  so a parked area's live plots are restored in place, never doubled — D-31, D-33.)
-          "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "ed0ea77b157b7d08",
+          # (farm_plot.gd re-pinned deliberately by P0.1b, developer-approved: _run_harvest_sequence() switches the plot
+          #  off with set_deferred("monitorable", false) — a walk-up harvest runs inside the InteractionZone's
+          #  area_entered signal, where Godot blocked the direct write — and makes it available again at the end with
+          #  set_deferred("monitorable", unlocked), so the two always land in order even within one frame; nothing else
+          #  changed: no rule, reward, timing or save.)
+          "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "91635f5d00da818b",
           "scripts/autoload/save_manager.gd": "c1a0f5cd9bc631a1", "scripts/autoload/game_state.gd": "82048ee94f56d7cb",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
@@ -1077,8 +1103,9 @@ if pa_callers != [MAIN_GD]:
     err(f"Player.place_at() is called only by Main's area loader (found {pa_callers})")
 used = set(re.findall(r"\bplayer\.(\w+)", code_only(main_src)))
 # E1 (D-57) deliberately adds the generic seated-state API Main coordinates: sit() and the two state signals.
-if used - {"global_position", "global_transform", "place_at", "sit", "seat_ended", "animation_state_changed"}:
-    err(f"{MAIN_GD}: Main uses only Player.place_at(), sit(), its state signals and its transform — never Player internals (found {sorted(used)})")
+# D-62 (R1) adds stand() for the Stand Up button and set_movement_locked() until the camera has restored.
+if used - {"global_position", "global_transform", "place_at", "sit", "seat_ended", "animation_state_changed", "stand", "set_movement_locked"}:
+    err(f"{MAIN_GD}: Main uses only Player.place_at(), sit(), stand(), set_movement_locked(), its state signals and its transform — never Player internals (found {sorted(used)})")
 for f, s2 in scripts.items():
     if f != PL and re.search(r"\bplayer\._\w+", code_only(s2)):
         err(f"{f}: reaches into Player's private members")
@@ -3714,6 +3741,9 @@ notes.append(f"elements (M11.0): {[e[0] for e in sorted(el_found, key=lambda e: 
 # Earth — Nurture: one reusable Interactable, EarthNurture (scenes/elements/EarthNurture.tscn), offering D-09's Use.
 # Its cycle — dormant → grow-in (Growth children, 0.7 s each, 0.2 s stagger) → hold 6 s → relax 1.5 s → dormant — runs
 # on tweens bound to the node; it is unavailable (monitorable false) for the whole cycle and usable again after.
+# P0.1b: a walk-up Use runs inside the InteractionZone's area_entered signal, where Godot blocks a direct monitorable
+# write, so the switch-off is set_deferred and an explicit _cycling guard (set at the start of the cycle, cleared at
+# dormant) refuses every interact() until then; the one direct write left is monitorable = true at dormant.
 # Only Growth children animate, never the root's scale (the base's proximity reaction). It pays, saves, progresses and
 # shows nothing, touches no farming and reads no element data; the Meadow holds exactly one instance under a top-level
 # EarthPrototype node and only positions it. The behaviour itself is sim_earth_nurture.py's.
@@ -3728,7 +3758,10 @@ en_interact = en_fn.get("interact", "")
 if not re.search(r"^extends Interactable\s*\nclass_name EarthNurture", en_src, re.M) or en_exports != EN_EXPORTS \
    or sorted(en_fn) != ["_get_interaction_verbs", "_hold_then_relax", "_on_dormant", "_ready", "interact"] \
    or "remove_on_harvest = false" not in en_fn.get("_ready", "") \
-   or not re.search(r"if not monitorable:\s*return false\s*monitorable = false\s", en_interact) \
+   or not re.search(r'if _cycling or not monitorable:\s*return false\s*_cycling = true\s*set_deferred\("monitorable", false\)\s', en_interact) \
+   or not re.search(r"^var _cycling: bool = false$", en_src, re.M) \
+   or not re.search(r"func _on_dormant\(\) -> void:\s*_cycling = false\s*monitorable = true\s*$", en_fn.get("_on_dormant", "")) \
+   or len(re.findall(r"\bmonitorable\s*=", en_code)) != 1 or en_code.count("_cycling = true") != 1 or en_code.count("_cycling = false") != 1 \
    or not re.search(r"tween_property\(parts\[i\], \"scale\", _awake_scales\[i\], grow_seconds\)\s*\\\s*\.set_delay\(i \* stagger_seconds\)", en_interact) \
    or not re.search(r"await grow\.finished\s*_hold_then_relax\(\)\s*return true\s*$", en_interact) \
    or "rest.tween_interval(hold_seconds)" not in en_fn.get("_hold_then_relax", "") \
@@ -3736,7 +3769,7 @@ if not re.search(r"^extends Interactable\s*\nclass_name EarthNurture", en_src, r
    or "tween_callback(_on_dormant)" not in en_fn.get("_hold_then_relax", "") \
    or en_code.count("monitorable = true") != 1 or "monitorable = true" not in en_fn.get("_on_dormant", ""):
     err(f"{EN_GD}: EarthNurture extends Interactable, persistent, with exactly the exports {[e[0] for e in EN_EXPORTS]} at "
-        f"0.7 / 0.2 / 6.0 / 1.5 s and dormant 0.4; interact() refuses while cycling, becomes unavailable, grows the Growth children "
+        f"0.7 / 0.2 / 6.0 / 1.5 s and dormant 0.4; interact() refuses while cycling (_cycling guard), becomes unavailable (deferred), grows the Growth children "
         f"in (staggered), returns after the grow-in; the hold and relax run on, then it is available again (D-47)")
 m = re.search(r"\b(PointsManager|Wallet|Market|Inventory|DiscoveryManager|DiscoveryDatabase|JournalManager|CollectionManager|"
               r"DailyDiscoveryManager|FarmManager|ExplorationManager|SaveManager|GameState|Requests|Relationships|Services|"
@@ -3777,22 +3810,36 @@ notes.append(f"earth nurture (M11.1): EarthNurture offers USE; cycle {[e[2] for 
 # The Pond Rest Spot: one reusable RestSpot (scenes/peaceful/RestSpot.tscn) offering D-09's Use, which only asks to
 # be sat on. Main carries it out: Player.sit() walks there (ordinary navigation, no snap) and SEATED begins on arrival;
 # while seated the FollowCamera settles (eased distance + screen-space framing offset, D-49/D1) and the HUD is quiet
-# (D-56/D2); stand() — joystick/keyboard movement, tapping the player, another object, a place_at — releases both.
+# (D-56/D2); stand() — the Stand Up button, tapping the player, another object, a place_at — releases both.
+# Rest Mode controls (D-62, R1): while seated joystick/keyboard movement is ignored (it neither stands nor moves), the
+# joystick is hidden and the HUD's Stand Up button (outside the quieted groups) asks Main, which calls Player.stand();
+# movement and the joystick return only when the camera release has finished (FollowCamera.settle_ended — at once for
+# an area swap's release(0.0)). Closer view and bounded pinch (D-62, R2): the seated start is 8 m and, once the settle
+# has eased in, pinch and wheel stay within the spot's seated range (7–10 m) — ignored while an ease runs — and the
+# release restores the exact pre-sit base whatever the pinch did; outside a transaction zoom is unchanged (M03.5).
+# Seated yaw (D-62, R3): seated, a one-finger world drag turns the view about the player within ±45° of the base yaw
+# (ignored while easing; the joystick is off while seated so a drag anywhere turns); every sit starts at the base yaw
+# and the release restores it with distance and framing, before settle_ended gives movement back.
 # No reward, progression, save, audio or new camera. Behaviour: sim_rest_spot.py.
 RS_GD, RS_SCENE = "scripts/peaceful/rest_spot.gd", "scenes/peaceful/RestSpot.tscn"
 rs_src = scripts.get(RS_GD, "")
 rs_code = code_only(rs_src)
 rs_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", rs_code, re.M | re.S)}
 rs_exports = re.findall(r"^@export(?:_range\(([^)]*)\))? var (\w+)(?:: (\w+))? :?= (.+)$", rs_src, re.M)
-RS_EXPORTS = [("7.0, 15.0", "settle_distance", "float"), ("", "framing_offset", ""), ("1.0, 2.0", "settle_seconds", "float"), ("1.0, 2.0", "release_seconds", "float")]
+RS_EXPORTS = [("7.0, 10.0", "settle_distance", "float"), ("", "framing_offset", ""), ("", "seated_zoom_range", ""),
+              ("0.0, 45.0", "seated_yaw_limit_degrees", "float"), ("1.0, 2.0", "settle_seconds", "float"), ("1.0, 2.0", "release_seconds", "float")]
 rs_vals = {n: v for _, n, _, v in rs_exports}
 def _rs_num(v):
     try: return float(v)
     except ValueError: return None
 rs_off = re.fullmatch(r"Vector2\((-?[\d.]+), (-?[\d.]+)\)", rs_vals.get("framing_offset", ""))
+rs_zr = re.fullmatch(r"Vector2\(([\d.]+), ([\d.]+)\)", rs_vals.get("seated_zoom_range", ""))
+# D-62 (R2) decides the seated view: start at 8 m, pinch within 7–10 m (inside P-03's 7–15 m).
+rs_seated_ok = rs_zr is not None and (float(rs_zr.group(1)), float(rs_zr.group(2))) == (7.0, 10.0) and _rs_num(rs_vals.get("settle_distance", "")) == 8.0 \
+               and _rs_num(rs_vals.get("seated_yaw_limit_degrees", "")) == 45.0   # D-62 R3: seated yaw within ±45°
 if not re.search(r"^extends Interactable\s*\nclass_name RestSpot", rs_src, re.M) \
    or [(r, n, t) for r, n, t, _ in rs_exports] != RS_EXPORTS \
-   or not (7.0 <= (_rs_num(rs_vals.get("settle_distance", "")) or 0) <= 15.0) \
+   or not (7.0 <= (_rs_num(rs_vals.get("settle_distance", "")) or 0) <= 15.0) or not rs_seated_ok \
    or not all(1.0 <= (_rs_num(rs_vals.get(k, "")) or 0) <= 2.0 for k in ("settle_seconds", "release_seconds")) \
    or not rs_off or max(abs(float(rs_off.group(1))), abs(float(rs_off.group(2)))) > 2.5 \
    or sorted(rs_fn) != ["_get_interaction_verbs", "_ready", "get_seat_transform", "interact", "set_occupied"] \
@@ -3803,8 +3850,8 @@ if not re.search(r"^extends Interactable\s*\nclass_name RestSpot", rs_src, re.M)
    or "return _seat_point.global_transform" not in rs_fn.get("get_seat_transform", "") \
    or not re.search(r"_occupied = occupied\s*$", rs_fn.get("set_occupied", "")) or rs_code.count("_occupied =") != 1 \
    or re.search(r"monitorable\s*=", rs_code):
-    err(f"{RS_GD}: RestSpot extends Interactable with exactly the preset exports (distance 7–15 m, framing offset within "
-        f"2.5 m, ease times 1–2 s), persistent, in the rest_spot group; interact() refuses and no verb is offered while "
+    err(f"{RS_GD}: RestSpot extends Interactable with exactly the preset exports (seated start 8 m inside a seated zoom range "
+        f"of 7–10 m and a seated yaw limit of 45° — D-62 —, framing offset within 2.5 m, ease times 1–2 s), persistent, in the rest_spot group; interact() refuses and no verb is offered while "
         f"occupied, otherwise it only asks to be sat on; occupied only through set_occupied(), which never touches "
         f"availability — the occupied seat stays tappable so the Player can ignore it (D-48, D-49, D3, D-56)")
 m = re.search(r"\b(PointsManager|Wallet|Market|Inventory|DiscoveryManager|DiscoveryDatabase|JournalManager|CollectionManager|"
@@ -3853,7 +3900,12 @@ if seated_setters != ["_finish_navigation"] \
    or not re.search(r"if _animation_state == AnimState\.SEATED:\s*return\s*_start_navigation\(destination\)", pl_seat["_on_move_target_requested"]) \
    or not re.search(r"stand\(\)\s*_stop_navigation\(\)", pl_seat["_on_stop_requested"]) \
    or not re.search(r"if target == _seat_source and \(_seat_pending or _animation_state == AnimState\.SEATED\):\s*return\s*stand\(\)\s*if _nearby_interactables\.has\(target\):", pl_seat["_on_interact_target_requested"]) \
-   or not re.search(r"if direction != Vector3\.ZERO:\s*_stop_navigation\(\)\s*stand\(\)", pl_seat["_physics_process"]) \
+   or not re.search(r"var direction := Vector3\.ZERO\s*if _animation_state != AnimState\.SEATED and not _movement_locked:\s*"
+                    r"direction = _shape_input\(InputManager\.move_vector\)\s*if direction != Vector3\.ZERO:\s*_stop_navigation\(\)\s*"
+                    r"elif _navigating:", pl_seat["_physics_process"]) \
+   or code_only(pl_src).count("InputManager.move_vector") != 1 \
+   or not re.search(r"func set_movement_locked\(locked: bool\) -> void:\s*_movement_locked = locked\s*$", code_only(func_body(pl_src, "set_movement_locked") or "")) \
+   or code_only(pl_src).count("_movement_locked =") != 1 or "var _movement_locked: bool = false" not in pl_src \
    or not re.search(r"global_position = spot\.origin\s*stand\(\)", pl_seat["place_at"]) \
    or "_animation_state == AnimState.SEATED" not in pl_seat["_update_movement_animation_state"] \
    or not re.search(r"_release_interaction_target\(\)\s*if _animation_state == AnimState\.SEATED:\s*return", pl_seat["_end_interaction"]) \
@@ -3861,20 +3913,42 @@ if seated_setters != ["_finish_navigation"] \
    or re.search(r"\b(RestSpot|FollowCamera|GameHUD|HUD|set_quiet|settle|SaveManager|GameState)\b", code_only(pl_src)):
     err(f"{PL}: the generic seated state (D-57): sit() walks there with the ordinary navigation (a repeat from the same source "
         f"changes nothing) and SEATED begins only on arriving within SEAT_ARRIVAL_TOLERANCE; stand() ends it; joystick/keyboard "
-        f"movement, tapping the player, another object and place_at stand; a ground tap, or a tap on the seat being walked to or "
+        f"movement is ignored while seated or while set_movement_locked() holds it (D-62) — it never stands — and otherwise wins over a walk; "
+        f"tapping the player, another object and place_at stand; a ground tap, or a tap on the seat being walked to or "
         f"sat on, is ignored; any other end of the walk gives the sit up; the Player knows no rest spot, camera, HUD or save (D-56, D3)")
 # The settle transaction (D-49, D1) in the camera, routed by Main.
-cam_fn = {fn: code_only(func_body(cam_src, fn) or "") for fn in ("settle", "release", "_ease_to", "_finish_ease", "zoom_by")}
-if not re.search(r"func zoom_by\(factor: float\) -> void:\s*if _settle_active:\s*return", cam_fn["zoom_by"]) \
-   or not re.search(r"if not _settle_active:\s*_settle_active = true\s*_base_distance = get_zoom_distance\(\)\s*_base_offset = Vector2\(_camera\.h_offset, _camera\.v_offset\)\s*_ease_to\(distance, framing_offset, seconds, false\)", cam_fn["settle"]) \
+cam_fn = {fn: code_only(func_body(cam_src, fn) or "") for fn in ("settle", "release", "_ease_to", "_finish_ease", "zoom_by", "_zoom_seated")}
+if not re.search(r"func zoom_by\(factor: float\) -> void:\s*if _settle_active:\s*_zoom_seated\(factor\)\s*return", cam_fn["zoom_by"]) \
+   or not re.search(r"func _zoom_seated\(factor: float\) -> void:\s*if _settle_tween != null or _spring_arm == null or not is_finite\(factor\) or factor <= 0\.0:\s*return\s*"
+                    r"set_zoom_distance\(clampf\(_spring_arm\.spring_length \* factor, _settle_zoom_range\.x, _settle_zoom_range\.y\)\)\s*$", cam_fn["_zoom_seated"]) \
+   or [fn for fn in re.findall(r"^func (\w+)\(", cam_src, re.M) if "_zoom_seated(" in code_only(func_body(cam_src, fn) or "").split("\n", 1)[-1]] != ["zoom_by"] \
+   or not re.search(r"func settle\(distance: float, framing_offset: Vector2, zoom_range: Vector2, yaw_limit_degrees: float, seconds: float\) -> void:", cam_fn["settle"]) \
+   or not re.search(r"if not _settle_active:\s*_settle_active = true\s*_base_distance = get_zoom_distance\(\)\s*_base_offset = Vector2\(_camera\.h_offset, _camera\.v_offset\)\s*"
+                    r"_base_yaw = rotation\.y\s*_settle_zoom_range = zoom_range\s*_settle_yaw_limit = deg_to_rad\(yaw_limit_degrees\)\s*"
+                    r"_ease_to\(distance, framing_offset, seconds, false\)", cam_fn["settle"]) \
+   or "_settle_tween.tween_method(_set_yaw, rotation.y, _base_yaw, seconds)" not in cam_fn["_ease_to"] \
+   or not re.search(r"_camera\.v_offset = framing_offset\.y\s*_set_yaw\(_base_yaw\)\s*if ending:", cam_fn["_finish_ease"]) \
+   or not re.search(r"func yaw_by\(drag: Vector2\) -> void:\s*if not _settle_active or _settle_tween != null or not drag\.is_finite\(\):\s*return\s*"
+                    r"var turn := clampf\(rotation\.y - _base_yaw \+ deg_to_rad\(drag\.x \* SEATED_YAW_DEGREES_PER_PIXEL\), -_settle_yaw_limit, _settle_yaw_limit\)\s*"
+                    r"_set_yaw\(_base_yaw \+ turn\)\s*$", code_only(func_body(cam_src, "yaw_by") or "")) \
+   or not re.search(r"func _set_yaw\(yaw: float\) -> void:\s*rotation\.y = yaw\s*$", code_only(func_body(cam_src, "_set_yaw") or "")) \
+   or [fn for fn in re.findall(r"^func (\w+)\(", cam_src, re.M) if re.search(r"\brotation\w*(\.\w+)?\s*=[^=]|rotate\w*\(|look_at\(|\bbasis\s*=|\btransform\s*=", code_only(func_body(cam_src, fn) or ""))] != ["_set_yaw"] \
+   or code_only(cam_src).count("_base_yaw =") != 1 or code_only(cam_src).count("_settle_yaw_limit =") != 1 \
+   or not 0.0 < (const_val(cam_src, "SEATED_YAW_DEGREES_PER_PIXEL") or 0) <= 0.5 \
+   or code_only(cam_src).count("_settle_zoom_range =") != 1 \
    or not re.search(r"if not _settle_active:\s*return\s*_ease_to\(_base_distance, _base_offset, seconds, true\)", cam_fn["release"]) \
    or "tween_method(set_zoom_distance, get_zoom_distance(), distance, seconds)" not in cam_fn["_ease_to"] \
    or "_settle_tween.kill()" not in cam_fn["_ease_to"] \
-   or not re.search(r"set_zoom_distance\(distance\)\s*_camera\.h_offset = framing_offset\.x\s*_camera\.v_offset = framing_offset\.y\s*if ending:\s*_settle_active = false", cam_fn["_finish_ease"]) \
+   or not re.search(r"set_zoom_distance\(distance\)\s*_camera\.h_offset = framing_offset\.x\s*_camera\.v_offset = framing_offset\.y\s*_set_yaw\(_base_yaw\)\s*if ending:\s*_settle_active = false\s*settle_ended\.emit\(\)\s*$", cam_fn["_finish_ease"]) \
+   or code_only(cam_src).count("settle_ended.emit(") != 1 or not re.search(r"^signal settle_ended$", cam_src, re.M) \
    or sorted(fn for fn in re.findall(r"^func (\w+)\(", cam_src, re.M) if re.search(r"_base_distance =|_base_offset =", code_only(func_body(cam_src, fn) or ""))) != ["settle"] \
    or re.search(r"\brotation\w*\s*=|rotate\w*\(|look_at\(|\bbasis\s*=|projection|PROJECTION_ORTHOGONAL|\bfov\s*=", "\n".join(cam_fn.values())):
     err(f"{CAM_GD}: the settle transaction (D-49, D1): base captured only when one starts, eased distance through set_zoom_distance() "
-        f"and the existing h/v offset, exact end values, release restores the base, pinch/wheel ignored while it lasts; nothing rotates")
+        f"and the existing h/v offset, exact end values, release restores the base, pinch/wheel ignored while it lasts; nothing rotates; "
+        f"settle_ended is announced once, only when a release has finished (D-62); seated pinch/wheel (D-62 R2) is ignored while "
+        f"an ease runs and otherwise clamped to the range settle() was given, never touching the base; seated yaw (D-62 R3) is "
+        f"the node's rotation.y, written only by _set_yaw(), turned by yaw_by() only between the eases and within the limit "
+        f"settle() was given of the base yaw captured once; every settle and release eases it back to that base, exactly at the end")
 off_writers = sorted({f for f, s2 in scripts.items() if re.search(r"\b[hv]_offset\s*=|\"[hv]_offset\"", code_only(s2))})
 if off_writers != [CAM_GD]:
     err(f"the camera's screen-space framing offset is written only by FollowCamera (found {off_writers})")
@@ -3885,13 +3959,19 @@ quiet_calls = sorted({(f, fn) for f, s2 in scripts.items() if f != "scripts/ui/h
 if settle_calls != [(MAIN_GD, "_on_player_state_changed"), (MAIN_GD, "_on_seat_ended"), (MAIN_GD, "_swap_area")] \
    or quiet_calls != [(MAIN_GD, "_on_player_state_changed"), (MAIN_GD, "_on_seat_ended")] \
    or "follow_camera.release(0.0)" not in code_only(func_body(main_src, "_swap_area") or "") \
+   or "follow_camera.settle(_rest_spot.settle_distance, _rest_spot.framing_offset, _rest_spot.seated_zoom_range, _rest_spot.seated_yaw_limit_degrees, _rest_spot.settle_seconds)" \
+      not in code_only(func_body(main_src, "_on_player_state_changed") or "") \
    or not all(k in code_only(func_body(main_src, "_connect_rest_spots") or "") for k in ("get_nodes_in_group(RestSpot.GROUP)", "in_area.is_ancestor_of(rest_spot)", "is_connected(_on_sit_requested)")) \
    or sorted(fn for fn in re.findall(r"^func (\w+)\(", main_src, re.M) if "_connect_rest_spots(area)" in code_only(func_body(main_src, fn) or "")) != ["_ready", "_swap_area"] \
    or not re.search(r"player\.sit\(rest_spot\.get_seat_transform\(\), rest_spot\)\s*_rest_spot = rest_spot", code_only(func_body(main_src, "_on_sit_requested") or "")):
     err(f"{MAIN_GD}: Main routes rest spots: connects each area's RestSpots once, walks the player there with sit(), settles the "
-        f"camera and quiets the HUD when SEATED begins, releases both when seated time ends, releases instantly on an area swap (E1)")
-main_seat = "\n".join(code_only(func_body(main_src, fn) or "") for fn in ("_connect_rest_spots", "_on_sit_requested", "_on_player_state_changed", "_on_seat_ended"))
-m = re.search(r"\b(" + "|".join(AUTOLOADS) + r")\b", main_seat)
+        f"camera with the spot's own preset (distance, framing, seated zoom range — D-62 R2 —, seated yaw limit — R3 — and ease time) and quiets the HUD "
+        f"when SEATED begins, releases both when seated time ends, releases instantly on an area swap (E1)")
+main_seat = "\n".join(code_only(func_body(main_src, fn) or "") for fn in ("_connect_rest_spots", "_on_sit_requested", "_on_player_state_changed", "_on_seat_ended",
+                                                                         "_on_stand_up_requested", "_on_camera_released"))
+# D-62 R3: the one input call the routing makes is turning the joystick off while seated and back on with movement.
+# D-62 R4: and the seated ambience — faded in on sitting and out on standing (it rewards, saves and announces nothing).
+m = re.search(r"\b(" + "|".join(AUTOLOADS) + r")\b", re.sub(r"InputManager\.set_joystick_enabled\((true|false)\)|AmbientAudioManager\.(start|stop)_rest_ambience\(\)", "", main_seat))
 if m:
     err(f"{MAIN_GD}: '{m.group(0)}' in the rest-spot routing — sitting rewards, saves and announces nothing (D-48)")
 hq = code_only(func_body(scripts.get("scripts/ui/hud.gd", ""), "set_quiet") or "")
@@ -3900,9 +3980,104 @@ if not re.search(r"var quieted: Array\[Control\] = \[top_bar, screen_buttons\]",
    or '@onready var top_bar: Control = $TopArea/TopColumn/TopBar' not in scripts.get("scripts/ui/hud.gd", ""):
     err("scripts/ui/hud.gd: set_quiet() quiets only the top bar (Movement toggle included, D2) and the thumb buttons, which stop "
         "taking touches; the joystick, notifications and screens are untouched (D-56)")
+# Rest Mode controls (D-62, R1): who locks movement, hides the joystick and shows Stand Up, and when they come back.
+HUD_GD, HUD_TSCN = "scripts/ui/hud.gd", "scenes/ui/HUD.tscn"
+hud_src = scripts.get(HUD_GD, "")
+def _callers(pattern, exclude=()):  # every (file, function, captured argument) matching `pattern`, outside `exclude`
+    return sorted({(f, fn, arg) for f, s2 in scripts.items() if f not in exclude for fn in re.findall(r"^func (\w+)\(", s2, re.M)
+                   for arg in re.findall(pattern, code_only(func_body(s2, fn) or ""))})
+mf = {fn: code_only(func_body(main_src, fn) or "") for fn in ("_ready", "_on_player_state_changed", "_on_seat_ended", "_on_stand_up_requested", "_on_camera_released")}
+if _callers(r"\bset_movement_locked\((\w+)\)", (PL,)) != [(MAIN_GD, "_on_camera_released", "false"), (MAIN_GD, "_on_player_state_changed", "true")] \
+   or _callers(r"\.set_movement_control_suppressed\((\w+)\)", (HUD_GD,)) != [(MAIN_GD, "_on_camera_released", "false"), (MAIN_GD, "_on_player_state_changed", "true")] \
+   or _callers(r"\.set_stand_up_visible\((\w+)\)", (HUD_GD,)) != [(MAIN_GD, "_on_player_state_changed", "true"), (MAIN_GD, "_on_seat_ended", "false")] \
+   or _callers(r"(?<!func )\b(_on_camera_released)\(\)") \
+   or [f for f, s2 in scripts.items() if re.search(r"\bplayer\.stand\(", code_only(s2))] != [MAIN_GD] \
+   or not re.search(r"func _on_stand_up_requested\(\) -> void:\s*player\.stand\(\)\s*$", mf["_on_stand_up_requested"]) \
+   or not re.search(r"func _on_camera_released\(\) -> void:\s*player\.set_movement_locked\(false\)\s*hud\.set_movement_control_suppressed\(false\)\s*"
+                    r"InputManager\.set_joystick_enabled\(true\)\s*$", mf["_on_camera_released"]) \
+   or _callers(r"\bset_joystick_enabled\((\w+)\)", (IM,)) != [(MAIN_GD, "_on_camera_released", "true"), (MAIN_GD, "_on_player_state_changed", "false")] \
+   or "InputManager.world_dragged.connect(follow_camera.yaw_by)" not in mf["_ready"] \
+   or [f for f, s2 in scripts.items() if re.search(r"\byaw_by\b", code_only(s2)) and f != CAM_GD] != [MAIN_GD] or code_only(main_src).count("yaw_by") != 1 \
+   or [f for f, s2 in scripts.items() if "world_dragged.emit(" in code_only(s2)] != [IM] \
+   or "follow_camera.settle_ended.connect(_on_camera_released)" not in mf["_ready"] or "hud.stand_up_requested.connect(_on_stand_up_requested)" not in mf["_ready"] \
+   or not re.search(r"hud\.set_quiet\(true\)\s*player\.set_movement_locked\(true\)\s*hud\.set_movement_control_suppressed\(true\)\s*"
+                    r"InputManager\.set_joystick_enabled\(false\)\s*hud\.set_stand_up_visible\(true\)\s*hud\.set_mute_visible\(true\)\s*"
+                    r"AmbientAudioManager\.start_rest_ambience\(\)\s*$", mf["_on_player_state_changed"]) \
+   or not re.search(r"if was_seated:\s*follow_camera\.release\(rest_spot\.release_seconds\)\s*hud\.set_quiet\(false\)\s*hud\.set_stand_up_visible\(false\)\s*"
+                    r"hud\.set_mute_visible\(false\)\s*AmbientAudioManager\.stop_rest_ambience\(\)\s*rest_spot\.set_occupied\(false\)\s*$", mf["_on_seat_ended"]) \
+   or len(re.findall(r"\bsettle_ended\b", "\n".join(code_only(s2) for f, s2 in scripts.items() if f != CAM_GD))) != 1:
+    err(f"{MAIN_GD}: Rest Mode controls (D-62): only Main locks movement, hides the joystick and shows Stand Up when SEATED begins; "
+        f"Stand Up hides when seated time ends; the Stand Up button only calls player.stand(); movement and the joystick come back "
+        f"only from _on_camera_released, connected to FollowCamera.settle_ended and called by nothing else (an area swap's "
+        f"release(0.0) announces it at once); the joystick is turned off (InputManager) for exactly that span and InputManager's "
+        f"world drags reach the camera's yaw_by() once, from _ready (D-62 R3); "
+        f"release(0.0) announces it at once)")
+hud_tscn = open(HUD_TSCN, encoding="utf-8").read() if os.path.exists(HUD_TSCN) else ""
+sub = re.search(r'^\[node name="StandUpButton" type="Button" parent="\."\]\n((?:[^\[\n].*\n)*)', hud_tscn, re.M)
+sub_props = dict(re.findall(r"^(\S+) = (.+)$", sub.group(1), re.M)) if sub else {}
+sub_size = re.fullmatch(r"Vector2\((\d+), (\d+)\)", sub_props.get("custom_minimum_size", ""))
+hfn = {fn: code_only(func_body(hud_src, fn) or "") for fn in ("_on_movement_mode_changed", "set_stand_up_visible", "set_movement_control_suppressed", "_on_stand_up_button_pressed", "_ready")}
+if not sub or sub_props.get("visible") != "false" or sub_props.get("theme_type_variation") != '&"HudButton"' \
+   or sub_props.get("theme") != 'ExtResource("9")' or not sub_size or min(int(sub_size.group(1)), int(sub_size.group(2))) < 120 \
+   or len(re.findall(r'name="StandUpButton"', hud_tscn)) != 1 \
+   or "@onready var stand_up_button: Button = $StandUpButton" not in hud_src or not re.search(r"^signal stand_up_requested$", hud_src, re.M) \
+   or "stand_up_button.pressed.connect(_on_stand_up_button_pressed)" not in hfn["_ready"] \
+   or not re.search(r"stand_up_requested\.emit\(\)\s*$", hfn["_on_stand_up_button_pressed"]) or code_only(hud_src).count("stand_up_requested.emit(") != 1 \
+   or not re.search(r"func set_stand_up_visible\(shown: bool\) -> void:\s*stand_up_button\.visible = shown\s*$", hfn["set_stand_up_visible"]) \
+   or code_only(hud_src).count("stand_up_button.visible") != 1 \
+   or not re.search(r"_movement_control_suppressed = suppressed\s*_on_movement_mode_changed\(InputManager\.movement_mode\)\s*$", hfn["set_movement_control_suppressed"]) \
+   or "mobile_controls.visible = not tap and not _movement_control_suppressed" not in hfn["_on_movement_mode_changed"] \
+   or code_only(hud_src).count("mobile_controls.visible") != 1 or code_only(hud_src).count("_movement_control_suppressed =") != 1 \
+   or re.search(r"stand_up|StandUp", hq):
+    err(f"{HUD_GD}/{HUD_TSCN}: the Stand Up button (D-62) is one hidden HudButton (>= 120 px, the shared theme) directly under the "
+        f"HUD — outside the quieted top bar and thumb buttons — shown only by set_stand_up_visible(), and it only asks "
+        f"(stand_up_requested); the joystick is hidden while suppressed, whatever the movement mode")
+# Rest ambience and session-only mute (D-62, R4): Main fades AmbientAudioManager's rest ambience in when SEATED begins and
+# out when seated time ends; one dedicated player, so sitting again mid-fade never starts a second playback; the HUD's
+# MuteButton (beside Stand Up, outside the quieted groups) is the only mute, and the mute lives in AmbientAudioManager for
+# the session only — no save, settings or migration code knows it. The placeholder is generated in code: no audio assets.
+AAM_GD = "scripts/autoload/ambient_audio_manager.gd"
+aam_src = scripts.get(AAM_GD, "")
+aam_fn = {fn: code_only(func_body(aam_src, fn) or "") for fn in ("start_rest_ambience", "stop_rest_ambience", "set_rest_ambience_muted",
+                                                                 "is_rest_ambience_muted", "_fade_rest", "_placeholder_rest_ambience")}
+mute_tscn = re.search(r'^\[node name="MuteButton" type="Button" parent="\."\]\n((?:[^\[\n].*\n)*)', hud_tscn, re.M)
+mute_props = dict(re.findall(r"^(\S+) = (.+)$", mute_tscn.group(1), re.M)) if mute_tscn else {}
+mute_size = re.fullmatch(r"Vector2\((\d+), (\d+)\)", mute_props.get("custom_minimum_size", ""))
+persist_files = [f for f in scripts if re.search(r"save_manager\.gd$|game_state\.gd$", f)] + [IM]
+def _aam_db(name):  # the dB constants are negative (const_val reads only unsigned values)
+    m = re.search(rf"^const {name} := (-?[0-9.]+)$", aam_src, re.M)
+    return float(m.group(1)) if m else float("nan")
+if _callers(r"\bAmbientAudioManager\.(start_rest_ambience|stop_rest_ambience)\(\)") != [(MAIN_GD, "_on_player_state_changed", "start_rest_ambience"), (MAIN_GD, "_on_seat_ended", "stop_rest_ambience")] \
+   or _callers(r"\b(set_rest_ambience_muted)\(", (AAM_GD,)) != [(HUD_GD, "_on_mute_button_pressed", "set_rest_ambience_muted")] \
+   or _callers(r"\.set_mute_visible\((\w+)\)", (HUD_GD,)) != [(MAIN_GD, "_on_player_state_changed", "true"), (MAIN_GD, "_on_seat_ended", "false")] \
+   or not re.search(r"_rest_active = true\s*if not _rest_player\.playing:\s*_rest_player\.stream = rest_ambience if rest_ambience != null else _placeholder_rest_ambience\(\)\s*"
+                    r"_rest_player\.volume_db = REST_SILENT_DB\s*_rest_player\.play\(\)\s*_fade_rest\(REST_FADE_IN_SECONDS\)\s*$", aam_fn["start_rest_ambience"]) \
+   or not re.search(r"if not _rest_active:\s*return\s*_rest_active = false\s*_fade_rest\(REST_FADE_OUT_SECONDS\)\s*$", aam_fn["stop_rest_ambience"]) \
+   or not re.search(r"_rest_muted = muted\s*if _rest_active:\s*_fade_rest\(REST_MUTE_FADE_SECONDS\)\s*$", aam_fn["set_rest_ambience_muted"]) \
+   or not re.search(r"if _rest_tween != null:\s*_rest_tween\.kill\(\)\s*var audible := _rest_active and not _rest_muted\s*_rest_tween = create_tween\(\)\s*"
+                    r"_rest_tween\.tween_property\(_rest_player, \"volume_db\", REST_AMBIENCE_DB if audible else REST_SILENT_DB, seconds\)\s*"
+                    r"if not _rest_active:\s*_rest_tween\.tween_callback\(_rest_player\.stop\)\s*$", aam_fn["_fade_rest"]) \
+   or code_only(aam_src).count("_rest_player.play()") != 1 or code_only(aam_src).count("_rest_muted =") != 1 or code_only(aam_src).count("_rest_active =") != 2 \
+   or "@export var rest_ambience: AudioStream" not in aam_src or "var _rest_muted: bool = false" not in aam_src \
+   or not (-60.0 <= _aam_db("REST_SILENT_DB") < _aam_db("REST_AMBIENCE_DB") <= 0.0) \
+   or not all(0.0 < (const_val(aam_src, k) or 0) <= 3.0 for k in ("REST_FADE_IN_SECONDS", "REST_FADE_OUT_SECONDS", "REST_MUTE_FADE_SECONDS")) \
+   or re.search(r"\b(SaveManager|GameState|get_settings_data|apply_settings_data|FileAccess|ConfigFile|user://)", code_only(aam_src)) \
+   or [f for f in persist_files if re.search(r"mute|rest_ambience|_rest_", code_only(scripts.get(f, "")), re.I)] \
+   or [f for f in subprocess.run(["git", "ls-files", "-co", "--exclude-standard"], capture_output=True, text=True).stdout.split() if re.search(r"\.(ogg|wav|mp3|opus|flac)$", f, re.I)] \
+   or not mute_tscn or mute_props.get("visible") != "false" or mute_props.get("theme_type_variation") != '&"HudButton"' or mute_props.get("theme") != 'ExtResource("9")' \
+   or not mute_size or min(int(mute_size.group(1)), int(mute_size.group(2))) < 120 or len(re.findall(r'name="MuteButton"', hud_tscn)) != 1 \
+   or "@onready var mute_button: Button = $MuteButton" not in hud_src or "mute_button.pressed.connect(_on_mute_button_pressed)" not in hfn["_ready"] \
+   or not re.search(r"func set_mute_visible\(shown: bool\) -> void:\s*mute_button\.visible = shown\s*_update_mute_button\(\)\s*$", code_only(func_body(hud_src, "set_mute_visible") or "")) \
+   or not re.search(r"AmbientAudioManager\.set_rest_ambience_muted\(not AmbientAudioManager\.is_rest_ambience_muted\(\)\)\s*_update_mute_button\(\)\s*$", code_only(func_body(hud_src, "_on_mute_button_pressed") or "")) \
+   or code_only(hud_src).count("mute_button.visible") != 1 or re.search(r"mute", hq):
+    err(f"{AAM_GD}/{MAIN_GD}/{HUD_GD}: the rest ambience (D-62 R4): only Main fades it in when SEATED begins and out when seated time "
+        f"ends; one dedicated player, never a second playback; the HUD's MuteButton (one hidden HudButton >= 120 px under the HUD, "
+        f"outside the quieted groups, shown by Main only while seated) is the only mute, which lives for the session in "
+        f"AmbientAudioManager — no save, settings or file code knows it; the placeholder is generated in code (no audio assets)")
 notes.append(f"rest spot (E1): RestSpot offers USE; preset {rs_vals.get('settle_distance')} m, offset {rs_vals.get('framing_offset')}, "
-             f"{rs_vals.get('settle_seconds')} / {rs_vals.get('release_seconds')} s; 1 instance under PeacefulPlaces; Player SEATED "
-             f"via sit()/stand(); camera settle transaction; HUD quiet; no reward, save or audio")
+             f"seated pinch {rs_vals.get('seated_zoom_range')}, seated yaw ±{rs_vals.get('seated_yaw_limit_degrees')}°, {rs_vals.get('settle_seconds')} / {rs_vals.get('release_seconds')} s; 1 instance under PeacefulPlaces; Player SEATED "
+             f"via sit()/stand(); camera settle transaction; HUD quiet; seated movement locked until the camera restores, joystick "
+             f"hidden, Stand Up button (D-62); seated ambience with fades and a session-only mute (R4); no reward or save")
 
 # ------------------------------------------------------------ floating joystick (D-58)
 # The joystick owns no screen area: InputManager alone decides which finger is the joystick's — a lone finger that lands on
@@ -3919,7 +4094,7 @@ im_fn = {fn: code_only(func_body(im_src, fn) or "") for fn in ("_unhandled_input
 if "const JOYSTICK_ZONE_FRACTION := 0.5" not in im_src or "const NO_TOUCH := -1" not in im_src \
    or not all(re.search(rf"^signal {sg}$", im_src, re.M) for sg in (r"joystick_started\(origin: Vector2, position: Vector2\)",
                                                                    r"joystick_moved\(position: Vector2\)", "joystick_ended")) \
-   or not re.search(r"if movement_mode != MovementMode\.JOYSTICK or _joystick_index != NO_TOUCH:\s*return\s*"
+   or not re.search(r"if movement_mode != MovementMode\.JOYSTICK or _joystick_index != NO_TOUCH or not _joystick_enabled:\s*return\s*"
                     r"if screen_position\.x < get_viewport\(\)\.get_visible_rect\(\)\.size\.x \* JOYSTICK_ZONE_FRACTION:\s*"
                     r"_joystick_candidate = index\s*_joystick_origin = screen_position", im_fn["_track_joystick_candidate"]) \
    or not re.search(r"_joystick_candidate = NO_TOUCH\s*_joystick_index = index\s*_tap_starts\.erase\(index\)\s*_world_touches\.erase\(index\)\s*"
@@ -3928,13 +4103,23 @@ if "const JOYSTICK_ZONE_FRACTION := 0.5" not in im_src or "const NO_TOUCH := -1"
    or not re.search(r"if touch\.index == _joystick_index:\s*_end_joystick\(\)\s*if not touch\.pressed:\s*return\s*_track_touch\(", im_fn["_unhandled_input"]) \
    or not re.search(r"if drag\.index == _joystick_index:\s*joystick_moved\.emit\(drag\.position\)\s*"
                     r"elif drag\.index == _joystick_candidate and drag\.position\.distance_to\(_joystick_origin\) > TAP_MAX_MOVE:\s*"
-                    r"_start_joystick\(drag\.index, drag\.position\)\s*else:\s*_track_pinch\(drag\.index, drag\.position\)", im_fn["_unhandled_input"]) \
+                    r"_start_joystick\(drag\.index, drag\.position\)\s*else:\s*_track_drag\(drag\.index, drag\.position\)\s*_track_pinch\(drag\.index, drag\.position\)", im_fn["_unhandled_input"]) \
+   or not re.search(r"func set_joystick_enabled\(enabled: bool\) -> void:\s*_joystick_enabled = enabled\s*if not enabled:\s*_end_joystick\(\)\s*$", code_only(func_body(im_src, "set_joystick_enabled") or "")) \
+   or not re.search(r"if _world_touches\.size\(\) != 1 or not _world_touches\.has\(index\):\s*return\s*if index != _drag_index:\s*"
+                    r"if not _tap_starts\.has\(index\) or screen_position\.distance_to\(_tap_starts\[index\]\[0\]\) <= TAP_MAX_MOVE:\s*return\s*"
+                    r"_drag_index = index\s*if not _joystick_enabled:\s*_tap_starts\.erase\(index\)\s*"
+                    r"var previous: Vector2 = _world_touches\[index\]\s*world_dragged\.emit\(screen_position - previous\)\s*$", code_only(func_body(im_src, "_track_drag") or "")) \
+   or not re.search(r"_pinch_distance = _two_finger_distance\(\)\s*if index == _drag_index or _world_touches\.size\(\) != 1:\s*_drag_index = NO_TOUCH\s*$", code_only(func_body(im_src, "_track_touch") or "")) \
+   or sorted(fn for fn in re.findall(r"^func (\w+)\(", im_src, re.M) if "_drag_index =" in code_only(func_body(im_src, fn) or "")) != ["_track_drag", "_track_touch"] \
+   or code_only(im_src).count("_joystick_enabled =") != 1 \
    or "_end_joystick()" not in im_fn["set_movement_mode"] or "_end_joystick()" not in im_fn["_notification"] \
    or re.search(r"joystick", im_fn["_handle_tap"]) \
    or sorted(fn for fn in re.findall(r"^func (\w+)\(", im_src, re.M) if "joystick_started.emit" in (func_body(im_src, fn) or "")) != ["_start_joystick"]:
     err(f"{IM}: the floating joystick (D-58): a lone finger on the left half in Joystick mode becomes the joystick only after "
         f"dragging past TAP_MAX_MOVE, and is then no tap or pinch finger; two fingers first make a pinch; mode switch, focus loss "
-        f"or a new press on its index end it; tap routing knows nothing of it")
+        f"or a new press on its index end it; tap routing knows nothing of it; while turned off (seated, D-62 R3) no finger becomes "
+        f"the joystick and a lone world finger past a tap is reported as world_dragged until it lifts — seated, never a tap (R3 "
+        f"input audit) — and the drag is forgotten when its finger is pressed or lifted or the finger count changes")
 joy_wiring = sorted({f for f, s2 in scripts.items() if re.search(r"joystick_(started|moved|ended)\.connect", s2)})
 if re.search(r"func _(gui_input|input|unhandled_input|unhandled_key_input)\(", joy_src) \
    or not all(f"InputManager.{sg}.connect(" in joy_code for sg in ("joystick_started", "joystick_moved", "joystick_ended")) \
@@ -4253,6 +4438,41 @@ for mid, shader in D61_MATERIALS.items():
 for b in d61_bad:
     err(f"organic ground and paths (B0.1, D-61): {b}")
 notes.append("organic ground and paths (B0.1): Meadow.tscn equals 3f2cfaf except Material_ground/Material_path (opaque shader materials)")
+
+# ------------------------------------------------------------ discovery collection (P0.1)
+# A walk-to-collect runs DiscoveryInteractable.interact() inside the InteractionZone's area_entered signal, where Godot
+# blocks a direct monitorable write ("Function blocked during in/out signal") and the discovery stayed tappable while
+# animating away. The switch-off is deferred, and an explicit guard refuses every further interact() from the start of
+# a one-shot collect (claimed before discover() runs, released only if it fails) — whoever calls it. Behaviour is
+# checked in real Godot by tools/fixtures/run_collect_check.sh.
+DI = "scripts/interactables/discovery_interactable.gd"
+di_src = scripts.get(DI, "")
+di_bad = []
+if re.search(r"^\s*monitorable\s*=", code_only(di_src), re.M):
+    di_bad.append("writes monitorable directly — use set_deferred(\"monitorable\", false) (interact() can run inside a physics signal)")
+if 'set_deferred("monitorable", false)' not in (func_body(di_src, "_play_harvest_feedback") or ""):
+    di_bad.append("_play_harvest_feedback() must switch availability off with set_deferred(\"monitorable\", false)")
+di_int = func_body(di_src, "interact") or ""
+if not re.match(r"func interact\(\) -> bool:\s*if _collecting:\s*return false\s", di_int) \
+   or not re.search(r"_collecting = remove_on_harvest\s*var success := DiscoveryManager\.discover\(discovery_id\)\s*if not success:\s*_collecting = false\s*return false", di_int):
+    di_bad.append("interact() must refuse while _collecting, and claim it (= remove_on_harvest) before discover(), releasing it only on failure")
+if not re.search(r"^var _collecting: bool = false$", di_src, re.M):
+    di_bad.append("the collection-in-progress guard (var _collecting: bool = false) is missing")
+for b in di_bad:
+    err(f"discovery collection (P0.1): {DI}: {b}")
+# P0.1b: the farm plot's harvest has the same path (a walk-up harvest inside area_entered). Its switch-off is deferred;
+# _is_harvesting already refuses a second harvest. Availability returns at the end through the same deferred queue
+# (set_deferred("monitorable", unlocked)), so it always lands after the switch-off — even if the sequence runs in one
+# frame (no crop visual to await): a direct final write would be overtaken by the queued switch-off.
+FP = "scripts/farming/farm_plot.gd"
+fp_harvest = func_body(scripts.get(FP, ""), "_run_harvest_sequence") or ""
+fp_code = code_only(fp_harvest)
+if not (0 <= fp_code.find('set_deferred("monitorable", false)') < fp_code.find("await")) \
+   or re.search(r"\bmonitorable\s*=", fp_code) or "_is_harvesting = true" not in fp_code \
+   or not re.search(r'_reset_to_soil\(\)\s*_is_harvesting = false\s*_harvest_paid = false\s*set_deferred\("monitorable", unlocked\)\s*$', fp_code):
+    err(f"discovery collection (P0.1b): {FP}: _run_harvest_sequence() switches availability off with set_deferred(\"monitorable\", false) "
+        f"before its first await and set_deferred(\"monitorable\", unlocked) at its end (never a direct write), keeping _is_harvesting")
+notes.append("discovery collection (P0.1/P0.1b): deferred availability switch-offs (discovery, farm harvest); interact() guarded for the whole collect")
 
 # ------------------------------------------------------------ animation hook
 # One gameplay animation state (IDLE/WALK/INTERACT) in Player, derived from

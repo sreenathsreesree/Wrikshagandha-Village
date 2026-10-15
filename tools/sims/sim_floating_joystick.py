@@ -82,7 +82,7 @@ def build(S):
     IM, im_c = gd_port.translate(prepare_im(S["im"]), "InputManager", ext,
                                  ["set_move_vector", "_update_move_vector", "set_movement_mode", "set_tap_to_move", "is_tap_to_move",
                                   "_notification", "_unhandled_input", "_track_touch", "_track_pinch", "_two_finger_distance", "_track_tap",
-                                  "_track_joystick_candidate", "_start_joystick", "_end_joystick"])
+                                  "_track_joystick_candidate", "_start_joystick", "_end_joystick", "set_joystick_enabled", "_track_drag"])
     JOY, joy_c = gd_port.translate(S["joy"], "VirtualJoystick", {**ext, "InputManager": "IMI"},
                                    ["_on_visibility_changed", "_on_joystick_started", "_ring_centre", "_on_joystick_moved", "_release", "_process"])
     return dict(IM=IM, JOY=JOY, im=im_c, clock=clock, slot=slot)
@@ -99,6 +99,8 @@ class World:
         im.joystick_started.connect(lambda o, p: w.events.append(("start", (o.x, o.y), (p.x, p.y))))
         im.joystick_moved.connect(lambda p: w.events.append(("move", (p.x, p.y))))
         im.joystick_ended.connect(lambda: w.events.append(("end",)))
+        w.drags = []
+        im.world_dragged.connect(lambda r: w.drags.append((r.x, r.y)))
         w.im = im
         j = K["JOY"](); j.base, j.thumb = Ctl((160, 160)), Ctl((70, 70))
         j.shown = True
@@ -244,6 +246,47 @@ def run(S):
     w.up(0, 300 + R, 700); w.frames(240)
     if not vclose(held, 1 / math.sqrt(2), -1 / math.sqrt(2), 1e-6) or not vclose(w.mv(), 0, -1, 1e-6):
         p_.append(f"the keyboard's share combines with the joystick and survives its release ({held}, {w.mv()})")
+    # 7. world drags (D-62 R3): a lone world finger past a tap reports how far it moved; with the joystick turned off
+    # (seated) a left-half drag is one too, never the joystick; a pinch never drags; turned back on, the joystick returns
+    w = World(K); w.down(0, 1400, 600)
+    for k in range(1, 11): w.drag(0, 1400 + 10 * k, 600)
+    w.up(0, 1500, 600)
+    if sum(d[0] for d in w.drags) != 100 - 20 or any(d[1] for d in w.drags) or w.taps or w.events:
+        p_.append(f"a right-half drag past a tap reports its motion from that point on, and is no tap or joystick (drags {w.drags}, taps {w.taps})")
+    w = World(K); w.im.set_joystick_enabled(False); w.down(0, 300, 700)
+    for k in range(1, 11): w.drag(0, 300 - 8 * k, 700)
+    w.frames(60); w.up(0, 220, 700)
+    if w.events or sum(d[0] for d in w.drags) != -80 + 24 or w.mv() != V2.ZERO or w.taps:
+        p_.append(f"with the joystick off a left-half drag is a world drag, never the joystick (events {w.events}, drags {w.drags})")
+    w = World(K); w.down(0, 300, 700); w.drag(0, 300 + R, 700); w.frames(60)
+    w.im.set_joystick_enabled(False); w.frames(240)
+    if w.events[-1:] != [("end",)] or w.mv().length() > 1e-6: p_.append("turning the joystick off lets go of one held")
+    w.up(0, 300 + R, 700); w.im.set_joystick_enabled(True); w.down(1, 300, 700); w.drag(1, 300 + R, 700)
+    if len(w.starts()) != 2 or w.drags: p_.append(f"turned back on, a left-half drag is the joystick again, no world drag ({w.events}, {w.drags})")
+    w = World(K); w.down(0, 1300, 600); w.down(1, 1500, 600)
+    for k in range(1, 6): w.drag(1, 1500 + 20 * k, 600)
+    for k in range(1, 6): w.drag(0, 1300 - 20 * k, 600)
+    if w.drags or not w.zooms: p_.append(f"two fingers pinch and never drag (drags {w.drags}, zooms {len(w.zooms)})")
+    w.up(1, 1600, 600); w.drag(0, 1150, 600)
+    if w.drags: p_.append(f"the finger left after a pinch does not drag ({w.drags})")
+    # R3 input audit: a quick look-around that comes back near where it began, released at once, is a drag — its way back
+    # reported too, so the view ends turned by the net motion — and, seated (joystick off), never a tap; standing, as before
+    for seated in (True, False):
+        w = World(K); w.im.set_joystick_enabled(not seated)
+        w.down(0, 1400, 600); w.wait(60); w.drag(0, 1500, 600); w.wait(60); w.drag(0, 1405, 600); w.wait(60); w.up(0, 1405, 600)
+        if sum(d[0] for d in w.drags) != 5 or w.taps != ([] if seated else [(1405.0, 600.0)]):
+            p_.append(f"a drag out and back reports its net motion and is {'no tap seated' if seated else 'a tap standing, as before'} (drags {w.drags}, taps {w.taps})")
+    # nothing stale: the drag finger's release lost, a new press on its index that only jitters is no drag (and taps)
+    w = World(K); w.im.set_joystick_enabled(False)
+    w.down(0, 1400, 600); w.drag(0, 1500, 600)                           # a drag; its release is lost ...
+    w.down(0, 1300, 500); w.wait(40); w.drag(0, 1310, 500); w.wait(40); w.up(0, 1310, 500)   # ... the next touch reuses index 0
+    if w.drags != [(100.0, 0.0)] or w.taps != [(1310.0, 500.0)]:
+        p_.append(f"after a lost release a new touch on the same index starts fresh: a jitter is no drag, a tap taps (drags {w.drags}, taps {w.taps})")
+    w = World(K); w.im.set_joystick_enabled(False)
+    w.down(0, 1400, 600); w.drag(0, 1500, 600); w.down(1, 1200, 600); w.up(1, 1200, 600); w.drag(0, 1520, 600); w.up(0, 1520, 600)
+    w.down(0, 1400, 600); w.wait(40); w.drag(0, 1410, 600); w.wait(40); w.up(0, 1410, 600)
+    if w.drags != [(100.0, 0.0)] or w.taps != [(1410.0, 600.0)]:
+        p_.append(f"a second finger ends the drag: the finger left drags no more, and the next touch starts fresh (drags {w.drags}, taps {w.taps})")
     return p_
 
 S0 = {"im": _src("scripts", "autoload", "input_manager.gd"), "joy": _src("scripts", "ui", "virtual_joystick.gd")}
@@ -258,8 +301,19 @@ MUTANTS = {
     "im: the whole screen starts it": mutate("im", "const JOYSTICK_ZONE_FRACTION := 0.5", "const JOYSTICK_ZONE_FRACTION := 1.0"),
     "im: the right half starts it": mutate("im", "if screen_position.x < get_viewport", "if screen_position.x >= get_viewport"),
     "im: starts at once (no tap reach)": mutate("im", "drag.position.distance_to(_joystick_origin) > TAP_MAX_MOVE", "drag.position.distance_to(_joystick_origin) > 0.0"),
-    "im: starts in Tap to Move too": mutate("im", "if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH:", "if _joystick_index != NO_TOUCH:"),
-    "im: a second joystick while one is held": mutate("im", "if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH:", "if movement_mode != MovementMode.JOYSTICK:"),
+    "im: starts in Tap to Move too": mutate("im", "if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH or not _joystick_enabled:", "if _joystick_index != NO_TOUCH or not _joystick_enabled:"),
+    "im: a second joystick while one is held": mutate("im", "if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH or not _joystick_enabled:", "if movement_mode != MovementMode.JOYSTICK or not _joystick_enabled:"),
+    "im: the joystick starts while turned off (D-62 R3)": mutate("im", "if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH or not _joystick_enabled:", "if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH:"),
+    "im: turning it off keeps one held": mutate("im", "\t_joystick_enabled = enabled\n\tif not enabled:\n\t\t_end_joystick()\n", "\t_joystick_enabled = enabled\n"),
+    "im: a pinch finger drags": mutate("im", "\tif _world_touches.size() != 1 or not _world_touches.has(index):", "\tif not _world_touches.has(index):"),
+    "im: no world drags": mutate("im", "\t\t\t_track_drag(drag.index, drag.position)\n", ""),
+    "im: a drag reported within a tap's reach": mutate("im", "if not _tap_starts.has(index) or screen_position.distance_to(_tap_starts[index][0]) <= TAP_MAX_MOVE:", "if not _tap_starts.has(index):"),
+    "im: a seated drag that comes back taps (before the R3 audit)": mutate("im", "\t\tif not _joystick_enabled:\n\t\t\t_tap_starts.erase(index)\n", ""),
+    "im: a drag's way back not reported": mutate("im", "\t\t_drag_index = index\n", "\t\tpass\n"),
+    "im: the drag never forgotten": mutate("im", "\tif index == _drag_index or _world_touches.size() != 1:\n\t\t_drag_index = NO_TOUCH", "\tpass"),
+    "im: the drag kept when its index is pressed again": mutate("im", "\tif index == _drag_index or _world_touches.size() != 1:", "\tif _world_touches.size() != 1:"),
+    "im: a standing drag that comes back no tap either": mutate("im", "\t\tif not _joystick_enabled:\n\t\t\t_tap_starts.erase(index)\n", "\t\t_tap_starts.erase(index)\n"),
+    "im: drags reported as positions, not motion": mutate("im", "\tvar previous: Vector2 = _world_touches[index]", "\tvar previous: Vector2 = Vector2.ZERO"),
     "im: the joystick finger stays a world finger": mutate("im", "\t_world_touches.erase(index)\n\tjoystick_started", "\tjoystick_started"),
     "im: the joystick finger keeps its tap start": mutate("im", "\t_tap_starts.erase(index)\n", ""),
     "im: a pinch keeps the candidate": mutate("im", "\t\t\t_tap_starts.clear()\n\t\t\t_joystick_candidate = NO_TOUCH\n", "\t\t\t_tap_starts.clear()\n"),
@@ -283,8 +337,11 @@ MUTANTS = {
     "joy: diagonals faster (per-axis clamp)": mutate("joy", "var offset := (screen_position - _origin).limit_length(knob_max_distance)", "var offset := (screen_position - _origin)\n\toffset = V2(clampf(offset.x, -knob_max_distance, knob_max_distance), clampf(offset.y, -knob_max_distance, knob_max_distance))"),
 }
 # Equivalent by construction (shown to change nothing observable, so not counted): no drag ever follows a release, so a
-# lifted candidate left set is never read; the joystick's finger is no world finger, so _track_pinch ignores its drags.
+# lifted candidate left set is never read; the joystick's finger is no world finger, so _track_pinch ignores its drags;
+# a second finger clears every tap start, so _track_drag's one-finger check is a redundant guard (D-62 R3).
 EQUIVALENT = {
+    "im: a pinch finger drags": mutate("im", "\tif _world_touches.size() != 1 or not _world_touches.has(index):", "\tif not _world_touches.has(index):"),
+
     "im: a lifted candidate stays one": mutate("im", "\t\tif index == _joystick_candidate:\n\t\t\t_joystick_candidate = NO_TOUCH\n", "\t\tpass\n"),
     "im: the joystick's drags also pinch": mutate("im", "\t\t\tjoystick_moved.emit(drag.position)\n", "\t\t\tjoystick_moved.emit(drag.position)\n\t\t\t_track_pinch(drag.index, drag.position)\n"),
 }

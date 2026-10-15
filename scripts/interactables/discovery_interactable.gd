@@ -34,6 +34,11 @@ signal harvested(discovery_id: String)
 @export var discovery_id: String = ""
 
 var _definition: DiscoveryDefinition
+## True from the start of a successful one-shot collect until the object is
+## freed (P0.1): it refuses every further interact() while it animates away,
+## whoever calls it — the availability switch-off in _play_harvest_feedback()
+## only takes effect at the end of the frame.
+var _collecting: bool = false
 
 func _ready() -> void:
 	_definition = DiscoveryDatabase.get_definition(discovery_id)
@@ -44,16 +49,23 @@ func _ready() -> void:
 		indicator.set_rarity(_definition.rarity)
 
 func interact() -> bool:
+	if _collecting:
+		return false
 	if discovery_id == "":
 		push_warning("Interactable: no discovery_id set on %s" % name)
 		return false
+	# A one-shot object is spoken for before anything else runs, so even a
+	# call from inside discover()'s or harvested's own signals is refused.
+	_collecting = remove_on_harvest
 	var success := DiscoveryManager.discover(discovery_id)
-	if success:
-		harvested.emit(discovery_id)
-		if remove_on_harvest:
-			await _play_harvest_feedback()
-			queue_free()
-	return success
+	if not success:
+		_collecting = false
+		return false
+	harvested.emit(discovery_id)
+	if remove_on_harvest:
+		await _play_harvest_feedback()
+		queue_free()
+	return true
 
 ## Collecting is what interact() does, and it succeeds exactly when the
 ## discovery's definition exists (see DiscoveryManager.discover()).
@@ -95,7 +107,12 @@ func _hide_indicator(indicator: DiscoveryIndicator) -> void:
 ## pop -> burst/particles/sound -> shrink away. Kept fast throughout — the
 ## windup is under a tenth of a second — so it never feels slow on mobile.
 func _play_harvest_feedback() -> void:
-	monitorable = false
+	# Unavailable (monitorable off) for the rest of its life — deferred,
+	# because a walk-to-collect runs inside the InteractionZone's area_entered
+	# signal, where Godot blocks a direct monitorable write ("Function blocked
+	# during in/out signal") and the object would stay tappable. _collecting
+	# covers the frame until the deferred write lands.
+	set_deferred("monitorable", false)
 	await _play_category_windup()
 	_play_collected_burst()
 	_spawn_harvest_particles()

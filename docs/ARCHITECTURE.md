@@ -91,7 +91,7 @@ HomeInterior (GameArea "home") — scenes/world/HomeInterior.tscn, swapped in fo
 | Relationships | Friendship per NPC (M08.5, D-38): one whole number per `NpcDefinition.id` (0–10, 0 until earned); `record_completed_conversation(npc_id)` (+1 at most once per system-calendar day per NPC, only from NpcTalk) → `friendship_changed` (GameState saves); `get_friendship()`; saved as `relationships`. Knows the NPCs from `data/npcs/`; holds no node and touches no other system; nothing shows it yet. After ExplorationManager, before SaveManager/GameState |
 | Requests | NPC requests (M08.6, D-39): each request's state (absent = not offered, `accepted`, `completed`), keyed by `RequestDefinition.id` (`data/requests/`); `conversation_for(npc_id)` (offer / pending / hand-over, or nothing), `accept()`, `complete()` (checked → items removed → recorded → `reward_points` paid once → `request_completed`), saved as `requests`. Reads and removes from the Inventory, pays through PointsManager; nothing else. After Relationships, before SaveManager/GameState |
 | Services | NPC services (M08.7, D-40): stateless — the `ServiceDefinition`s (`data/services/`) only; `conversation_for(npc_id)` (nothing until the unlocking request is completed; then the pitch below the quantity, the trade at or above it) and `trade(service_id)` (unlocked only → `Market.trade()` with the service's own item, quantity and coins). Reads the Inventory and Requests; never writes items or coins, pays points, touches friendship or saves. After Requests, before SaveManager/GameState |
-| AmbientAudioManager | Audio hooks: 10 `AudioStream` slots, all empty (no audio files yet) |
+| AmbientAudioManager | Audio hooks: 11 `AudioStream` slots, all empty (no audio files yet). Rest Mode ambience (D-62 R4): `start_rest_ambience()` / `stop_rest_ambience()` (called only by Main when SEATED begins / ends) fade a dedicated player in and out (one playback; a re-sit mid-fade carries on); `set_rest_ambience_muted()` (only the HUD's MuteButton) is session state, never saved; while `rest_ambience` is unassigned a temporary technical placeholder generated in code (a 2.75 s loop of soft filtered noise, no asset) plays — see `docs/AUDIO_ASSETS.md` |
 | WorldClock | Game time (M09.2, D-42): the one authoritative clock — a whole day number (from 1) and the day fraction (from 0.28), a 600 s day. `advance(delta)` (called only by the area's `WorldSimulation._process`, so time pauses while the Meadow is parked), `get_day()`, `get_fraction()`; saved as `world_time`. No signals, no time-skip. Before SaveManager/GameState |
 | SaveManager | Reads/writes `user://save.json` |
 | GameState | Loads the save at boot; autosaves on key events and app pause/close |
@@ -287,6 +287,10 @@ Phase 06 connected farming to the Inventory (M04.2–M04.3, M06.1), the economy 
   - **Registry** (read by the checker: every autoload member variable exactly once as `<autoload>.<variable> <class>[:<section>]`; the fields `FarmPlot.capture()` saves; the deferred items):
 
 ```state-registry
+ambient_audio_manager._rest_active session
+ambient_audio_manager._rest_muted session
+ambient_audio_manager._rest_tween session
+ambient_audio_manager._rest_placeholder session
 area_router._definitions data
 area_router._current_area_id session
 area_router._travelling session
@@ -344,6 +348,8 @@ input_manager._pinch_distance session
 input_manager._joystick_candidate session
 input_manager._joystick_origin session
 input_manager._joystick_index session
+input_manager._joystick_enabled session
+input_manager._drag_index session
 inventory._store persistent:items
 inventory._collectible_item_ids data
 inventory._definitions data

@@ -14,9 +14,16 @@ extends Node3D
 ##
 ## Rest spots (Group E, D-48–D-57; E1): a RestSpot only asks to be sat on;
 ## Main carries it out — the player walks there and sits (Player.sit), and
-## while seated the camera settles with the spot's preset (D-49) and the HUD
-## goes quiet; standing (or giving up the walk) releases both. The world is
-## never paused for it and nothing is saved.
+## while seated the camera settles with the spot's preset (D-49; closer,
+## with pinch bounded to the spot's seated range, D-62 R2, and a drag turning
+## the view within its yaw limit, R3) and the HUD goes quiet; standing (or giving up the walk) releases both. The world is
+## never paused for it and nothing is saved. Rest Mode controls (D-62, R1):
+## while seated the joystick is hidden, joystick/keyboard movement is locked
+## and the HUD's Stand Up button stands the player (Player.stand); movement
+## and the joystick come back only when the camera release has finished.
+## Rest ambience (R4): the location ambience fades in on sitting and out on
+## standing (AmbientAudioManager), with a session-only mute shown beside
+## Stand Up.
 
 @onready var player: Player = $Player
 @onready var follow_camera: FollowCamera = $FollowCamera
@@ -41,7 +48,10 @@ func _ready() -> void:
 	_connect_rest_spots(area)
 	player.animation_state_changed.connect(_on_player_state_changed)
 	player.seat_ended.connect(_on_seat_ended)
+	follow_camera.settle_ended.connect(_on_camera_released)
+	hud.stand_up_requested.connect(_on_stand_up_requested)
 	InputManager.zoom_requested.connect(follow_camera.zoom_by)
+	InputManager.world_dragged.connect(follow_camera.yaw_by)
 	AreaRouter.travel_requested.connect(_on_travel_requested)
 	AreaRouter.notify_arrived(area.area_id)
 
@@ -204,17 +214,26 @@ func _on_sit_requested(rest_spot: RestSpot) -> void:
 	player.sit(rest_spot.get_seat_transform(), rest_spot)
 	_rest_spot = rest_spot
 
-## Seated: the spot is occupied, the camera settles with its preset and the
-## HUD goes quiet.
+## Seated: the spot is occupied, the camera settles with its preset, the
+## HUD goes quiet, movement is locked, the joystick hides (and stops taking
+## drags, which now turn the view) and Stand Up shows.
 func _on_player_state_changed(state: Player.AnimState, _previous: Player.AnimState) -> void:
 	if state != Player.AnimState.SEATED or _rest_spot == null:
 		return
 	_rest_spot.set_occupied(true)
-	follow_camera.settle(_rest_spot.settle_distance, _rest_spot.framing_offset, _rest_spot.settle_seconds)
+	follow_camera.settle(_rest_spot.settle_distance, _rest_spot.framing_offset, _rest_spot.seated_zoom_range, _rest_spot.seated_yaw_limit_degrees, _rest_spot.settle_seconds)
 	hud.set_quiet(true)
+	player.set_movement_locked(true)
+	hud.set_movement_control_suppressed(true)
+	InputManager.set_joystick_enabled(false)
+	hud.set_stand_up_visible(true)
+	hud.set_mute_visible(true)
+	AmbientAudioManager.start_rest_ambience()
 
 ## Stood up (or gave up the walk): the camera eases back to its exact base,
-## the HUD returns and the spot is free again.
+## the HUD returns, Stand Up hides and the spot is free again. Movement and
+## the joystick wait for the release to finish (_on_camera_released; an area
+## swap's instant release announces it at once).
 func _on_seat_ended(was_seated: bool) -> void:
 	var rest_spot := _rest_spot
 	_rest_spot = null
@@ -223,4 +242,19 @@ func _on_seat_ended(was_seated: bool) -> void:
 	if was_seated:
 		follow_camera.release(rest_spot.release_seconds)
 		hud.set_quiet(false)
+		hud.set_stand_up_visible(false)
+		hud.set_mute_visible(false)
+		AmbientAudioManager.stop_rest_ambience()
 	rest_spot.set_occupied(false)
+
+## The HUD's Stand Up button (D-62): the same stand as tapping the player.
+func _on_stand_up_requested() -> void:
+	player.stand()
+
+## The camera is back at its exact base (FollowCamera.settle_ended):
+## movement and the joystick return. Sitting again during the release
+## continues the same settle transaction, so the lock simply stays.
+func _on_camera_released() -> void:
+	player.set_movement_locked(false)
+	hud.set_movement_control_suppressed(false)
+	InputManager.set_joystick_enabled(true)

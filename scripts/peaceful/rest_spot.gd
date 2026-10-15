@@ -19,11 +19,16 @@ signal sit_requested(rest_spot: RestSpot)
 ## Main finds the rest spots of an area through this group.
 const GROUP := &"rest_spot"
 
-## The camera preset while seated (D-49): a distance within the zoom limits
-## (7–15 m), a screen-space framing offset (Camera3D h/v offset, metres) and
-## the ease times (1–2 s).
-@export_range(7.0, 15.0) var settle_distance: float = 12.0
+## The camera preset while seated (D-49, D-62): the seated start distance
+## (8 m, inside the seated zoom range), a screen-space framing offset
+## (Camera3D h/v offset, metres), the range pinch and wheel stay within while
+## seated (7–10 m, inside the 7–15 m zoom limits), how far a drag may turn
+## the view either side of its default while seated (45°, D-62 R3) and the
+## ease times (1–2 s).
+@export_range(7.0, 10.0) var settle_distance: float = 8.0
 @export var framing_offset := Vector2(2.0, -2.0)
+@export var seated_zoom_range := Vector2(7.0, 10.0)
+@export_range(0.0, 45.0) var seated_yaw_limit_degrees: float = 45.0
 @export_range(1.0, 2.0) var settle_seconds: float = 1.5
 @export_range(1.0, 2.0) var release_seconds: float = 1.5
 

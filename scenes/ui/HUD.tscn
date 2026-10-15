@@ -138,6 +138,40 @@ theme_override_font_sizes/font_size = 64
 text = "🎒"
 tooltip_text = "Inventory"
 
+[node name="StandUpButton" type="Button" parent="."]
+visible = false
+custom_minimum_size = Vector2(280, 144)
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -168.0
+offset_right = 304.0
+offset_bottom = -24.0
+grow_vertical = 0
+theme = ExtResource("9")
+theme_type_variation = &"HudButton"
+theme_override_font_sizes/font_size = 44
+text = "Stand Up"
+tooltip_text = "Stand up"
+
+[node name="MuteButton" type="Button" parent="."]
+visible = false
+custom_minimum_size = Vector2(144, 144)
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 324.0
+offset_top = -168.0
+offset_right = 468.0
+offset_bottom = -24.0
+grow_vertical = 0
+theme = ExtResource("9")
+theme_type_variation = &"HudButton"
+theme_override_font_sizes/font_size = 64
+text = "🔊"
+tooltip_text = "Mute the ambience"
+
 [node name="SeedPicker" parent="." instance=ExtResource("6")]
 
 [node name="SpeechPanel" parent="." instance=ExtResource("10")]

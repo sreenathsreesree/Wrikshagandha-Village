@@ -27,6 +27,10 @@ class_name EarthNurture
 @onready var _growth: Node3D = $Growth
 
 var _awake_scales: Array[Vector3] = []
+## True from the start of a cycle until it is dormant again (P0.1b): every
+## interact() in between is refused, whoever calls it — the availability
+## switch-off below only takes effect at the end of the frame.
+var _cycling: bool = false
 
 func _ready() -> void:
 	remove_on_harvest = false
@@ -43,9 +47,13 @@ func _get_interaction_verbs() -> Array[Verb]:
 ## Starts the cycle and returns once the plant has grown in; the hold and
 ## the relaxation carry on by themselves. Refused while a cycle is running.
 func interact() -> bool:
-	if not monitorable:
+	if _cycling or not monitorable:
 		return false
-	monitorable = false
+	_cycling = true
+	# Deferred: a walk-up Use runs inside the InteractionZone's area_entered
+	# signal, where Godot blocks a direct monitorable write ("Function blocked
+	# during in/out signal") and the plant would stay usable mid-cycle.
+	set_deferred("monitorable", false)
 	var parts := _growth.get_children()
 	var grow := create_tween().set_parallel(true)
 	for i in parts.size():
@@ -67,4 +75,5 @@ func _hold_then_relax() -> void:
 	rest.chain().tween_callback(_on_dormant)
 
 func _on_dormant() -> void:
+	_cycling = false
 	monitorable = true

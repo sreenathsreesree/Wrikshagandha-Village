@@ -58,8 +58,17 @@ ONE_SHOT = {
 }
 assert ONE_SHOT == {"discovery": True, "plot": False, "probe": False}, ONE_SHOT
 FEEDBACK = _body(DISC, "_play_harvest_feedback")
-assert FEEDBACK.find("monitorable = false") < FEEDBACK.find("await"), "a harvesting discovery is unavailable at once"
-assert "monitorable = false" in _body(PLOT, "_run_harvest_sequence"), "a harvesting plot is unavailable"
+# P0.1/P0.1b: the switch-off is deferred — interact() can run inside the InteractionZone's area_entered signal, where
+# Godot blocks a direct monitorable write (the object stayed tappable); never a direct write there.
+OFF = 'set_deferred("monitorable", false)'
+def _first_await(body):  # the first await statement (comments ignored)
+    m = re.search(r"^\s*(?:var \w+ := )?await\b", body, re.M)
+    return m.start() if m else -1
+assert 0 <= FEEDBACK.find(OFF) < _first_await(FEEDBACK), "a harvesting discovery is switched off (deferred) before its first await"
+assert "monitorable = false" not in FEEDBACK, "no direct monitorable write in a discovery's harvest"
+HARVEST = _body(PLOT, "_run_harvest_sequence")
+assert 0 <= HARVEST.find(OFF) < _first_await(HARVEST), "a harvesting plot is switched off (deferred) before its first await"
+assert "monitorable = false" not in HARVEST, "no direct monitorable write in a plot's harvest"
 
 # ---------------------------------------------------------------- 2. model
 class Obj:

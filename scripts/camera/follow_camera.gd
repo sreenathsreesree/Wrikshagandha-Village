@@ -34,6 +34,10 @@ class_name FollowCamera
 ## these limits (provisional, proposal P-03 — tune at the playtest).
 const ZOOM_MIN_DISTANCE := 7.0
 const ZOOM_MAX_DISTANCE := 15.0
+## Seated view turning (D-62, R3): degrees of yaw per canvas pixel of a
+## one-finger drag (300 px turn the full 45°). The world follows the finger:
+## a drag to the right turns the view to the left.
+const SEATED_YAW_DEGREES_PER_PIXEL := 0.15
 
 var _last_target_position: Vector3
 var _has_last_position: bool = false
@@ -45,11 +49,22 @@ var _has_bounds: bool = false
 ## release has finished. The base — the distance and framing offset before
 ## it — is captured only when a transaction starts, so a settle during a
 ## release continues from where the camera is and still restores the
-## original base. Pinch and wheel zoom are ignored while it lasts.
+## original base. Pinch and wheel zoom are ignored while it eases (settling
+## or releasing); between the two — seated — they stay within the zoom range
+## settle() was given (D-62), and the release still restores the base.
+## Seated, a drag also turns the view about the player (this node's yaw,
+## D-62 R3) within settle()'s yaw limit of the base yaw; every settle and
+## release eases the yaw back to the base, which the transaction captured.
 var _settle_active: bool = false
 var _base_distance: float = 0.0
 var _base_offset := Vector2.ZERO
 var _settle_tween: Tween
+var _settle_zoom_range := Vector2(ZOOM_MIN_DISTANCE, ZOOM_MAX_DISTANCE)
+var _base_yaw: float = 0.0
+var _settle_yaw_limit: float = 0.0
+## A settle transaction has ended: the release finished at the exact base
+## (at once for release(0.0)). D-62: Main gives movement back only now.
+signal settle_ended
 
 func _ready() -> void:
 	if _camera:
@@ -108,14 +123,23 @@ func _clamp_to_bounds(point: Vector3) -> Vector3:
 	point.z = clampf(point.z, _bounds.position.y, _bounds.end.y)
 	return point
 
-## factor < 1 brings the camera closer, > 1 moves it away; clamped. Ignored
-## during a settle transaction.
+## factor < 1 brings the camera closer, > 1 moves it away; clamped. During a
+## settle transaction it is the seated zoom instead (_zoom_seated).
 func zoom_by(factor: float) -> void:
 	if _settle_active:
+		_zoom_seated(factor)
 		return
 	if _spring_arm == null or not is_finite(factor) or factor <= 0.0:
 		return
 	set_zoom_distance(_spring_arm.spring_length * factor)
+
+## Seated zoom (D-62): ignored while the settle or release eases; otherwise
+## kept within the transaction's zoom range. It never touches the base, so
+## the release restores the pre-sit distance whatever the pinch did.
+func _zoom_seated(factor: float) -> void:
+	if _settle_tween != null or _spring_arm == null or not is_finite(factor) or factor <= 0.0:
+		return
+	set_zoom_distance(clampf(_spring_arm.spring_length * factor, _settle_zoom_range.x, _settle_zoom_range.y))
 
 func set_zoom_distance(distance: float) -> void:
 	if _spring_arm == null:
@@ -130,13 +154,19 @@ func get_zoom_distance() -> float:
 ## offset) to these values over `seconds`. The follow, look-ahead, bounds
 ## and FOV are untouched; nothing rotates. Starting a transaction captures
 ## the base; during one (even mid-release) the base stays as captured.
-func settle(distance: float, framing_offset: Vector2, seconds: float) -> void:
+## `zoom_range` bounds pinch and wheel once the settle has eased in, and
+## `yaw_limit_degrees` the seated turning either side of the base yaw, which
+## every settle eases back to (D-62).
+func settle(distance: float, framing_offset: Vector2, zoom_range: Vector2, yaw_limit_degrees: float, seconds: float) -> void:
 	if _camera == null or _spring_arm == null:
 		return
 	if not _settle_active:
 		_settle_active = true
 		_base_distance = get_zoom_distance()
 		_base_offset = Vector2(_camera.h_offset, _camera.v_offset)
+		_base_yaw = rotation.y
+	_settle_zoom_range = zoom_range
+	_settle_yaw_limit = deg_to_rad(yaw_limit_degrees)
 	_ease_to(distance, framing_offset, seconds, false)
 
 ## Eases back to exactly the captured base, then ends the transaction;
@@ -158,6 +188,7 @@ func _ease_to(distance: float, framing_offset: Vector2, seconds: float, ending: 
 	_settle_tween.tween_method(set_zoom_distance, get_zoom_distance(), distance, seconds)
 	_settle_tween.tween_property(_camera, "h_offset", framing_offset.x, seconds)
 	_settle_tween.tween_property(_camera, "v_offset", framing_offset.y, seconds)
+	_settle_tween.tween_method(_set_yaw, rotation.y, _base_yaw, seconds)
 	_settle_tween.chain().tween_callback(_finish_ease.bind(distance, framing_offset, ending))
 
 ## The exact end values (never left to interpolation), and the end of the
@@ -167,5 +198,21 @@ func _finish_ease(distance: float, framing_offset: Vector2, ending: bool) -> voi
 	set_zoom_distance(distance)
 	_camera.h_offset = framing_offset.x
 	_camera.v_offset = framing_offset.y
+	_set_yaw(_base_yaw)
 	if ending:
 		_settle_active = false
+		settle_ended.emit()
+
+## A one-finger drag on the world (D-62 R3), in canvas pixels: seated (a
+## transaction whose ease has finished) it turns the view about the player
+## within the yaw limit of the base yaw; otherwise — standing, settling or
+## releasing — it is ignored.
+func yaw_by(drag: Vector2) -> void:
+	if not _settle_active or _settle_tween != null or not drag.is_finite():
+		return
+	var turn := clampf(rotation.y - _base_yaw + deg_to_rad(drag.x * SEATED_YAW_DEGREES_PER_PIXEL), -_settle_yaw_limit, _settle_yaw_limit)
+	_set_yaw(_base_yaw + turn)
+
+## The one writer of the camera's yaw (this node's rotation about Y).
+func _set_yaw(yaw: float) -> void:
+	rotation.y = yaw

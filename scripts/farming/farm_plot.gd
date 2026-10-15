@@ -426,7 +426,12 @@ func _harvest_crop() -> bool:
 func _run_harvest_sequence() -> void:
 	_is_harvesting = true
 	_harvest_paid = false
-	monitorable = false
+	# Deferred (P0.1b): a walk-up harvest runs inside the InteractionZone's
+	# area_entered signal, where Godot blocks a direct monitorable write and
+	# the plot would stay tappable while harvesting. _is_harvesting already
+	# refuses a second harvest. Availability returns below through the same
+	# deferred queue, so it always lands after this switch-off.
+	set_deferred("monitorable", false)
 	var intensity: float = RARITY_INTENSITY.get(crop_definition.rarity, 1.0)
 	if _crop_visual:
 		await _crop_visual.play_harvest(crop_definition.harvest_style, intensity)
@@ -447,7 +452,9 @@ func _run_harvest_sequence() -> void:
 	_reset_to_soil()
 	_is_harvesting = false
 	_harvest_paid = false
-	monitorable = unlocked
+	# Deferred too (P0.1b): queued after the switch-off above, so it lands last
+	# even if the whole sequence ran within one frame (no crop visual to await).
+	set_deferred("monitorable", unlocked)
 
 ## The seed that comes back with every harvest, shown in the world: it
 ## pops up out of the soil in the crop's color and is gone.

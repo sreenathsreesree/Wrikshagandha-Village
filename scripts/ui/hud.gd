@@ -16,6 +16,13 @@ class_name GameHUD
 ## every size keeps its physical size); the joystick in the bottom-left
 ## thumb zone also keeps clear of side cut-outs and the gesture bar, and so
 ## does every modal sheet (M07.4a) and the seed picker (M07.4b).
+##
+## Rest Mode (D-62, R1): while the player is seated Main shows the Stand Up
+## button in the bottom-left thumb zone (where the joystick was) and hides
+## the joystick; the button only asks — stand_up_requested — and Main stands
+## the player. The joystick comes back when Main says the camera has fully
+## restored. Beside it (R4) a mute toggle silences the seated ambience for the
+## session (AmbientAudioManager; never saved), shown only while seated.
 
 const DiscoveryNotificationScene := preload("res://scenes/ui/DiscoveryNotification.tscn")
 ## A seed that introduces a new crop is shown a beat after the discovery
@@ -25,6 +32,9 @@ const NEW_CROP_CARD_DELAY := 1.1
 const EDGE_MARGIN := 24.0
 ## Quiet HUD while seated (D-50, D-56, D2): how long the fade takes.
 const QUIET_FADE_SECONDS := 0.4
+
+## The Stand Up button was pressed (D-62); Main stands the player.
+signal stand_up_requested
 
 @onready var top_area: MarginContainer = $TopArea
 @onready var top_bar: Control = $TopArea/TopColumn/TopBar
@@ -40,6 +50,8 @@ const QUIET_FADE_SECONDS := 0.4
 @onready var basket_button: Button = $ScreenButtons/BasketButton
 @onready var inventory_button: Button = $ScreenButtons/InventoryButton
 @onready var mobile_controls: Control = $MobileControls
+@onready var stand_up_button: Button = $StandUpButton
+@onready var mute_button: Button = $MuteButton
 @onready var joystick: Control = $MobileControls/Joystick
 @onready var seed_picker: Control = $SeedPicker
 @onready var speech_panel: Control = $SpeechPanel
@@ -53,6 +65,8 @@ const QUIET_FADE_SECONDS := 0.4
 ## While quiet: each quieted control's own mouse filter, given back after.
 var _quiet_filters: Dictionary = {}
 var _quiet_tween: Tween
+## The joystick is held hidden by Main (D-62), whatever the movement mode.
+var _movement_control_suppressed: bool = false
 
 func _ready() -> void:
 	PointsManager.points_changed.connect(_on_points_changed)
@@ -84,6 +98,8 @@ func _ready() -> void:
 	inventory_button.pressed.connect(inventory_screen.open)
 	_update_basket_button()
 	movement_button.pressed.connect(_on_movement_button_pressed)
+	stand_up_button.pressed.connect(_on_stand_up_button_pressed)
+	mute_button.pressed.connect(_on_mute_button_pressed)
 	InputManager.movement_mode_changed.connect(_on_movement_mode_changed)
 	_on_movement_mode_changed(InputManager.movement_mode)
 
@@ -116,6 +132,16 @@ func _apply_safe_area() -> void:
 	top_area.add_theme_constant_override("margin_right", int(EDGE_MARGIN + insets[2]))
 	screen_buttons.offset_right = -(EDGE_MARGIN + insets[2])
 	screen_buttons.offset_bottom = -(EDGE_MARGIN + insets[3])
+	var stand_up_size := Vector2(stand_up_button.offset_right - stand_up_button.offset_left, stand_up_button.offset_bottom - stand_up_button.offset_top)
+	stand_up_button.offset_left = EDGE_MARGIN + insets[0]
+	stand_up_button.offset_right = stand_up_button.offset_left + stand_up_size.x
+	stand_up_button.offset_bottom = -(EDGE_MARGIN + insets[3])
+	stand_up_button.offset_top = stand_up_button.offset_bottom - stand_up_size.y
+	var mute_size := Vector2(mute_button.offset_right - mute_button.offset_left, mute_button.offset_bottom - mute_button.offset_top)
+	mute_button.offset_left = stand_up_button.offset_right + 20.0
+	mute_button.offset_right = mute_button.offset_left + mute_size.x
+	mute_button.offset_bottom = stand_up_button.offset_bottom
+	mute_button.offset_top = mute_button.offset_bottom - mute_size.y
 	# The joystick's touch zone (its own size, its base inset inside it)
 	# moves in by the left and bottom insets only — on a desktop window or a
 	# phone without cut-outs it stays exactly where the scene puts it.
@@ -277,7 +303,7 @@ func _on_movement_button_pressed() -> void:
 
 func _on_movement_mode_changed(_mode: int) -> void:
 	var tap := InputManager.is_tap_to_move()
-	mobile_controls.visible = not tap
+	mobile_controls.visible = not tap and not _movement_control_suppressed
 	movement_button.text = "👆" if tap else "🕹"
 	movement_button.tooltip_text = "Movement: Tap to Move" if tap else "Movement: Joystick"
 
@@ -365,3 +391,34 @@ func set_quiet(quiet: bool) -> void:
 				control.mouse_filter = _quiet_filters[control]
 	if not quiet:
 		_quiet_filters.clear()
+
+## Rest Mode controls (D-62), called by Main: the Stand Up button shows only
+## while seated.
+func set_stand_up_visible(shown: bool) -> void:
+	stand_up_button.visible = shown
+
+## Hides the joystick while seated and until the camera has restored (D-62);
+## un-suppressed, it follows the movement mode again.
+func set_movement_control_suppressed(suppressed: bool) -> void:
+	_movement_control_suppressed = suppressed
+	_on_movement_mode_changed(InputManager.movement_mode)
+
+func _on_stand_up_button_pressed() -> void:
+	AmbientAudioManager.play_ui_feedback()
+	stand_up_requested.emit()
+
+## Rest Mode's mute toggle (D-62 R4), shown by Main only while seated; it
+## shows the session's mute state, which outlasts a single seated spell.
+func set_mute_visible(shown: bool) -> void:
+	mute_button.visible = shown
+	_update_mute_button()
+
+func _on_mute_button_pressed() -> void:
+	AmbientAudioManager.play_ui_feedback()
+	AmbientAudioManager.set_rest_ambience_muted(not AmbientAudioManager.is_rest_ambience_muted())
+	_update_mute_button()
+
+func _update_mute_button() -> void:
+	var muted := AmbientAudioManager.is_rest_ambience_muted()
+	mute_button.text = "🔇" if muted else "🔊"
+	mute_button.tooltip_text = "Ambience muted" if muted else "Mute the ambience"

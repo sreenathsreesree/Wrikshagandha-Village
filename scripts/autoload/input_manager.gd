@@ -58,6 +58,10 @@ signal zoom_requested(factor: float)
 signal joystick_started(origin: Vector2, position: Vector2)
 signal joystick_moved(position: Vector2)
 signal joystick_ended
+## A lone finger on the world that has moved past a tap (and is not the
+## joystick's) moved by `relative` canvas pixels: the seated camera turns by
+## it (D-62 R3); standing, nothing listens to it.
+signal world_dragged(relative: Vector2)
 
 ## A tap, not a drag: released close to where it started, and quickly.
 const TAP_MAX_MOVE := 24.0
@@ -115,6 +119,14 @@ var _pinch_distance: float = 0.0
 var _joystick_candidate: int = NO_TOUCH
 var _joystick_origin: Vector2 = Vector2.ZERO
 var _joystick_index: int = NO_TOUCH
+## Off while seated (D-62 R3, set by Main): no finger becomes the joystick, so
+## a drag anywhere is a world drag.
+var _joystick_enabled: bool = true
+## The lone world finger that has dragged past a tap's reach (NO_TOUCH: none):
+## a drag until it lifts — every move is reported, coming back too — and,
+## while the joystick is off (seated), never a tap. Cleared when that finger
+## is pressed or lifted, or when the number of world fingers is not one.
+var _drag_index: int = NO_TOUCH
 
 func _ready() -> void:
 	_mouse_emulates_touch = bool(ProjectSettings.get_setting("input_devices/pointing/emulate_touch_from_mouse", false))
@@ -195,6 +207,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif drag.index == _joystick_candidate and drag.position.distance_to(_joystick_origin) > TAP_MAX_MOVE:
 			_start_joystick(drag.index, drag.position)
 		else:
+			_track_drag(drag.index, drag.position)
 			_track_pinch(drag.index, drag.position)
 	elif event is InputEventMouseButton and _is_wheel(event as InputEventMouseButton):
 		var wheel: InputEventMouseButton = event
@@ -216,7 +229,7 @@ func _track_joystick_candidate(index: int, pressed: bool, screen_position: Vecto
 			_joystick_candidate = NO_TOUCH
 		return
 	_joystick_candidate = NO_TOUCH
-	if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH:
+	if movement_mode != MovementMode.JOYSTICK or _joystick_index != NO_TOUCH or not _joystick_enabled:
 		return
 	if screen_position.x < get_viewport().get_visible_rect().size.x * JOYSTICK_ZONE_FRACTION:
 		_joystick_candidate = index
@@ -240,6 +253,28 @@ func _end_joystick() -> void:
 	_joystick_index = NO_TOUCH
 	joystick_ended.emit()
 
+## Turns the joystick off (letting go of one held) or back on (D-62 R3).
+func set_joystick_enabled(enabled: bool) -> void:
+	_joystick_enabled = enabled
+	if not enabled:
+		_end_joystick()
+
+## A lone world finger past a tap: reports how far it moved since its last
+## position (read before _track_pinch stores the new one). Once past a tap's
+## reach it is the drag (_drag_index); seated, its tap start is dropped so a
+## look-around that comes back near where it began is never a tap.
+func _track_drag(index: int, screen_position: Vector2) -> void:
+	if _world_touches.size() != 1 or not _world_touches.has(index):
+		return
+	if index != _drag_index:
+		if not _tap_starts.has(index) or screen_position.distance_to(_tap_starts[index][0]) <= TAP_MAX_MOVE:
+			return
+		_drag_index = index
+		if not _joystick_enabled:
+			_tap_starts.erase(index)
+	var previous: Vector2 = _world_touches[index]
+	world_dragged.emit(screen_position - previous)
+
 func _is_wheel(event: InputEventMouseButton) -> bool:
 	return event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN
 
@@ -252,6 +287,8 @@ func _track_touch(index: int, pressed: bool, screen_position: Vector2) -> void:
 	else:
 		_world_touches.erase(index)
 	_pinch_distance = _two_finger_distance()
+	if index == _drag_index or _world_touches.size() != 1:
+		_drag_index = NO_TOUCH
 
 func _track_pinch(index: int, screen_position: Vector2) -> void:
 	if not _world_touches.has(index):

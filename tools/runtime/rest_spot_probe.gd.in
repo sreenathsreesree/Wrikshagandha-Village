@@ -1,0 +1,1693 @@
+extends Node
+
+## Rest Spot runtime probe (P0.2): the E1 rest-spot phases of the desktop
+## runtime probe, versioned. Run only by tools/runtime/run_rest_spot_probe.sh,
+## which copies the project to a temporary folder and installs this file there
+## as probe/rest_spot_probe.gd, an autoload — it is never part of the game, and
+## the repository's project.godot is never changed. Kept as .gd.in so the
+## project's checkers (which analyse every .gd as game code) don't hold a
+## harness that must inject input and teleport to gameplay rules.
+## It drives the real game with synthesized screen touches (through
+## Input.parse_input_event, as a finger would) and a joystick deflection (fed
+## to InputManager.set_move_vector each physics tick, as the VirtualJoystick
+## does), and prints what the game actually does as "R <id> | <facts>" lines.
+##
+## Extracted mechanically from the unversioned probe (e1b_probe.gd, sha256
+## 8de9b18df430913f…): the phases E1A–E1K, E1S and E1R and every function
+## they reach are copied verbatim, in their original order. The only edits:
+##   - this header (the original said the probe was never in the repository);
+##   - _run() lists only those 13 phases (the other phases and their helpers —
+##     vertical slice, dialogue, routines, weather, saves, Earth Nurture,
+##     screenshots and diagnostics — are not part of this file);
+##   - shot_dir is user://probe_shots/ (inside the run's own data folder)
+##     instead of a machine-specific /tmp path.
+## Teleports (Player.place_at) are used only to recover from a fall and are
+## logged as such.
+##
+## R1 (D-62, Rest Mode controls) changes the contract on purpose, and the probe
+## with it: hud_str() also reports the Stand Up button and the movement lock;
+## step_off() first waits for the movement lock to clear (joystick movement is
+## ignored until the camera has restored); E1B now checks that joystick and
+## keyboard movement while seated neither stand nor move the player and stands
+## with the Stand Up button; the new phase E1T presses Stand Up with a
+## synthesized finger and follows the joystick, the lock and the camera frame
+## by frame until the release has finished (also in Tap to Move).
+## R2 (D-62, closer view and bounded pinch) adds the phase E1Z: the seated
+## start at 8 m, the wheel and a real two-finger pinch bounded to 7–10 m while
+## seated, Stand Up restoring the exact pre-sit view before movement returns,
+## the normal 7–15 m after, no seated zoom remembered, and an area swap with
+## a pinched seated view. After the R2 review it also watches every zoom
+## request made while the settle eases in (a wheel and a real two-finger
+## pinch): _ready connects a listener to InputManager.zoom_requested before
+## Main does, so the distance is read just before and just after
+## FollowCamera.zoom_by() handles each request — the ease rewrites the distance
+## every frame, so only that before/after pair shows whether a request was
+## ignored; the end value alone could not.
+## R3 (D-62, seated yaw) adds the phase E1Y: one-finger drags (synthesized
+## touches) turn the seated view within ±45°, anywhere on the screen (the
+## joystick is off while seated), never while standing, settling or releasing
+## (each drag is read just before and just after the camera handles it, as
+## E1Z does for zoom); every sit starts at the default yaw; Stand Up from a
+## turned view gives movement back only when the yaw (with distance and
+## framing) is exactly restored; an area swap restores it at once.
+## R4 (D-62, rest ambience) adds the phase E1M: the ambience's player, level
+## and mute read frame by frame as the player sits, mutes (synthesized taps on
+## the mute button), stands, sits again mid-fade, cycles and changes area; and
+## E1S/E1R mute before saving while seated and check that the relaunch is
+## unmuted and the saved settings never knew it.
+
+var phase := "A"
+var tod_start := -1.0
+var day_len := -1.0
+var player: CharacterBody3D
+var cam: Camera3D
+var arm: SpringArm3D
+var meadow: Node3D
+var events: Array = []
+var joy := Vector2.ZERO
+var joy_active := false
+var shot_dir := "user://probe_shots/"
+var game_time := 0.0
+var t0 := 0
+var frame_times: Array = []
+var landmarks_hit: Array = []
+var min_y := 99.0
+
+var wc_at_ready := {}
+func _ready() -> void:
+	var wcn := get_tree().root.get_node_or_null("WorldClock")
+	if wcn != null:
+		wc_at_ready = {"day": wcn.call("get_day"), "fraction": wcn.call("get_fraction"), "file": _read_save().get("world_time", "absent"),
+			"meadow_ready": get_tree().root.find_child("WorldSimulation", true, false) != null and get_tree().root.find_child("WorldSimulation", true, false).is_node_ready()}
+	process_physics_priority = -100
+	t0 = Time.get_ticks_msec()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("phase="):
+			phase = a.substr(6)
+		if a == "notrip":
+			use_trip = false
+		if a.begins_with("tod="):
+			tod_start = float(a.substr(4))
+		if a.begins_with("daylen="):
+			day_len = float(a.substr(7))
+		if a.begins_with("tscale="):
+			Engine.time_scale = float(a.substr(7))  # M09.2: the day is WorldClock's fixed 600 s; tests speed everything up instead
+	var wclock := get_tree().root.get_node_or_null("WorldClock")
+	if wclock != null and tod_start >= 0.0:
+		# M09.2: WorldClock is the one clock — set it (test only) before the Meadow's WorldSimulation copies it
+		wclock.set("_fraction", tod_start)
+		print("PROBE WorldClock set: fraction %s" % tod_start)
+	elif tod_start >= 0.0 or day_len > 0.0:
+		# the main scene is already in the tree (its _ready not run yet): tune TimeOfDay right after its own _ready,
+		# before the NPC's first placement (which waits for the navigation mesh)
+		var clock := get_tree().root.find_child("TimeOfDay", true, false)
+		if clock is TimeOfDay:
+			if clock.is_node_ready():
+				_tune_clock(clock)
+			else:
+				clock.ready.connect(_tune_clock.bind(clock), CONNECT_ONE_SHOT)
+		else:
+			get_tree().node_added.connect(_on_node_added)
+	DirAccess.make_dir_recursive_absolute(shot_dir)
+	InputManager.move_target_requested.connect(func(d: Vector3) -> void: events.append("move(%.2f,%.2f,%.2f)" % [d.x, d.y, d.z]))
+	InputManager.interact_target_requested.connect(func(t: Node) -> void: events.append("interact(%s)" % t.name))
+	InputManager.stop_requested.connect(func() -> void: events.append("stop"))
+	InputManager.zoom_requested.connect(_on_zoom_before)  # before Main's connection (autoloads are ready first): see E1Z
+	if InputManager.has_signal("world_dragged"):
+		InputManager.world_dragged.connect(_on_drag_before)  # likewise for the seated yaw (R3): see E1Y
+	ExplorationManager.landmark_reached.connect(func(id: String, _b: int) -> void: landmarks_hit.append(id))
+	ExplorationManager.secret_location_found.connect(func(id: String, _b: int) -> void: landmarks_hit.append(id))
+	_run.call_deferred()
+
+func _physics_process(_delta: float) -> void:
+	if joy_active:
+		InputManager.set_move_vector(joy)
+	if player:
+		min_y = minf(min_y, player.global_position.y)
+
+func _process(delta: float) -> void:
+	frame_times.append(delta)
+	game_time += delta
+
+func R(id: String, msg: String) -> void:
+	print("R %s | %s" % [id, msg])
+
+func frames(n: int = 1) -> void:
+	for i in n:
+		await get_tree().process_frame
+
+func pframes(n: int = 1) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+func wait_s(s: float) -> void:
+	var end := Time.get_ticks_msec() + int(s * 1000.0)
+	while Time.get_ticks_msec() < end:
+		await get_tree().physics_frame
+
+func p2() -> Vector2:
+	return Vector2(player.global_position.x, player.global_position.z)
+
+func fmt(v: Vector2) -> String:
+	return "(%.2f, %.2f)" % [v.x, v.y]
+
+func speed() -> float:
+	return Vector2(player.velocity.x, player.velocity.z).length()
+
+func navigating() -> bool:
+	return bool(player.get("_navigating"))
+
+# --------------------------------------------------------------- input
+func screen_of(world: Vector3) -> Variant:
+	if cam.is_position_behind(world):
+		return null
+	var p := cam.unproject_position(world)
+	var vis := get_viewport().get_visible_rect().size
+	if p.x < vis.x * 0.06 or p.x > vis.x * 0.94 or p.y < vis.y * 0.14 or p.y > vis.y * bottom_limit:
+		return null
+	return p
+
+## One finger tap at a world point (if it's on screen). Returns the game's reaction.
+func tap(world: Vector3) -> String:
+	var p: Variant = screen_of(world)
+	if p == null:
+		return "offscreen"
+	var wp: Vector2 = get_viewport().get_final_transform() * (p as Vector2)
+	events.clear()
+	for pressed in [true, false]:
+		var ev := InputEventScreenTouch.new()
+		ev.index = 0
+		ev.pressed = pressed
+		ev.position = wp
+		Input.parse_input_event(ev)
+		await frames(2)
+	await pframes(3)
+	return "none" if events.is_empty() else ",".join(events)
+
+## Walk to a goal the way a player would: tap the goal if it's on screen,
+## otherwise a visible point toward it; re-tap after each walk ends.
+func walk_tap(goal: Vector2, label: String, arrive := 1.0, timeout := 60.0) -> bool:
+	var start := Time.get_ticks_msec()
+	var taps := 0
+	var stalls := 0
+	var nothing := 0
+	var travelled := 0.0
+	var no_progress := 0
+	while (Time.get_ticks_msec() - start) / 1000.0 < timeout:
+		if p2().distance_to(goal) <= arrive:
+			R("walk_tap " + label, "ARRIVED %s in %.1fs, %d taps, %d stalls, %d taps-without-effect, travelled %.1f m" % [fmt(p2()), (Time.get_ticks_msec() - start) / 1000.0, taps, stalls, nothing, travelled])
+			return true
+		var here := p2()
+		var dir := (goal - here).normalized()
+		var res := "offscreen"
+		var tried := 0
+		for d in [here.distance_to(goal), 12.0, 9.0, 7.0, 5.0, 3.5, 2.0]:
+			if d > here.distance_to(goal):
+				continue
+			for side in [0.0, 1.5, -1.5, 3.0, -3.0]:
+				var q: Vector2 = here + dir * float(d) + Vector2(-dir.y, dir.x) * float(side)
+				res = await tap(Vector3(q.x, 0.0, q.y))
+				if res == "offscreen":
+					continue
+				tried += 1
+				taps += 1
+				if res == "none":
+					nothing += 1
+					continue
+				break
+			if res != "offscreen" and res != "none":
+				break
+		if res == "offscreen" or res == "none":
+			R("walk_tap " + label, "NO TAPPABLE POINT from %s toward %s (last %s)" % [fmt(here), fmt(goal), res])
+			await shot("FAIL_" + label.replace(" ", "_").replace(">", ""))
+			var stack: Array = [get_tree().root.get_node("Main/HUD")]
+			var blockers: PackedStringArray = []
+			while not stack.is_empty():
+				var nd: Node = stack.pop_back()
+				stack.append_array(nd.get_children())
+				if nd is Control and (nd as Control).is_visible_in_tree() and (nd as Control).mouse_filter == Control.MOUSE_FILTER_STOP and (nd as Control).get_global_rect().has_point(get_viewport().get_visible_rect().size * 0.5):
+					blockers.append(str(nd.get_path()))
+			R("walk_tap blockers", ", ".join(blockers))
+			return false
+		if label == "after loop":
+			R("walk_tap trace", "from %s tap -> %s at %.1fs" % [fmt(here), res, (Time.get_ticks_msec() - start) / 1000.0])
+		var target := Vector2.ZERO
+		var m := RegEx.create_from_string("move\\(([-\\d.]+),[-\\d.]+,([-\\d.]+)\\)").search(res)
+		if m:
+			target = Vector2(float(m.get_string(1)), float(m.get_string(2)))
+		await pframes(2)
+		var w0 := Time.get_ticks_msec()
+		var last := p2()
+		while navigating() and Time.get_ticks_msec() - w0 < 12000:
+			await pframes(1)
+			travelled += p2().distance_to(last)
+			last = p2()
+			if p2().distance_to(goal) <= arrive:
+				break
+		if m and not navigating() and p2().distance_to(target) > 1.0 and p2().distance_to(goal) > arrive:
+			stalls += 1
+			R("stall " + label, "walk ended %.2f m short of its tap target %s at %s" % [p2().distance_to(target), fmt(target), fmt(p2())])
+		if here.distance_to(goal) - p2().distance_to(goal) < 0.3:
+			no_progress += 1
+			if no_progress >= 4:
+				R("walk_tap " + label, "STUCK at %s (goal %s)" % [fmt(p2()), fmt(goal)])
+				return false
+		else:
+			no_progress = 0
+	R("walk_tap " + label, "TIMEOUT at %s (goal %s)" % [fmt(p2()), fmt(goal)])
+	return false
+
+## Joystick toward a goal (full deflection along the straight line).
+## Returns a record: arrived / blocked (no movement for 0.8 s while pushing).
+func joy_to(goal: Vector2, label: String, arrive := 0.5, timeout := 25.0) -> String:
+	var start := Time.get_ticks_msec()
+	var still := 0.0
+	var minspeed := 99.0
+	joy_active = true
+	var out := ""
+	while (Time.get_ticks_msec() - start) / 1000.0 < timeout:
+		var d := goal - p2()
+		if d.length() <= arrive:
+			out = "ARRIVED %s" % fmt(p2())
+			break
+		joy = d.normalized()
+		var before := p2()
+		await pframes(1)
+		var moved := p2().distance_to(before)
+		if (Time.get_ticks_msec() - start) > 400:
+			minspeed = minf(minspeed, speed())
+		if moved < 0.004:
+			still += get_physics_process_delta_time()
+			if still > 0.8:
+				out = "BLOCKED at %s (%.2f m from goal)" % [fmt(p2()), d.length()]
+				break
+		else:
+			still = 0.0
+	if out == "":
+		out = "TIMEOUT at %s" % fmt(p2())
+	joy = Vector2.ZERO
+	await pframes(4)
+	joy_active = false
+	await pframes(2)
+	R("joy_to " + label, "%s in %.1fs (min speed after start %.2f)" % [out, (Time.get_ticks_msec() - start) / 1000.0, minspeed])
+	return out
+
+func recover(at: Vector2, why: String) -> void:
+	R("RECOVER", "teleport to %s because %s (probe only)" % [fmt(at), why])
+	player.place_at(Transform3D(Basis.IDENTITY, Vector3(at.x, 0.2, at.y)))
+	await pframes(10)
+
+func shot(name: String) -> void:
+	await frames(8)
+	var img := get_viewport().get_texture().get_image()
+	img.save_png(shot_dir + name + ".png")
+
+func goto(p: Vector2, label: String) -> void:
+	if not await walk_tap(p, label, 0.8, 60.0):
+		await recover(p, "could not reach %s by tapping" % label)
+
+# --------------------------------------------------------------- run
+# =============================================================== M08.1
+var area_changes: Array = []
+var travel_at := 0
+var swap_alpha: Array = []
+var use_trip := true
+var bottom_limit := 0.78
+var main: Node
+
+func _run() -> void:
+	await frames(5)
+	main = get_tree().root.get_node("Main")
+	player = get_tree().get_first_node_in_group(&"player") as CharacterBody3D
+	cam = get_viewport().get_camera_3d()
+	arm = cam.get_parent() as SpringArm3D
+	meadow = main.get_node("Meadow")
+	if Engine.has_singleton("AreaRouter") or get_tree().root.has_node("AreaRouter"):
+		var router := get_tree().root.get_node("AreaRouter")
+		router.area_changed.connect(func(id: String) -> void:
+			area_changes.append(id)
+			var v := veil()
+			swap_alpha.append("%s a=%.2f filter=%d visible=%s travelling=%s" % [id, v.modulate.a, v.mouse_filter, v.visible, router.is_travelling()]))
+		router.travel_requested.connect(func(_a: String, _e: String) -> void: travel_at = Time.get_ticks_msec())
+	await wait_s(2.0)
+	R("boot", "phase %s; player %s y %.2f; area %s; zoom %.2f; points %d; day %.4f" % [phase, fmt(p2()), player.global_position.y, cur_area_name(), arm.spring_length, PointsManager.points, tod()])
+	match phase:
+		"E1A": await phase_e1_main()
+		"E1B": await phase_e1_joystick()
+		"E1C": await phase_e1_zooms()
+		"E1D": await phase_e1_interrupt()
+		"E1E": await phase_e1_taps()
+		"E1F": await phase_e1_swap()
+		"E1G": await phase_e1_pending()
+		"E1H": await phase_e1_zone()
+		"E1I": await phase_e1_other_trace()
+		"E1S": await phase_e1_save()
+		"E1R": await phase_e1_relaunch()
+		"E1J": await phase_e1_seat_tap()
+		"E1K": await phase_e1_joy()
+		"E1T": await phase_e1_stand_up()
+		"E1Z": await phase_e1_seated_zoom()
+		"E1Y": await phase_e1_seated_yaw()
+		"E1M": await phase_e1_rest_ambience()
+	R("done", "phase %s finished at %.1fs; min y %.2f; avg fps %.1f" % [phase, (Time.get_ticks_msec() - t0) / 1000.0, min_y, fps()])
+	get_tree().quit()
+
+func fps() -> float:
+	var s := 0.0
+	for d in frame_times:
+		s += d
+	return frame_times.size() / maxf(s, 0.001)
+
+func cur_area() -> Node:
+	return main.get_child(0)
+
+func cur_area_name() -> String:
+	return cur_area().name
+
+func router() -> Node:
+	return get_tree().root.get_node_or_null("AreaRouter")
+
+func tod() -> float:
+	var t := meadow.get_node_or_null("WorldSimulation/TimeOfDay")
+	return float(t.get("day_fraction")) if t else -1.0
+
+func facing_deg() -> float:
+	return rad_to_deg(float(player.get("_facing_angle")))
+
+func veil() -> ColorRect:
+	return main.get_node_or_null("TransitionFade/Veil") as ColorRect
+
+func snapshot() -> Dictionary:
+	var inv := {}
+	for cat in ["seed", "produce", "collectible"]:
+		for row: Dictionary in Inventory.get_view(cat):
+			inv[(row.item as ItemDefinition).id] = int(row.total)
+	return {"points": PointsManager.points, "coins": Wallet.get_balance(), "inv": inv, "discovered": DiscoveryManager.discovered_ids.size()}
+
+# ---------------------------------------------------------------- NPC: M08.3
+func npc() -> CharacterBody3D:
+	return meadow.get_node_or_null("VerticalSlice/NpcSpot/Villager") as CharacterBody3D
+
+var panel_opens := 0
+
+var ended: Array = []
+
+var fr_changes: Array = []
+
+func disk() -> String:
+	if not FileAccess.file_exists("user://save.json"):
+		return "no save file"
+	var d: Variant = JSON.parse_string(FileAccess.get_file_as_string("user://save.json"))
+	if typeof(d) != TYPE_DICTIONARY:
+		return "unreadable"
+	return "v%s relationships %s" % [str(d.get("save_version")), JSON.stringify(d.get("relationships", "ABSENT"))]
+
+# ---------------------------------------------------------------- clock setup for tests (tod= / daylen=): right after TimeOfDay is ready
+func _on_node_added(n: Node) -> void:
+	if n is TimeOfDay:
+		n.ready.connect(_tune_clock.bind(n), CONNECT_ONE_SHOT)
+
+func _tune_clock(n: Node) -> void:
+	print("PROBE clock tuned: fraction %s, day %s s" % [tod_start, day_len])
+	if tod_start >= 0.0:
+		n.set("day_fraction", tod_start)
+	if day_len > 0.0:
+		n.set("day_length_seconds", day_len)
+
+const POND_SPOT := Vector2(4.0, -7.0)
+const HOME_SPOT := Vector2(-19.5, 2.2)
+
+func _read_save() -> Dictionary:
+	if not FileAccess.file_exists("user://save.json"):
+		return {}
+	var v: Variant = JSON.parse_string(FileAccess.get_file_as_string("user://save.json"))
+	return v if typeof(v) == TYPE_DICTIONARY else {}
+
+var wx_events: Array = []
+
+const HH_NOOK := Vector2(14, -12)
+const HH_CLUES := [Vector2(15.8, -16.3), Vector2(16.6, -18.2), Vector2(17.4, -20.2), Vector2(18.0, -21.6)]
+const HH_CLUE_NAMES := ["Footprints1", "Footprints2", "Flowers", "Motes"]
+const HH_CENTER := Vector2(19, -24)
+var hh_log: Array = []
+
+const EN_SPOT := Vector2(6.6, -0.5)
+
+var en_log: Array = []
+
+var last_hold_ms := 0
+
+# =============================================================== E1: Pond Rest Spot (runtime)
+const RS_POS := Vector2(4.3, -12.12)
+var seat_log: Array = []
+func rs() -> Node:
+	return meadow.get_node_or_null("PeacefulPlaces/PondRestSpot")
+func seated() -> bool:
+	return int(player.call("get_animation_state")) == 3
+func fcam() -> Node:
+	return main.get_node("FollowCamera")
+func hudn() -> Node:
+	return main.get_node("HUD")
+func cam_str() -> String:
+	return "zoom %.4f offset (%.4f, %.4f)" % [arm.spring_length, cam.h_offset, cam.v_offset]
+func hud_str() -> String:
+	var h := hudn()
+	var tb := h.get_node("TopArea/TopColumn/TopBar") as Control
+	var sb := h.get_node("ScreenButtons") as Control
+	var mc := h.get_node("MobileControls") as Control
+	var mb := h.get_node("TopArea/TopColumn/TopBar/MenuButtons/MovementButton") as Control
+	var jb := h.get_node("TopArea/TopColumn/TopBar/MenuButtons/JournalButton") as Control
+	var su := h.get_node_or_null("StandUpButton") as Control
+	return "topbar a=%.2f buttons a=%.2f; movement/journal filter %d/%d; mobile controls visible %s a=%.2f filter %d; stand up visible %s; movement locked %s" % [tb.modulate.a, sb.modulate.a, mb.mouse_filter, jb.mouse_filter, mc.visible, mc.modulate.a, mc.mouse_filter, su != null and su.visible, player.get("_movement_locked")]
+func seat_dist() -> float:
+	return p2().distance_to(RS_POS)
+func rs_str(tag: String) -> String:
+	return "%s: state %s; seat available %s; at %s (%.2f m from the seat); facing %.1f°; visual y %.3f sy %.3f; %s; %s" % [tag, player.call("get_animation_state"), rs().is_interaction_available(), fmt(p2()), seat_dist(), facing_deg(), (player.get("visual") as Node3D).position.y, (player.get("visual") as Node3D).scale.y, cam_str(), hud_str()]
+
+## A tap that the game registered (the probe's ~7.5 fps can hold a touch past the 450 ms tap limit: retried).
+func tap_reg(world: Vector3, tries := 5) -> String:
+	var r := "none"
+	for k in tries:
+		r = await tap(world)
+		if r != "none":
+			return r
+	return r
+## Sit by tapping the seat (retried), waiting for SEATED.
+func sit_tap() -> float:
+	var r := await tap_reg(rs().global_position + Vector3(0, 0.3, 0))
+	return await wait_seated()
+## Stand by tapping the player (only while seated; retried until standing).
+func stand_tap() -> String:
+	var r := "not seated"
+	for k in 5:
+		if not seated():
+			return r
+		r = await tap(player.global_position + Vector3(0, 1.1, 0))
+	return r
+## Step off the seat with the joystick so the next tap on the player is not a tap on the free seat.
+## D-62: joystick movement waits for the camera to restore after standing, so wait for that first (bounded).
+func step_off() -> void:
+	var g := game_time
+	while bool(player.get("_movement_locked")) and game_time - g < 4.0:
+		await get_tree().process_frame
+	joy_active = true
+	joy = Vector2(-0.9, 0.45).normalized()
+	await pframes(25)
+	joy = Vector2.ZERO
+	await pframes(4)
+	joy_active = false
+	await pframes(2)
+func key(pressed: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_W
+	ev.pressed = pressed
+	Input.parse_input_event(ev)
+	await pframes(1)
+
+func wait_game(s: float) -> void:
+	var g := game_time
+	while game_time - g < s:
+		await get_tree().process_frame
+func tap_seat() -> String:
+	return await tap(rs().global_position + Vector3(0, 0.3, 0))
+func wait_seated(limit := 25.0) -> float:
+	var g := game_time
+	while game_time - g < limit:
+		if seated():
+			return game_time - g
+		await get_tree().process_frame
+	return -1.0
+## Frame by frame until the camera stops changing (or limit): the time and the final values.
+func watch_cam(tag: String, limit := 4.0) -> void:
+	var g := game_time
+	var last := cam_str()
+	var still := 0.0
+	var at := -1.0
+	while game_time - g < limit:
+		await get_tree().process_frame
+		var now := cam_str()
+		if now == last:
+			still += get_process_delta_time()
+			if still > 0.4 and at < 0.0:
+				at = game_time - g - still
+		else:
+			still = 0.0
+			at = -1.0
+		last = now
+	R("E1 cam " + tag, "settled after ~%.2f s (game time): %s" % [at, cam_str()])
+func wheel(up: bool) -> void:
+	var c := get_viewport().get_visible_rect().size * 0.5
+	for pressed in [true, false]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_WHEEL_UP if up else MOUSE_BUTTON_WHEEL_DOWN
+		ev.pressed = pressed
+		ev.position = get_viewport().get_final_transform() * c
+		Input.parse_input_event(ev)
+		await frames(1)
+	await frames(2)
+func e1_hook() -> void:
+	player.connect("seat_ended", func(was: bool) -> void: seat_log.append("seat_ended(%s)@%.2f" % [was, game_time]))
+	player.connect("animation_state_changed", func(s: int, prev: int) -> void: seat_log.append("state %d->%d@%.2f" % [prev, s, game_time]))
+func sit_from(start: Vector2, tag: String) -> bool:
+	await goto(start, tag + " start")
+	var r := await tap_seat()
+	var t := await wait_seated()
+	R("E1 " + tag + " sit", "tap seat -> %s; seated after %.2f s game time; %s" % [r, t, rs_str("seated")])
+	return t >= 0.0
+
+func phase_e1_main() -> void:
+	e1_hook()
+	R("E1A boot", rs_str("fresh") + "; seat at %s yaw %.1f" % [fmt(Vector2(rs().global_position.x, rs().global_position.z)), rs().rotation_degrees.y])
+	var before := snapshot()
+	var mt0 := FileAccess.get_modified_time("user://save.json") if FileAccess.file_exists("user://save.json") else 0
+	await goto(Vector2(3.0, -6.5), "toward the pond")
+	var pre := snapshot()
+	var zoom0 := arm.spring_length
+	var off0 := Vector2(cam.h_offset, cam.v_offset)
+	var r := await tap_seat()
+	R("E1A tap", "tap seat -> %s; walking %s; %s" % [r, navigating(), rs_str("walking")])
+	var t := await wait_seated()
+	R("E1A seated", "after %.2f s game time; %s; events %s" % [t, rs_str("seated"), seat_log])
+	await watch_cam("settle", 3.0)
+	await shot("e1_seated")
+	R("E1A quiet", rs_str("1.5 s later"))
+	# world continuity while seated
+	var wcn := get_tree().root.get_node("WorldClock")
+	var f0: float = wcn.call("get_fraction")
+	var npc := meadow.find_child("Villager", true, false) as Node3D
+	var n0 := Vector2(npc.global_position.x, npc.global_position.z)
+	var bird := meadow.find_child("SmallBird3", true, false) as Node3D
+	var b0 := bird.global_position
+	var wctl: Node = null
+	for n in meadow.find_children("*", "", true, false):
+		if n.has_method("get_weather"):
+			wctl = n
+	var g0 := game_time
+	await wait_game(30.0)
+	var f1: float = wcn.call("get_fraction")
+	R("E1A world", "30 s seated (game %.1f s): clock %.4f -> %.4f (+%.4f = %.1f s of the 600 s day); villager %s -> %s (%.2f m); SmallBird3 moved %.2f m; weather %s; paused %s; time_scale %.2f; still seated %s" % [game_time - g0, f0, f1, f1 - f0, (f1 - f0) * 600.0, fmt(n0), fmt(Vector2(npc.global_position.x, npc.global_position.z)), n0.distance_to(Vector2(npc.global_position.x, npc.global_position.z)), bird.global_position.distance_to(b0), wctl.call("get_weather") if wctl else "?", get_tree().paused, Engine.time_scale, seated()])
+	# input while seated
+	var g := await tap_reg(player.global_position + Vector3(2.0, 0, 1.5))
+	await wait_game(1.0)
+	R("E1A ground tap", "tap ground -> %s; %s" % [g, rs_str("after")])
+	var zb := arm.spring_length
+	await wheel(true)
+	await wheel(false)
+	await wheel(true)
+	await wait_game(0.5)
+	R("E1A wheel", "3 wheel notches while seated: zoom %.4f -> %.4f; %s" % [zb, arm.spring_length, rs_str("after")])
+	var s2 := await tap_reg(rs().global_position + Vector3(0, 0.3, 0))
+	R("E1A seat tap", "tap the occupied seat (the player sits on it) -> %s; %s; events %s" % [s2, rs_str("after"), seat_log])
+	await watch_cam("release", 3.0)
+	R("E1A restored", "zoom %.4f vs pre-sit %.4f (exact %s); offset (%.4f, %.4f) vs (%.4f, %.4f) (exact %s); %s" % [arm.spring_length, zoom0, arm.spring_length == zoom0, cam.h_offset, cam.v_offset, off0.x, off0.y, Vector2(cam.h_offset, cam.v_offset) == off0, rs_str("after")])
+	await wait_game(0.6)
+	R("E1A hud", hud_str())
+	var mt1 := FileAccess.get_modified_time("user://save.json") if FileAccess.file_exists("user://save.json") else 0
+	R("E1A side effects", "boot %s; before sitting %s; now %s; changed by sitting %s; save mtime %d -> %d; journal %d; landmarks %s" % [before, pre, snapshot(), snapshot() != pre, mt0, mt1, JournalManager.get_entries().size(), landmarks_hit])
+
+func phase_e1_joystick() -> void:
+	e1_hook()
+	await sit_from(Vector2(3.0, -9.8), "E1B")
+	await wait_game(2.0)
+	# D-62: joystick and keyboard movement while seated neither stand nor move the player
+	var c0 := cam_str()
+	var at := p2()
+	joy_active = true
+	joy = Vector2(-1, 0.3).normalized()
+	await pframes(1)
+	var st1 := seated()
+	await pframes(1)
+	var sp := speed()
+	await pframes(30)
+	joy = Vector2.ZERO
+	await pframes(4)
+	joy_active = false
+	R("E1B joystick", "seated before %s; joystick held 32 physics frames: after 1 frame seated %s; speed after 2 frames %.2f; moved %.3f m; camera unchanged %s; %s; events %s" % [true, st1, sp, p2().distance_to(at), cam_str() == c0, rs_str("after"), seat_log])
+	# keyboard
+	at = p2()
+	await key(true)
+	await pframes(1)
+	var kst := seated()
+	await pframes(20)
+	await key(false)
+	await pframes(4)
+	R("E1B keyboard", "move_up while seated: seated after 2 frames %s; moved %.3f m; camera unchanged %s; %s" % [kst, p2().distance_to(at), cam_str() == c0, rs_str("after")])
+	# the Stand Up button stands
+	var su := await press_stand_up()
+	R("E1B stand up", "Stand Up -> %s; %s" % [su, rs_str("after")])
+	await watch_cam("release", 3.0)
+	# joystick approach then tap the seat in range
+	await step_off()
+	await goto(Vector2(0.5, -8.0), "away")
+	var out := await joy_to(Vector2(3.0, -10.6), "joystick toward the seat", 0.5, 20.0)
+	var r := await tap_seat()
+	var t := await wait_seated()
+	R("E1B joystick approach", "%s; tap seat -> %s; seated after %.2f s; %s" % [out, r, t, rs_str("seated")])
+	await stand_tap()
+	await watch_cam("release 3", 3.0)
+
+func phase_e1_zooms() -> void:
+	e1_hook()
+	await goto(Vector2(3.0, -9.8), "near the seat")
+	for z in [7.0, 9.3, 11.0, 13.7, 15.0]:
+		await goto(Vector2(3.0, -9.8), "off the seat")
+		fcam().call("set_zoom_distance", z)
+		await frames(3)
+		var z0 := arm.spring_length
+		var o0 := Vector2(cam.h_offset, cam.v_offset)
+		var t := await sit_tap()
+		await wait_game(2.0)
+		var zs := arm.spring_length
+		var os := Vector2(cam.h_offset, cam.v_offset)
+		var st := await stand_tap()
+		await wait_game(2.2)
+		R("E1C zoom %.1f" % z, "seated after %.2f s; settled zoom %.4f offset %s; stand tap -> %s; restored zoom %.6f (exact %s) offset (%.4f, %.4f) (exact %s); seated %s" % [t, zs, os, st, arm.spring_length, arm.spring_length == z0, cam.h_offset, cam.v_offset, Vector2(cam.h_offset, cam.v_offset) == o0, seated()])
+		await step_off()
+	fcam().call("set_zoom_distance", 11.0)
+
+func phase_e1_interrupt() -> void:
+	e1_hook()
+	await goto(Vector2(3.0, -9.8), "near the seat")
+	var z0 := arm.spring_length
+	var o0 := Vector2(cam.h_offset, cam.v_offset)
+	# stand mid-settle
+	await sit_tap()
+	await wait_game(0.5)
+	var mid := cam_str()
+	var st := await stand_tap()
+	await wait_game(2.2)
+	R("E1D stand mid-settle", "at 0.5 s: %s; stand -> %s; after release: zoom %.6f (exact %s) offset exact %s; seated %s" % [mid, st, arm.spring_length, arm.spring_length == z0, Vector2(cam.h_offset, cam.v_offset) == o0, seated()])
+	# sit again mid-release (the player still stands on the seat: a tap there is a tap on the free seat), wheel during the release
+	await sit_tap()
+	await wait_game(2.0)
+	await stand_tap()
+	await wait_game(0.4)
+	var midr := cam_str()
+	await wheel(true)
+	var after_wheel := cam_str()
+	var t := await sit_tap()
+	await wait_game(2.0)
+	var resettled := cam_str()
+	await stand_tap()
+	await wait_game(2.2)
+	R("E1D sit mid-release", "mid-release %s; wheel during it -> %s; seated again after %.2f s; resettled %s; final zoom %.6f (exact %s) offset (%.4f, %.4f) exact %s; seated %s" % [midr, after_wheel, t, resettled, arm.spring_length, arm.spring_length == z0, cam.h_offset, cam.v_offset, Vector2(cam.h_offset, cam.v_offset) == o0, seated()])
+	# repeated cycles: drift
+	for k in 5:
+		await sit_tap()
+		await wait_game(1.7)
+		await stand_tap()
+		await wait_game(1.7)
+	R("E1D 5 cycles", "zoom %.6f (exact %s) offset (%.6f, %.6f) exact %s; seated %s; events %d" % [arm.spring_length, arm.spring_length == z0, cam.h_offset, cam.v_offset, Vector2(cam.h_offset, cam.v_offset) == o0, seated(), seat_log.size()])
+
+func phase_e1_taps() -> void:
+	e1_hook()
+	# D3: a second tap on the seat while walking to it (from farther away, so the walk lasts)
+	var done := false
+	for attempt in 3:
+		if done:
+			break
+		await goto(Vector2(0.5, -3.0), "far from the seat")
+		seat_log.clear()
+		var r1 := await tap_reg(rs().global_position + Vector3(0, 0.3, 0))
+		var r2 := "none"
+		var g := game_time
+		while r2 == "none" and not seated() and game_time - g < 3.0:
+			await wait_game(0.2)
+			r2 = await tap(rs().global_position + Vector3(0, 0.3, 0))
+		var pending: bool = player.get("_seat_pending")
+		var walking := navigating()
+		var t := await wait_seated()
+		if r2 != "none" and not r2.begins_with("stop"):
+			done = true
+		R("E1E second tap", "attempt %d: tap -> %s; tap again while walking -> %s (pending %s, walking %s); seated after %.2f s; events %s; %s" % [attempt + 1, r1, r2, pending, walking, t, seat_log, rs_str("seated")])
+		await stand_tap()
+		await wait_game(2.0)
+		await step_off()
+	# a ground tap during the walk gives the sit up
+	await goto(Vector2(0.5, -3.0), "far again")
+	seat_log.clear()
+	await tap_reg(rs().global_position + Vector3(0, 0.3, 0))
+	await wait_game(0.3)
+	var gt := await tap_reg(player.global_position + Vector3(-1.5, 0, 1.0))
+	await wait_game(3.0)
+	R("E1E walk cancelled", "ground tap during the walk -> %s; seated %s; pending %s; events %s; %s" % [gt, seated(), player.get("_seat_pending"), seat_log, rs_str("after")])
+	# another interactable while seated
+	await sit_tap()
+	await wait_game(2.0)
+	var best: Interactable = null
+	for n in meadow.find_children("*", "Area3D", true, false):
+		var it := n as Interactable
+		if it == null or it == rs() or not it.is_interaction_available():
+			continue
+		if screen_of(it.global_position + Vector3(0, 0.3, 0)) == null:
+			continue
+		if best == null or it.global_position.distance_to(player.global_position) < best.global_position.distance_to(player.global_position):
+			best = it
+	if best == null:
+		R("E1E other object", "no other available interactable on screen")
+	else:
+		seat_log.clear()
+		var bname := String(best.name)
+		var bdist := best.global_position.distance_to(player.global_position)
+		var before := snapshot()
+		var o := await tap_reg(best.global_position + Vector3(0, 0.3, 0))
+		await wait_game(6.0)
+		R("E1E other object", "tap %s (%.1f m away) while seated -> %s; seated %s; events %s; snapshot %s -> %s; %s" % [bname, bdist, o, seated(), seat_log, before, snapshot(), rs_str("after")])
+
+func phase_e1_swap() -> void:
+	e1_hook()
+	await sit_from(Vector2(3.0, -9.8), "E1F")
+	await wait_game(2.0)
+	var z0 := 11.0
+	main.call("load_area", load("res://scenes/world/HomeInterior.tscn"), "home_door")
+	await wait_game(2.0)
+	R("E1F swap in while seated", "area %s; seated %s; %s; seat (parked) available %s; meadow in tree %s; events %s" % [cur_area_name(), seated(), cam_str(), rs().is_interaction_available(), meadow.is_inside_tree(), seat_log])
+	R("E1F hud indoors", hud_str())
+	main.call("load_area", load("res://scenes/world/Meadow.tscn"), "house_door")
+	await wait_game(2.0)
+	R("E1F back outside", "area %s; seated %s; %s (pre-sit zoom %.1f exact %s); seat available %s" % [cur_area_name(), seated(), cam_str(), z0, arm.spring_length == z0, rs().is_interaction_available()])
+
+func phase_e1_save() -> void:
+	e1_hook()
+	await sit_from(Vector2(3.0, -9.8), "E1S")
+	await wait_game(2.0)
+	var mp := await press_mute()
+	GameState.notification(NOTIFICATION_WM_CLOSE_REQUEST)
+	var disk := _read_save()
+	var txt := JSON.stringify(disk)
+	R("E1S saved while seated", "save_version %s; sections %s; any seat/rest/seated key: %s" % [disk.get("save_version"), disk.keys(), txt.contains("seat") or txt.contains("rest_spot") or txt.contains("SEATED")])
+	R("E1S muted when saving", "mute -> %s; rest ambience muted %s; settings %s; any mute/ambience key: %s" % [mp, aam().call("is_rest_ambience_muted"), JSON.stringify(disk.get("settings")), txt.to_lower().contains("mute") or txt.to_lower().contains("ambience")])
+
+func phase_e1_relaunch() -> void:
+	R("E1R boot", rs_str("relaunch"))
+	R("E1R mute", "relaunch: rest ambience muted %s; playing %s; mute button visible %s; settings %s" % [aam().call("is_rest_ambience_muted"), rest_player().playing, (hudn().get_node("MuteButton") as Control).visible, JSON.stringify(_read_save().get("settings"))])
+
+## The ~0.6 s between the seat's interaction (in range) and arriving: driven through InputManager's own routed
+## signals (exactly what a registered tap emits), since a 7.5 fps tap cannot land reliably inside it.
+func pending_start() -> bool:
+	await goto(Vector2(2.6, -10.9), "in range of the seat")
+	seat_log.clear()
+	var r := await tap_reg(rs().global_position + Vector3(0, 0.3, 0))
+	return bool(player.get("_seat_pending"))
+func phase_e1_pending() -> void:
+	e1_hook()
+	var p1 := await pending_start()
+	InputManager.interact_target_requested.emit(rs())
+	var still: bool = player.get("_seat_pending")
+	var t := await wait_seated()
+	R("E1G D3 repeat", "pending after the seat tap %s; the seat tapped again (routed) -> still pending %s; seated after %.2f s; events %s" % [p1, still, t, seat_log])
+	await stand_tap()
+	await wait_game(2.0)
+	await step_off()
+	var p2b := await pending_start()
+	InputManager.move_target_requested.emit(player.global_position + Vector3(-2.0, 0, 1.0))
+	await wait_game(2.5)
+	R("E1G ground while pending", "pending %s; a ground tap (routed) during the walk -> seated %s, pending %s, seat available %s; events %s; %s" % [p2b, seated(), player.get("_seat_pending"), rs().is_interaction_available(), seat_log, cam_str()])
+	var p3 := await pending_start()
+	joy_active = true
+	joy = Vector2(-1, 0)
+	await pframes(10)
+	joy = Vector2.ZERO
+	await pframes(4)
+	joy_active = false
+	await wait_game(2.0)
+	R("E1G joystick while pending", "pending %s; joystick during the walk -> seated %s, pending %s, seat available %s; events %s; %s" % [p3, seated(), player.get("_seat_pending"), rs().is_interaction_available(), seat_log, cam_str()])
+	var p4 := await pending_start()
+	var r2 := await tap(rs().global_position + Vector3(0, 0.3, 0))
+	var t2 := await wait_seated()
+	R("E1G real second tap", "pending %s; a real second tap -> %s; seated after %.2f s; events %s" % [p4, r2, t2, seat_log])
+
+func nearby_names() -> String:
+	var out: PackedStringArray = []
+	for n in player.get("_nearby_interactables"):
+		if is_instance_valid(n):
+			out.append(String((n as Node).name))
+	return ",".join(out)
+func phase_e1_zone() -> void:
+	e1_hook()
+	await goto(Vector2(2.6, -10.9), "in range of the seat")
+	R("E1H before", "nearby [%s]" % nearby_names())
+	await sit_tap()
+	await pframes(3)
+	R("E1H seated", "nearby [%s]; seat available %s" % [nearby_names(), rs().is_interaction_available()])
+	await wait_game(2.0)
+	await stand_tap()
+	await pframes(1)
+	R("E1H stood +1", "nearby [%s]; seat available %s" % [nearby_names(), rs().is_interaction_available()])
+	await pframes(5)
+	R("E1H stood +6", "nearby [%s]" % nearby_names())
+	await wait_game(1.0)
+	R("E1H stood 1 s", "nearby [%s]" % nearby_names())
+
+func phase_e1_other_trace() -> void:
+	e1_hook()
+	await goto(Vector2(2.6, -10.9), "in range of the seat")
+	await sit_tap()
+	await wait_game(2.0)
+	var mint: Node3D = null
+	for n in meadow.find_children("*", "Area3D", true, false):
+		if String(n.name) == "WildMint":
+			mint = n as Node3D
+	if mint == null:
+		R("E1I", "no WildMint"); return
+	var mp := mint.global_position
+	R("E1I start", "player %s; mint at %s (%.2f m); nearby [%s]" % [fmt(p2()), mp, mint.global_position.distance_to(player.global_position), nearby_names()])
+	var o := await tap_reg(mp + Vector3(0, 0.3, 0))
+	var last := ""
+	var g := game_time
+	while game_time - g < 6.0:
+		await pframes(1)
+		var ap: Variant = player.get("_approach_target")
+		var line := "nearby [%s]; approach %s; nav %s; state %s" % [nearby_names(), (ap as Node).name if ap != null and is_instance_valid(ap) else "null", navigating(), player.call("get_animation_state")]
+		if line != last:
+			R("E1I t=%.2f" % (game_time - g), "%s; at %s; seat %.2f m, mint %.2f m" % [line, fmt(p2()), seat_dist(), Vector2(mp.x, mp.z).distance_to(p2())])
+			last = line
+	R("E1I end", "tap -> %s; snapshot %s" % [o, snapshot()])
+
+# =============================================================== E1 follow-up: D-56 seat tap (Option A), D-58 floating joystick
+var jlog: Array = []
+var last_moved := Vector2(-1, -1)
+## Settled after a release: a few rendered frames (the view writes set_move_vector in _process) and physics steps.
+func settle_frames() -> void:
+	await frames(3)
+	await pframes(30)
+func hook_joy() -> void:
+	InputManager.joystick_started.connect(func(o: Vector2, p: Vector2) -> void: jlog.append("start(%.0f,%.0f)" % [o.x, o.y]))
+	InputManager.joystick_ended.connect(func() -> void: jlog.append("end"))
+	InputManager.joystick_moved.connect(func(p: Vector2) -> void: last_moved = p)
+func joyview() -> Control:
+	return main.get_node("HUD/MobileControls/Joystick") as Control
+func ring_str() -> String:
+	var b := joyview().get_node("Base") as Control
+	var t := joyview().get_node("Base/Thumb") as Control
+	var rc := b.get_global_rect()
+	return "ring visible %s centre %s rect %s..%s thumb off %s; mv (%.3f, %.3f)" % [b.visible, fmt(rc.get_center()), fmt(rc.position), fmt(rc.end), fmt(t.get_global_rect().get_center() - rc.get_center()), InputManager.move_vector.x, InputManager.move_vector.y]
+func tch(idx: int, pressed: bool, c: Vector2) -> void:
+	var ev := InputEventScreenTouch.new()
+	ev.index = idx
+	ev.pressed = pressed
+	ev.position = get_viewport().get_final_transform() * c
+	Input.parse_input_event(ev)
+func drg(idx: int, c: Vector2) -> void:
+	var ev := InputEventScreenDrag.new()
+	ev.index = idx
+	ev.position = get_viewport().get_final_transform() * c
+	Input.parse_input_event(ev)
+## A quick canvas tap (press, 2 frames, release).
+func ctap(idx: int, c: Vector2) -> String:
+	events.clear()
+	tch(idx, true, c)
+	await frames(2)
+	tch(idx, false, c)
+	await pframes(4)
+	return "none" if events.is_empty() else ",".join(events)
+## Press at `from` and drag in steps to `to` (one frame per step), finger left down.
+func joy_drag(idx: int, from: Vector2, to: Vector2, steps := 6) -> void:
+	tch(idx, true, from)
+	await frames(1)
+	for k in range(1, steps + 1):
+		drg(idx, from.lerp(to, float(k) / steps))
+		await frames(1)
+	await frames(2)
+func player_screen() -> Vector2:
+	return cam.unproject_position(player.global_position)
+func stood_still(n := 6) -> void:
+	await pframes(n)
+
+func phase_e1_seat_tap() -> void:
+	e1_hook()
+	await sit_from(Vector2(3.0, -9.8), "E1J")
+	await wait_game(2.0)
+	var c0 := cam_str()
+	var outs: Array = []
+	for k in 3:
+		outs.append(await tap_reg(rs().global_position + Vector3(0, 0.3, 0), 3))
+		await wait_game(0.4)
+	R("E1J seat taps", "3 taps on the occupied seat -> %s; seated %s; camera unchanged %s; %s; events %s" % [outs, seated(), cam_str() == c0, rs_str("after"), seat_log])
+	R("E1J seat verbs", "occupied: available %s, verbs %s, interact() -> %s" % [rs().is_interaction_available(), rs().call("get_available_interaction_verbs"), rs().call("interact")])
+	var s := await tap_reg(player.global_position + Vector3(0, 1.1, 0), 3)
+	await wait_game(1.8)
+	R("E1J upper body", "tap the player's upper body (1.1 m) -> %s; seated %s; %s; events %s" % [s, seated(), rs_str("after"), seat_log])
+	var rows: Array = []
+	for h in [0.1, 0.3, 0.5, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]:
+		if not seated():
+			await step_off()
+			await sit_tap()
+			await wait_game(1.7)
+		var r := await tap_reg(player.global_position + Vector3(0, h, 0), 3)
+		await wait_game(0.3)
+		rows.append("%.1f m: %s -> %s" % [h, r, "seated" if seated() else "stood"])
+	R("E1J split body", "; ".join(rows))
+	rows = []
+	var toward := (cam.global_position - player.global_position) * Vector3(1, 0, 1)
+	toward = toward.normalized()
+	var side := toward.cross(Vector3.UP)
+	for d in [["near 0.55", toward * 0.55], ["far 0.55", -toward * 0.55], ["left 0.55", side * 0.55], ["right 0.55", -side * 0.55], ["near 0.7", toward * 0.7], ["side 0.7", side * 0.7]]:
+		if not seated():
+			await step_off()
+			await sit_tap()
+			await wait_game(1.7)
+		var g: Vector3 = player.global_position + (d[1] as Vector3)
+		g.y = 0.0
+		var r := await tap_reg(g, 3)
+		await wait_game(0.3)
+		rows.append("%s: %s -> %s" % [d[0], r, "seated" if seated() else "stood"])
+	R("E1J split ground", "; ".join(rows))
+	await wait_game(2.0)
+	R("E1J end", rs_str("end"))
+
+func phase_e1_joy() -> void:
+	e1_hook()
+	hook_joy()
+	await wait_s(1.0)
+	var vis := get_viewport().get_visible_rect().size
+	R("E1K boot", "canvas %s; mode %s; joystick filter %d; %s" % [fmt(vis), InputManager.get_movement_mode_name(), joyview().mouse_filter, ring_str()])
+	# 1. short taps on the left half are taps
+	var t1 := await ctap(0, Vector2(560, 760))
+	await wait_s(1.5)
+	var old_zone: Array = []
+	for k in 4:
+		old_zone.append(await ctap(0, Vector2(150 + 25 * k, 1000 - 30 * k)))
+		await wait_s(0.8)
+	R("E1K left taps", "tap (560,760) -> %s; taps in the old fixed zone (150,1000)+ -> %s; joystick %s; %s" % [t1, old_zone, jlog, ring_str()])
+	await stood_still(10)
+	# 2. a drag past 24 px: the joystick
+	jlog.clear()
+	var ps0 := player_screen()
+	var w0 := p2()
+	tch(0, true, Vector2(500, 760))
+	await frames(1)
+	drg(0, Vector2(515, 760))
+	await frames(2)
+	var under := "%s; %s" % [jlog, ring_str()]
+	await joy_drag_continue(0, Vector2(515, 760), Vector2(580, 760))
+	R("E1K start", "15 px drag: %s; 80 px drag: %s; %s" % [under, jlog, ring_str()])
+	var wstart := player.global_position
+	await wait_s(1.2)
+	var sdir := cam.unproject_position(player.global_position) - cam.unproject_position(wstart)
+	R("E1K steer right", "player motion seen through the camera now %s (direction %.1f° from screen-right; world %s -> %s); %s" % [fmt(sdir), rad_to_deg(sdir.angle()), fmt(w0), fmt(p2()), ring_str()])
+	drg(0, Vector2(500 + 200, 760 - 200))
+	await frames(3)
+	R("E1K beyond radius diagonal", "finger (+200,-200): %s (|mv| %.3f)" % [ring_str(), InputManager.move_vector.length()])
+	drg(0, Vector2(500 + 30, 760 - 30))
+	await frames(3)
+	R("E1K diagonal", "finger (+30,-30): %s" % ring_str())
+	events.clear()
+	tch(0, false, Vector2(530, 730))
+	await pframes(2)
+	var rel0 := ring_str()
+	await settle_frames()
+	R("E1K release", "%s; just after: %s; settled: %s; speed %.2f; taps from the release %s" % [jlog, rel0, ring_str(), speed(), events])
+	# 3. edge
+	jlog.clear()
+	await joy_drag(0, Vector2(6, 1074), Vector2(46, 1074))
+	R("E1K edge", "touch (6,1074) -> (46,1074): %s; %s" % [jlog, ring_str()])
+	drg(0, Vector2(6, 1074 - 40))
+	await frames(3)
+	R("E1K edge up", "finger straight up from the touch-down point: %s" % ring_str())
+	tch(0, false, Vector2(6, 1034))
+	await pframes(6)
+	# 4. multitouch while held
+	jlog.clear()
+	await joy_drag(0, Vector2(500, 760), Vector2(560, 760))
+	var rt := await ctap(1, Vector2(1400, 600))
+	var z0: float = arm.spring_length
+	tch(1, true, Vector2(1250, 550))
+	tch(2, true, Vector2(1450, 550))
+	await frames(2)
+	for k in range(1, 6):
+		drg(2, Vector2(1450 + 20 * k, 550))
+		await frames(1)
+	tch(2, false, Vector2(1550, 550))
+	tch(1, false, Vector2(1250, 550))
+	await frames(2)
+	R("E1K multitouch", "joystick held: right tap -> %s; pinch zoom %.4f -> %.4f; joystick %s; %s" % [rt, z0, arm.spring_length, jlog, ring_str()])
+	tch(0, false, Vector2(560, 760))
+	await pframes(6)
+	# a second finger before the joystick starts: a pinch, no joystick
+	jlog.clear()
+	z0 = arm.spring_length
+	tch(0, true, Vector2(500, 700))
+	tch(1, true, Vector2(1400, 700))
+	await frames(2)
+	for k in range(1, 6):
+		drg(0, Vector2(500 - 20 * k, 700))
+		await frames(1)
+	tch(0, false, Vector2(400, 700))
+	tch(1, false, Vector2(1400, 700))
+	await pframes(4)
+	R("E1K pinch first", "left finger then right finger, left drags 100 px: joystick %s; zoom %.4f -> %.4f; %s" % [jlog, z0, arm.spring_length, ring_str()])
+	# 5. mode switch, focus loss, lost release
+	jlog.clear()
+	await joy_drag(0, Vector2(500, 760), Vector2(560, 760))
+	InputManager.set_tap_to_move(true)
+	await pframes(4)
+	var m1 := "%s; %s; mobile controls visible %s" % [jlog, ring_str(), (main.get_node("HUD/MobileControls") as Control).visible]
+	InputManager.set_tap_to_move(false)
+	drg(0, Vector2(500, 700))
+	await frames(2)
+	tch(0, false, Vector2(500, 700))
+	await pframes(4)
+	R("E1K mode switch", "Tap to Move mid-drag: %s; back to Joystick, old finger dragged and lifted: %s; %s" % [m1, jlog, ring_str()])
+	jlog.clear()
+	InputManager.set_tap_to_move(true)
+	await joy_drag(0, Vector2(500, 760), Vector2(580, 760))
+	tch(0, false, Vector2(580, 760))
+	await frames(2)
+	R("E1K tap mode drag", "Tap to Move: a left drag -> joystick %s; %s" % [jlog, ring_str()])
+	InputManager.set_tap_to_move(false)
+	jlog.clear()
+	await joy_drag(0, Vector2(500, 760), Vector2(560, 760))
+	InputManager.notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
+	await pframes(4)
+	var f1 := "%s; %s" % [jlog, ring_str()]
+	drg(0, Vector2(600, 760))
+	await frames(2)
+	R("E1K focus out", "focus lost mid-drag: %s; the old finger dragged after: %s" % [f1, ring_str()])
+	tch(0, false, Vector2(600, 760))
+	await pframes(4)
+	jlog.clear()
+	await joy_drag(0, Vector2(500, 760), Vector2(560, 760))
+	var lr := await ctap(0, Vector2(700, 760))
+	await pframes(4)
+	R("E1K lost release", "joystick finger 0 never released, a new tap with index 0 -> %s; joystick %s; %s" % [lr, jlog, ring_str()])
+	await wait_s(1.0)
+	# 6. desktop mouse (emulated touch)
+	jlog.clear()
+	var mb := InputEventMouseButton.new()
+	mb.button_index = MOUSE_BUTTON_LEFT
+	mb.pressed = true
+	mb.position = get_viewport().get_final_transform() * Vector2(500, 760)
+	mb.button_mask = MOUSE_BUTTON_MASK_LEFT
+	Input.parse_input_event(mb)
+	await frames(1)
+	for k in range(1, 6):
+		var mm := InputEventMouseMotion.new()
+		mm.button_mask = MOUSE_BUTTON_MASK_LEFT
+		mm.position = get_viewport().get_final_transform() * Vector2(500 + 16 * k, 760)
+		Input.parse_input_event(mm)
+		await frames(1)
+	await frames(2)
+	var md := "%s; last moved %s; %s" % [jlog, fmt(last_moved), ring_str()]
+	var mu := InputEventMouseButton.new()
+	mu.button_index = MOUSE_BUTTON_LEFT
+	mu.pressed = false
+	mu.position = get_viewport().get_final_transform() * Vector2(580, 760)
+	Input.parse_input_event(mu)
+	await settle_frames()
+	R("E1K mouse", "mouse drag (500,760)->(580,760): %s; released: %s; %s" % [md, jlog, ring_str()])
+	events.clear()
+	var mc := InputEventMouseButton.new()
+	mc.button_index = MOUSE_BUTTON_LEFT
+	mc.pressed = true
+	mc.position = get_viewport().get_final_transform() * Vector2(520, 800)
+	Input.parse_input_event(mc)
+	await frames(2)
+	var mc2 := mc.duplicate() as InputEventMouseButton
+	mc2.pressed = false
+	Input.parse_input_event(mc2)
+	await pframes(4)
+	R("E1K mouse click", "mouse click (520,800) -> %s; joystick %s" % ["none" if events.is_empty() else ",".join(events), jlog])
+	await wait_s(1.0)
+	# 7. keyboard untouched
+	var kp := p2()
+	await key(true)
+	await pframes(10)
+	var kv := InputManager.move_vector
+	var ev := InputEventKey.new()
+	ev.physical_keycode = KEY_W
+	ev.pressed = false
+	Input.parse_input_event(ev)
+	await pframes(6)
+	R("E1K keyboard", "W held: mv %s, moved %s -> %s; released: mv %s; joystick %s" % [fmt(kv), fmt(kp), fmt(p2()), fmt(InputManager.move_vector), jlog])
+	# 8. seated
+	await sit_from(Vector2(3.0, -9.8), "E1K seated")
+	await wait_game(1.8)
+	var gtap := "none"
+	var gpt := Vector2.ZERO
+	for off in [Vector3(-2.0, 0, 1.0), Vector3(-2.5, 0, -0.5), Vector3(-1.5, 0, 2.0)]:
+		var sp: Variant = screen_of(player.global_position + off)
+		if sp != null and (sp as Vector2).x < get_viewport().get_visible_rect().size.x * 0.5:
+			gpt = sp
+			for k in 3:
+				gtap = await ctap(0, gpt)
+				if gtap != "none":
+					break
+			break
+	await wait_s(0.6)
+	var st := "%s at canvas %s" % [gtap, fmt(gpt)]
+	var st_seated := seated()
+	if not seated():
+		await step_off()
+		await sit_tap()
+		await wait_game(1.8)
+	var c_seated := cam_str()
+	jlog.clear()
+	await joy_drag(0, Vector2(400, 760), Vector2(470, 760))
+	await pframes(4)
+	var jd := "seated %s; %s; %s" % [seated(), jlog, ring_str()]
+	tch(0, false, Vector2(470, 760))
+	await pframes(6)
+	await wait_game(1.8)
+	R("E1K seated", "a short left-half ground tap while seated -> %s, still seated %s; seated before the drag %s (%s); joystick drag: %s; after: %s; events %s" % [st, st_seated, c_seated != "", c_seated, jd, rs_str("after"), seat_log.slice(-4)])
+
+func joy_drag_continue(idx: int, from: Vector2, to: Vector2, steps := 5) -> void:
+	for k in range(1, steps + 1):
+		drg(idx, from.lerp(to, float(k) / steps))
+		await frames(1)
+	await frames(2)
+
+# =============================================================== R1 (D-62): the Stand Up button and seated controls
+var su_presses := 0
+func stand_up_button() -> Button:
+	return hudn().get_node_or_null("StandUpButton") as Button
+func su_str() -> String:
+	var b := stand_up_button()
+	return "stand up visible %s; joystick visible %s; movement locked %s" % [b != null and b.is_visible_in_tree(), (hudn().get_node("MobileControls") as Control).is_visible_in_tree(), player.get("_movement_locked")]
+func _on_su_pressed() -> void:
+	su_presses += 1
+## Presses the Stand Up button with one synthesized finger at its centre (retried, as tap_reg); reports whether the
+## button fired and which world taps the touch made (none expected: the GUI keeps its own touches).
+func press_stand_up(tries := 5) -> String:
+	var b := stand_up_button()
+	if b == null:
+		return "no button"
+	if not b.pressed.is_connected(_on_su_pressed):
+		b.pressed.connect(_on_su_pressed)
+	var w := "none"
+	for k in tries:
+		if not b.is_visible_in_tree():
+			return "hidden"
+		var before := su_presses
+		w = await ctap(0, b.get_global_rect().get_center())
+		if su_presses > before:
+			return "pressed, world events %s" % w
+	return "not pressed (world events %s)" % w
+
+func phase_e1_stand_up() -> void:
+	e1_hook()
+	hook_joy()
+	var ended: Array = []
+	fcam().connect("settle_ended", func() -> void: ended.append(game_time))
+	await wait_s(1.0)
+	var c_base := cam_str()
+	R("E1T boot", "%s; %s" % [su_str(), c_base])
+	await sit_from(Vector2(3.0, -9.8), "E1T")
+	await wait_game(1.8)
+	R("E1T seated", "%s; %s" % [su_str(), rs_str("seated")])
+	# a real joystick drag on the left half, held while seated
+	var at := p2()
+	var c0 := cam_str()
+	jlog.clear()
+	await joy_drag(0, Vector2(400, 760), Vector2(470, 700))
+	await wait_s(1.0)
+	var jd := "seated %s; moved %.3f m; camera unchanged %s; joystick %s; %s" % [seated(), p2().distance_to(at), cam_str() == c0, jlog, ring_str()]
+	tch(0, false, Vector2(470, 700))
+	await pframes(6)
+	R("E1T seated drag", jd)
+	# W held while seated, then Stand Up: stands at once; movement and the joystick wait for the camera
+	at = p2()
+	await key(true)
+	await pframes(10)
+	var held := "seated %s, moved %.3f m" % [seated(), p2().distance_to(at)]
+	ended.clear()
+	var t_press := game_time
+	var su := await press_stand_up()
+	R("E1T stand up", "W held while seated: %s; Stand Up -> %s; just after: seated %s; %s; seat available %s" % [held, su, seated(), su_str(), rs().is_interaction_available()])
+	var locked_frames := 0
+	var moved_locked := 0.0
+	var unlock_t := -1.0
+	var cam_at_unlock := ""
+	var joy_hidden_while_locked := true
+	while game_time - t_press < 4.0:
+		await get_tree().physics_frame
+		if not bool(player.get("_movement_locked")):
+			unlock_t = game_time - t_press
+			cam_at_unlock = cam_str()
+			break
+		locked_frames += 1
+		moved_locked = maxf(moved_locked, p2().distance_to(at))
+		joy_hidden_while_locked = joy_hidden_while_locked and not (hudn().get_node("MobileControls") as Control).is_visible_in_tree()
+	var at2 := p2()
+	await pframes(20)
+	var moved_after := p2().distance_to(at2)
+	await key(false)
+	await pframes(6)
+	R("E1T release", "movement locked for %d physics frames, moved while locked %.3f m, joystick hidden while locked %s; unlocked %.2f s after Stand Up; settle_ended %d; camera at the unlock %s (base %s, exact %s); then W moved %.3f m; %s" % [locked_frames, moved_locked, joy_hidden_while_locked, unlock_t, ended.size(), cam_at_unlock, c_base, cam_at_unlock == c_base, moved_after, su_str()])
+	# Tap to Move: the joystick stays hidden throughout; Stand Up works the same
+	InputManager.set_tap_to_move(true)
+	await pframes(4)
+	var tm0 := su_str()
+	var ok := await sit_from(Vector2(3.0, -9.8), "E1T tap mode")
+	await wait_game(1.8)
+	var tm1 := su_str()
+	var su2 := await press_stand_up()
+	await wait_game(2.5)
+	R("E1T tap mode", "Tap to Move: before %s; seated %s: %s; Stand Up -> %s; after the release %s; seated %s" % [tm0, ok, tm1, su2, su_str(), seated()])
+	InputManager.set_tap_to_move(false)
+	await pframes(4)
+	R("E1T end", "%s; %s" % [su_str(), rs_str("end")])
+
+# =============================================================== R2 (D-62): closer view and bounded seated pinch
+## Two fingers on the world, `from_gap` apart around `centre`, spread to `to_gap` (apart = closer), then lifted.
+func pinch(centre: Vector2, from_gap: float, to_gap: float, steps := 5) -> void:
+	var a := centre - Vector2(from_gap / 2.0, 0)
+	tch(1, true, a)
+	tch(2, true, centre + Vector2(from_gap / 2.0, 0))
+	await frames(2)
+	for k in range(1, steps + 1):
+		drg(2, a + Vector2(lerpf(from_gap, to_gap, float(k) / steps), 0))
+		await frames(1)
+	tch(2, false, a + Vector2(to_gap, 0))
+	tch(1, false, a)
+	await frames(3)
+func zs() -> String:
+	return "%.4f" % arm.spring_length
+## Each zoom request while zlog_on: whether the settle was easing, and the distance just before and just after
+## FollowCamera.zoom_by() handled it (_on_zoom_before runs before Main's handler, _on_zoom_after after it).
+var zlog: Array = []
+var zlog_on := false
+var zoom_before := -1.0
+func _on_zoom_before(_factor: float) -> void:
+	zoom_before = arm.spring_length if arm != null else -1.0
+func _on_zoom_after(_factor: float) -> void:
+	if zlog_on:
+		zlog.append([fcam().get("_settle_tween") != null, zoom_before, arm.spring_length])
+## "n requests, e during the ease, c changed during the ease" and the requests themselves.
+func zlog_str() -> String:
+	var during := 0
+	var changed := 0
+	var rows: Array = []
+	for z in zlog:
+		if z[0]:
+			during += 1
+			if z[1] != z[2]:
+				changed += 1
+		rows.append("%s %.4f->%.4f" % ["easing" if z[0] else "settled", z[1], z[2]])
+	return "%d requests, %d during the ease, %d changed the distance during the ease %s" % [zlog.size(), during, changed, rows]
+func base_str(z0: float, o0: Vector2) -> String:
+	var bd: float = fcam().get("_base_distance")
+	var bo: Vector2 = fcam().get("_base_offset")
+	return "saved pre-sit view %.4f (%.4f, %.4f) (exact %s)" % [bd, bo.x, bo.y, bd == z0 and bo == o0]
+
+func phase_e1_seated_zoom() -> void:
+	e1_hook()
+	await goto(Vector2(3.0, -9.8), "near the seat")
+	# a non-default pre-sit view: two wheel notches out (11 -> 13.31)
+	await wheel(false)
+	await wheel(false)
+	await frames(3)
+	var z0 := arm.spring_length
+	var o0 := Vector2(cam.h_offset, cam.v_offset)
+	var base := cam_str()
+	InputManager.zoom_requested.connect(_on_zoom_after)
+	R("E1Z pre-sit", "%s; %s" % [base, su_str()])
+	# sit; two wheel notches while the settle eases in
+	var t := await sit_tap()
+	zlog.clear()
+	zlog_on = true
+	await wheel(false)
+	await wheel(false)
+	zlog_on = false
+	var wheel_log := zlog_str()
+	await wait_game(2.0)
+	R("E1Z settled", "seated after %.2f s; two wheel notches during the settle ease; settled %s; %s" % [t, cam_str(), su_str()])
+	R("E1Z wheel while settling", "%s; settled %s; %s" % [wheel_log, cam_str(), base_str(z0, o0)])
+	# seated wheel: out to the seated maximum, in to the seated minimum
+	var outs: Array = []
+	for k in 6:
+		await wheel(false)
+		outs.append(zs())
+	var ins: Array = []
+	for k in 6:
+		await wheel(true)
+		ins.append(zs())
+	R("E1Z seated wheel", "out %s; in %s; offset (%.4f, %.4f); seated %s" % [outs, ins, cam.h_offset, cam.v_offset, seated()])
+	# real two-finger pinches on the world
+	for k in 4:
+		await wheel(false)
+	events.clear()
+	var p0 := zs()
+	await pinch(Vector2(1350, 520), 200.0, 230.0)
+	var p1 := zs()
+	await pinch(Vector2(1350, 520), 200.0, 520.0)
+	var p2v := zs()
+	await pinch(Vector2(1350, 520), 400.0, 200.0)
+	var p3 := zs()
+	R("E1Z seated pinch", "pinch apart: %s -> %s; wide pinch apart -> %s; pinch together -> %s; offset (%.4f, %.4f); seated %s; taps %s" % [p0, p1, p2v, p3, cam.h_offset, cam.v_offset, seated(), "none" if events.is_empty() else ",".join(events)])
+	# Stand Up from the pinched seated view: movement returns only at the exact pre-sit view
+	var seated_zoom := zs()
+	var t_press := game_time
+	var su := await press_stand_up()
+	var cam_at_unlock := ""
+	var t_unlock := -1.0
+	while game_time - t_press < 4.0:
+		await get_tree().physics_frame
+		if not bool(player.get("_movement_locked")):
+			cam_at_unlock = cam_str()
+			t_unlock = game_time - t_press
+			break
+	R("E1Z stand up", "seated zoom %s; Stand Up -> %s; unlocked %.2f s later at %s (pre-sit %s, exact %s); zoom exact %s; %s" % [seated_zoom, su, t_unlock, cam_at_unlock, base, cam_at_unlock == base, arm.spring_length == z0, su_str()])
+	# standing: the normal limits again
+	var outs2: Array = []
+	for k in 4:
+		await wheel(false)
+		outs2.append(zs())
+	await wheel(true)
+	await wheel(true)
+	await frames(3)
+	var z1 := arm.spring_length
+	R("E1Z standing wheel", "out %s; then in twice -> %s; seated %s" % [outs2, zs(), seated()])
+	# sit again: the seated view starts at 8 m again (nothing remembered)
+	var o1 := Vector2(cam.h_offset, cam.v_offset)
+	var t2 := await sit_tap()
+	# a real two-finger pinch (fingers apart) while the settle eases in: two drag steps, about 4 frames
+	zlog.clear()
+	zlog_on = true
+	await pinch(Vector2(1350, 520), 200.0, 320.0, 2)
+	zlog_on = false
+	var pinch_log := zlog_str()
+	await wait_game(2.0)
+	R("E1Z sit again", "pre-sit %.4f; seated after %.2f s; settled %s; %s" % [z1, t2, cam_str(), su_str()])
+	R("E1Z pinch while settling", "%s; settled %s; %s" % [pinch_log, cam_str(), base_str(z1, o1)])
+	# an area swap while seated with a pinched view
+	for k in 4:
+		await wheel(false)
+	var seated_view := cam_str()
+	main.call("load_area", load("res://scenes/world/HomeInterior.tscn"), "home_door")
+	await wait_game(2.0)
+	R("E1Z swap while seated", "seated view %s; indoors: area %s; seated %s; %s; %s" % [seated_view, cur_area_name(), seated(), cam_str(), su_str()])
+	main.call("load_area", load("res://scenes/world/Meadow.tscn"), "house_door")
+	await wait_game(2.0)
+	R("E1Z back outside", "area %s; seated %s; %s (pre-sit %.4f exact %s); %s" % [cur_area_name(), seated(), cam_str(), z1, arm.spring_length == z1, su_str()])
+
+# =============================================================== R3 (D-62): seated yaw
+## The view's yaw: the FollowCamera node's rotation about Y, in degrees.
+func yaw() -> float:
+	return rad_to_deg((fcam() as Node3D).rotation.y)
+func ys() -> String:
+	return "%.4f" % yaw()
+## Each world drag while ylog_on: whether the camera was easing, and the yaw just before and just after the camera
+## handled it (_on_drag_before runs before Main's handler, _on_drag_after after it).
+var ylog: Array = []
+var ylog_on := false
+var yaw_before := 0.0
+func _on_drag_before(_relative: Vector2) -> void:
+	if main != null:
+		yaw_before = yaw()
+func _on_drag_after(_relative: Vector2) -> void:
+	if ylog_on:
+		ylog.append([fcam().get("_settle_tween") != null, yaw_before, yaw()])
+func ylog_str() -> String:
+	var easing := 0
+	var changed := 0
+	for y in ylog:
+		if y[0]:
+			easing += 1
+			if y[1] != y[2]:
+				changed += 1
+	return "%d drag events, %d while easing, %d turned the view while easing" % [ylog.size(), easing, changed]
+## One finger dragged on the canvas from `from` to `to` in `steps` frames, then lifted.
+func cdrag(from: Vector2, to: Vector2, steps := 10) -> void:
+	tch(0, true, from)
+	await frames(1)
+	for k in range(1, steps + 1):
+		drg(0, from.lerp(to, float(k) / steps))
+		await frames(1)
+	tch(0, false, to)
+	await frames(3)
+
+func phase_e1_seated_yaw() -> void:
+	e1_hook()
+	hook_joy()
+	InputManager.world_dragged.connect(_on_drag_after)
+	await goto(Vector2(3.0, -9.8), "near the seat")
+	await wait_s(0.5)
+	var y0 := yaw()
+	var base := cam_str()
+	# standing: a drag does not turn the view
+	await cdrag(Vector2(1300, 500), Vector2(1500, 500))
+	R("E1Y standing drag", "yaw %.4f -> %s; %s; %s" % [y0, ys(), cam_str(), su_str()])
+	# sit; a drag while the settle eases in
+	var t := await sit_tap()
+	ylog.clear()
+	ylog_on = true
+	await cdrag(Vector2(1300, 500), Vector2(1500, 500), 4)
+	ylog_on = false
+	var settling := ylog_str()
+	await wait_game(2.0)
+	R("E1Y settled", "seated after %.2f s; drag during the settle ease: %s; settled yaw %s; %s; %s" % [t, settling, ys(), cam_str(), su_str()])
+	# seated drags: 200 px right in 20 px steps (180 px reported once past the tap reach: 27°), on to +45°, then 600 px left
+	# in 50 px steps (all reported: −90°) to −45° and on against that limit, then 200 px on the left half (+27°)
+	var seen: Array = []
+	events.clear()
+	await cdrag(Vector2(1300, 500), Vector2(1500, 500))
+	seen.append(ys())
+	await cdrag(Vector2(1300, 500), Vector2(1500, 500))
+	seen.append(ys())
+	await cdrag(Vector2(1600, 500), Vector2(1000, 500), 12)
+	seen.append(ys())
+	await cdrag(Vector2(1600, 500), Vector2(1000, 500), 12)
+	seen.append(ys())
+	# the left half while seated: the joystick is off, so it turns the view too
+	jlog.clear()
+	await cdrag(Vector2(300, 700), Vector2(500, 700))
+	seen.append(ys())
+	R("E1Y seated drags", "yaw %s; joystick %s; zoom/offset %s; seated %s; taps %s" % [seen, jlog, cam_str(), seated(), "none" if events.is_empty() else ",".join(events)])
+	# a pinch while seated zooms (R2) and does not turn the view
+	var yp := ys()
+	await pinch(Vector2(1350, 520), 200.0, 300.0)
+	R("E1Y seated pinch", "yaw %s -> %s; zoom %s" % [yp, ys(), zs()])
+	# a quick look-around that comes back near where it started, on the player: a drag (the view turns by the net 4 px),
+	# never a tap — no stand (R3 input audit). One frame between the moves (Godot merges drags that arrive in the same frame
+	# into one), press to release about two frames — under the 450 ms tap limit, so before the fix the release was a tap on
+	# the player.
+	var pp: Vector2 = cam.unproject_position(player.global_position + Vector3(0, 1.1, 0))
+	var yq := ys()
+	events.clear()
+	tch(0, true, pp)
+	await frames(1)
+	drg(0, pp + Vector2(120, 0))
+	await frames(1)
+	drg(0, pp + Vector2(4, 0))
+	tch(0, false, pp + Vector2(4, 0))
+	await frames(2)
+	await pframes(4)
+	R("E1Y flick back", "from the player's body at canvas %s: yaw %s -> %s; taps %s; seated %s" % [fmt(pp), yq, ys(), "none" if events.is_empty() else ",".join(events), seated()])
+	# Stand Up from a turned view (the W key held): movement returns only once the yaw, distance and framing are back
+	await cdrag(Vector2(1200, 500), Vector2(1800, 500), 12)
+	var turned := ys()
+	var at := p2()
+	await key(true)
+	var t_press := game_time
+	var su := await press_stand_up()
+	var first_locked_yaw := ys()
+	var moved_locked := 0.0
+	var yaw_at_unlock := ""
+	var cam_at_unlock := ""
+	var exact := false
+	ylog.clear()
+	ylog_on = true
+	var dragged := false
+	while game_time - t_press < 4.0:
+		await get_tree().physics_frame
+		if not bool(player.get("_movement_locked")):
+			yaw_at_unlock = ys()
+			cam_at_unlock = cam_str()
+			exact = yaw() == y0
+			break
+		moved_locked = maxf(moved_locked, p2().distance_to(at))
+		if not dragged and game_time - t_press > 0.6:
+			dragged = true
+			tch(1, true, Vector2(1300, 500))
+			drg(1, Vector2(1400, 500))
+			drg(1, Vector2(1500, 500))
+			tch(1, false, Vector2(1500, 500))
+	ylog_on = false
+	await key(false)
+	await pframes(4)
+	R("E1Y stand up", "turned %s; Stand Up -> %s; first locked frame yaw %s; moved while locked %.3f m; a drag during the release: %s; unlocked at yaw %s (pre-sit %.4f, exact %s) and %s (pre-sit %s, exact %s); %s" % [turned, su, first_locked_yaw, moved_locked, ylog_str(), yaw_at_unlock, y0, exact, cam_at_unlock, base, cam_at_unlock == base, su_str()])
+	# standing again: a drag does not turn the view; a left-half drag is the joystick again
+	jlog.clear()
+	var ys0 := ys()
+	await cdrag(Vector2(1300, 500), Vector2(1500, 500))
+	var ys1 := ys()
+	await joy_drag(0, Vector2(300, 700), Vector2(360, 700))
+	var jstart := str(jlog)
+	tch(0, false, Vector2(360, 700))
+	await pframes(6)
+	R("E1Y standing again", "a right-half drag: yaw %s -> %s; a left-half drag: joystick %s; seated %s" % [ys0, ys1, jstart, seated()])
+	# sit again from a turned view: every sit starts at the default yaw; and again mid-release
+	await goto(Vector2(3.0, -9.8), "back to the seat")
+	await sit_tap()
+	await wait_game(2.0)
+	var ya := ys()
+	await cdrag(Vector2(1600, 500), Vector2(1000, 500), 12)
+	var yb := ys()
+	var st := await stand_tap()
+	await wait_game(0.5)
+	var ymid := ys()
+	# routed (as E1G does): a synthesized tap is resolved ~3 frames later at the probe's ~7.5 fps, by when the turning
+	# camera has moved the seat on screen — the point here is the camera on re-sitting, not tap aiming
+	events.clear()
+	InputManager.interact_target_requested.emit(rs())
+	var r := "routed " + ",".join(events)
+	var t3 := await wait_seated()
+	await wait_game(2.0)
+	R("E1Y sit again", "settled yaw %s; turned to %s; stand tap -> %s; mid-release yaw %s; seat tap -> %s, seated after %.2f s; settled yaw %s (default %.4f, exact %s); seated %s" % [ya, yb, st, ymid, r, t3, ys(), y0, yaw() == y0, seated()])
+	# an area swap while seated with a turned view
+	await cdrag(Vector2(1300, 500), Vector2(1550, 500))
+	var yt := ys()
+	main.call("load_area", load("res://scenes/world/HomeInterior.tscn"), "home_door")
+	await wait_game(2.0)
+	R("E1Y swap while seated", "turned %s; indoors: area %s; seated %s; yaw %s (exact %s); %s; %s" % [yt, cur_area_name(), seated(), ys(), yaw() == y0, cam_str(), su_str()])
+
+# =============================================================== R4 (D-62): rest ambience and session-only mute
+func aam() -> Node:
+	return get_tree().root.get_node("AmbientAudioManager")
+func rest_player() -> AudioStreamPlayer:
+	return aam().get("_rest_player") as AudioStreamPlayer
+## Players of the audio manager playing right now (the rest ambience must never be two).
+func players_playing() -> int:
+	var n := 0
+	for c in aam().get_children():
+		if c is AudioStreamPlayer and (c as AudioStreamPlayer).playing:
+			n += 1
+	return n
+func snd() -> String:
+	var mb := hudn().get_node("MuteButton") as Button
+	return "playing %s; volume %.4f dB; muted %s; mute button %s %s; players playing %d" % [rest_player().playing, rest_player().volume_db, aam().call("is_rest_ambience_muted"), mb.visible, mb.text, players_playing()]
+var mute_presses := 0
+func _on_mute_pressed() -> void:
+	mute_presses += 1
+## One synthesized finger on the mute button (retried, as press_stand_up).
+func press_mute(tries := 5) -> String:
+	var b := hudn().get_node_or_null("MuteButton") as Button
+	if b == null:
+		return "no button"
+	if not b.pressed.is_connected(_on_mute_pressed):
+		b.pressed.connect(_on_mute_pressed)
+	var w := "none"
+	for k in tries:
+		if not b.is_visible_in_tree():
+			return "hidden"
+		var before := mute_presses
+		w = await ctap(0, b.get_global_rect().get_center())
+		if mute_presses > before:
+			return "pressed, world events %s" % w
+	return "not pressed (world events %s)" % w
+## Frame by frame until the rest ambience reaches `db` (or `limit` s of game time): the time it took.
+func wait_volume(db: float, limit := 4.0) -> float:
+	var g := game_time
+	while game_time - g < limit:
+		if absf(rest_player().volume_db - db) < 0.0001:
+			return game_time - g
+		await get_tree().process_frame
+	return -1.0
+
+func phase_e1_rest_ambience() -> void:
+	e1_hook()
+	await wait_s(1.0)
+	var loud: float = aam().get("REST_AMBIENCE_DB")
+	var quiet: float = aam().get("REST_SILENT_DB")
+	R("E1M boot", "%s; level %.1f dB, silent %.1f dB; rest_ambience assigned %s" % [snd(), loud, quiet, aam().get("rest_ambience") != null])
+	# sit: it starts from silence and fades in, once; the world carries on
+	var f0: float = get_tree().root.get_node("WorldClock").call("get_fraction")
+	await sit_from(Vector2(3.0, -9.8), "E1M")
+	var started := snd()
+	var stream_class := rest_player().stream.get_class() if rest_player().stream != null else "none"
+	var samples: Array = []
+	var g := game_time
+	while game_time - g < 4.0:
+		samples.append(rest_player().volume_db)
+		if absf(rest_player().volume_db - loud) < 0.0001:
+			break
+		await get_tree().process_frame
+	var monotonic := true
+	for k in range(1, samples.size()):
+		monotonic = monotonic and samples[k] >= samples[k - 1]
+	var f1: float = get_tree().root.get_node("WorldClock").call("get_fraction")
+	R("E1M fade in", "just seated: %s; stream %s; reached %.4f dB after %.2f s over %d frames, rising throughout %s, in between %s; now %s; clock advanced %s; paused %s" % [started, stream_class, rest_player().volume_db, game_time - g, samples.size(), monotonic, samples.size() > 2 and samples[1] > quiet and samples[1] < loud, snd(), f1 > f0, get_tree().paused])
+	# mute and unmute while seated (synthesized taps on the button)
+	var m1 := await press_mute()
+	var t1 := await wait_volume(quiet)
+	var muted := snd()
+	var m2 := await press_mute()
+	var t2 := await wait_volume(loud)
+	R("E1M mute", "mute -> %s; silent after %.2f s: %s; unmute -> %s; back after %.2f s: %s; seated %s" % [m1, t1, muted, m2, t2, snd(), seated()])
+	# the stream loops: after longer than one loop of seated playback it still plays, within its length
+	var wav := rest_player().stream as AudioStreamWAV
+	var frames := wav.data.size() / 2 if wav != null else -1
+	await wait_game(maxf(0.0, wav.get_length() + 0.5 - (game_time - g)) if wav != null else 0.0)
+	R("E1M loop", "stream loop_mode %d, loop %d..%d of %d frames, length %.2f s; seated playback %.2f s (longer than one loop %s); still playing %s; position %.3f s (within the length %s)" % [wav.loop_mode if wav else -1, wav.loop_begin if wav else -1, wav.loop_end if wav else -1, frames, wav.get_length() if wav else -1.0, game_time - g, wav != null and game_time - g > wav.get_length(), rest_player().playing, rest_player().get_playback_position(), wav != null and rest_player().get_playback_position() < wav.get_length()])
+	# muted, Stand Up: the camera, movement and joystick restore exactly as before while the ambience fades out and stops
+	await press_mute()
+	await wait_volume(quiet)
+	var at := p2()
+	var c_base := "zoom 11.0000 offset (0.0000, 0.0800)"
+	var t_press := game_time
+	var su := await press_stand_up()
+	var unlock_t := -1.0
+	var cam_at_unlock := ""
+	var stop_t := -1.0
+	var moved_locked := 0.0
+	var max_players := 0
+	while game_time - t_press < 4.0:
+		await get_tree().physics_frame
+		max_players = maxi(max_players, players_playing())
+		if unlock_t < 0.0:
+			if bool(player.get("_movement_locked")):
+				moved_locked = maxf(moved_locked, p2().distance_to(at))
+			else:
+				unlock_t = game_time - t_press
+				cam_at_unlock = cam_str()
+		if stop_t < 0.0 and not rest_player().playing:
+			stop_t = game_time - t_press
+		if unlock_t >= 0.0 and stop_t >= 0.0:
+			break
+	R("E1M stand up", "Stand Up -> %s; moved while locked %.3f m; unlocked after %.2f s at %s (base, exact %s); ambience stopped after %.2f s; at most %d player(s) playing; now %s; %s" % [su, moved_locked, unlock_t, cam_at_unlock, cam_at_unlock == c_base, stop_t, max_players, snd(), su_str()])
+	# sitting again while muted: silent; unmute; stand, and sit again mid-fade-out: the same playback carries on
+	await goto(Vector2(3.0, -9.8), "back to the seat")
+	await sit_tap()
+	await wait_game(2.5)
+	var resat := snd()
+	await press_mute()
+	await wait_volume(loud)
+	await press_stand_up()
+	var g2 := game_time
+	var always := true
+	while game_time - g2 < 0.6:
+		always = always and rest_player().playing
+		await get_tree().process_frame
+	var v0 := rest_player().volume_db
+	events.clear()
+	InputManager.interact_target_requested.emit(rs())   # routed: the player still stands on the seat (as E1Y)
+	var t3 := await wait_seated()
+	var v_seated := rest_player().volume_db
+	var g3 := game_time
+	while game_time - g3 < 0.4:
+		always = always and rest_player().playing
+		await get_tree().process_frame
+	R("E1M sit again", "while muted: %s; unmuted, stood, re-sat (routed) after %.2f s mid-fade-out: volume %.4f -> %.4f at the sit -> %.4f 0.4 s later (faded out before the sit %s, restarted from silence %s, rising after it %s); playing throughout %s; players playing %d" % [resat, t3, v0, v_seated, rest_player().volume_db, v0 < loud, v_seated <= quiet + 0.001, rest_player().volume_db > v_seated, always, players_playing()])
+	# five quick sit/stand cycles: never two playbacks, nothing left playing after
+	var most := 0
+	for k in 5:
+		await press_stand_up()
+		var gk := game_time
+		while game_time - gk < 0.2 + 0.25 * k:
+			most = maxi(most, players_playing())
+			await get_tree().process_frame
+		InputManager.interact_target_requested.emit(rs())
+		await wait_seated()
+		most = maxi(most, players_playing())
+	await press_stand_up()
+	var stopped := await wait_volume(quiet)
+	await wait_game(0.5)
+	R("E1M cycles", "5 quick sit/stand cycles: at most %d player(s) playing; after standing: silent after %.2f s, %s; seated %s" % [most, stopped, snd(), seated()])
+	# an area swap while seated fades it out
+	await sit_tap()
+	await wait_game(2.5)
+	var before_swap := snd()
+	main.call("load_area", load("res://scenes/world/HomeInterior.tscn"), "home_door")
+	await wait_game(2.5)
+	R("E1M swap while seated", "seated: %s; indoors: area %s; seated %s; %s" % [before_swap, cur_area_name(), seated(), snd()])

@@ -30,10 +30,14 @@ class_name Player
 ## ordinary navigation — no teleport — and, on arriving, faces the spot's
 ## forward and enters SEATED; stand() leaves it. Generic: the player knows
 ## nothing of rest spots, cameras or the HUD (Main coordinates them) and
-## sitting is never saved. While seated (D-56): joystick or keyboard
-## movement stands and moves in the same step; tapping the player stands;
-## a ground tap is ignored; tapping the seat it sits on changes nothing;
-## tapping another object stands and carries on with it. seat_ended reports when a sit attempt or a seated spell is over.
+## sitting is never saved. While seated (D-56, D-62): joystick and keyboard
+## movement are ignored — they neither stand nor move the player; tapping
+## the player stands; a ground tap is ignored; tapping the seat it sits on
+## changes nothing; tapping another object stands and carries on with it.
+## Main stands the player for the Stand Up button with stand(), and keeps
+## directional movement locked (set_movement_locked) until the camera has
+## fully restored, since screen-up only maps to the usual world direction
+## then. seat_ended reports when a sit attempt or a seated spell is over.
 
 const MAX_SPEED := 4.3
 const ACCELERATION := 15.0
@@ -115,6 +119,9 @@ var _selected_target: Interactable
 var _seat_spot: Transform3D
 var _seat_pending: bool = false
 var _seat_source: Object
+## Joystick/keyboard movement is ignored while this is set (D-62): set by
+## whoever coordinates the player (Main), e.g. until a camera restore ends.
+var _movement_locked: bool = false
 
 func _ready() -> void:
 	interaction_zone.area_entered.connect(_on_interaction_zone_area_entered)
@@ -127,10 +134,11 @@ func _ready() -> void:
 	_facing_angle = visual.rotation.y
 
 func _physics_process(delta: float) -> void:
-	var direction := _shape_input(InputManager.move_vector)
+	var direction := Vector3.ZERO
+	if _animation_state != AnimState.SEATED and not _movement_locked:
+		direction = _shape_input(InputManager.move_vector)
 	if direction != Vector3.ZERO:
 		_stop_navigation()
-		stand()
 	elif _navigating:
 		direction = _navigation_direction()
 
@@ -298,6 +306,11 @@ func sit(spot: Transform3D, source: Object = null) -> void:
 	_seat_spot = spot
 	_seat_source = source
 	_seat_pending = true
+
+## Ignores joystick/keyboard movement while `locked` (D-62); a tap-started
+## walk is unaffected. Generic: the caller decides when.
+func set_movement_locked(locked: bool) -> void:
+	_movement_locked = locked
 
 ## Leaves SEATED (no-op otherwise).
 func stand() -> void:
