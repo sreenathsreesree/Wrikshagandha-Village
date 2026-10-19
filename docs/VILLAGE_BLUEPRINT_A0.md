@@ -1,5 +1,23 @@
 # Village Blueprint — Stage A0 (documentation only)
 
+> **Correction note (A0 Village World Design Lock, 2026-10-19).** This blueprint is kept exactly as written below.
+> `docs/VILLAGE_DESIGN_LOCK_A0.md` supersedes it where the geometry, checked by `tools/sims/sim_village_plan.py`
+> against the real Meadow and camera, shows it can't work:
+> - **Village road (§3.1):** a straight road from the house door west through the strip at z ≈ 2 crosses the house
+>   (the door is on its east wall). The lock's road leaves the planned `to_forest` path north of the house and
+>   narrows to 2 m through the strip at z ≈ −8.9.
+> - **Great Tree (§2):** at (−52, −14) its 10 m keep-clear circle would overlap a 4 m west edge band of a first stage
+>   ending at x −64; the lock places it at (−48, −14), conditional on that staging (OD-1, still open).
+> - **Village Square (§2):** at (−40, 4) its edge enters a forest-strip tree's canopy radius; the lock uses (−41.5, 4).
+> - **South Village (§2):** its extent (x −34 … −20) overlaps the existing west forest strip; the lock's provisional
+>   houses stand west of the strip, south of the square.
+> - **"Seen from the square" and Hill View (§2, §4):** with the fixed −42° camera pitch, distant and tall things are
+>   not in frame (default arm: nothing above ~0.1 m at 20 m ahead) and seats frame only ~9 m ahead; the lock has no
+>   vista viewpoints (OD-5).
+>
+> The lock also proposes staging growth (a first stage x −64 … 32; the staging decision, OD-1, remains open) and keeps
+> the Phase 16 Android gate: nothing here is authorised for construction.
+
 Status: **proposal for review — nothing here is implemented.** Stage A (the world expansion) has not started; this
 document changes no scene, script, data file, test or digest. Written alongside Stage B0.1 (D-60, D-61) on
 `prototype/organic-world`. Every figure about the current game below was read from the repository at the time of

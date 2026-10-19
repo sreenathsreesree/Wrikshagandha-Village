@@ -1924,6 +1924,27 @@ Goal: the small playable test area (placeholders).
 - **Verification:** see the B0.1 report (checker, run_all, `tools/art/run_organic_checks.sh`, save fixtures, force-stop, boot errors, regression vs `c0d1670`, navigation-mesh hash, mutations, relative render measurements, screenshots).
 - **Commits:** local only, awaiting review (ground and paths; B0.1 art; A0 blueprint).
 
+### ORGANIC WORLD REDESIGN — A0 Village World Design Lock
+**A0 — Village World Design Lock** — approved by the developer (2026-10-19, with two conditions); documentation and
+an offline layout model only, no runtime component. **It authorises no construction: Stage A waits for the Phase 16
+gate on an exported Godot 4.7.x Android build (§7, §8).**
+- **Files:** `docs/VILLAGE_DESIGN_LOCK_A0.md` (the lock: principles, bounds, camera-frame findings, the Great Tree,
+  paths, seats, render hypotheses, open decisions OD-1–OD-11, the post-gate sequence, and a machine-readable
+  ```village-plan block); `tools/sims/sim_village_plan.py` (run by `tools/run_all.sh`); a correction note at the top of
+  `docs/VILLAGE_BLUEPRINT_A0.md` (its text kept); D-64 (the approved principles only).
+- **Findings:** the fixed −42° camera frames ~9 m ahead from a seat and ~20 m standing, so there are no vista
+  viewpoints (the South Ridge stays a provisional quiet resting place) and landmarks are discovered close; the
+  blueprint's road crossed the house, its Great Tree position met a west edge band, its square met a strip canopy and
+  its South Village met the west strip — all corrected in the lock and checked by the model.
+- **Render figures:** desktop software-rendering baselines from the W1 commit (`ca9b3b0`) only; the view-cost
+  comparisons are hypotheses, not mobile acceptance thresholds. Android frame rate and navigation bake time stay
+  unmeasured until an exported Godot 4.7.x build is tested on a device.
+- **Open (not decided):** OD-1 staging, OD-2 occlusion, OD-3 stream/waterfall form, OD-4 lotus ghat, OD-5 viewpoints,
+  OD-6/OD-7 sanctuary location, meaning and reward, OD-8 navigation regions, OD-9 cultural review, OD-10 target and
+  waterfall timing, OD-11 edge backdrop — each with a recommendation, none adopted.
+- **Next (after the gate only):** A1 ground/rim/bounds/bands → A2 road, threshold, square → A3 Great Tree, seats, tree
+  road → A4 south village; Stage B after Stage A is accepted on the phone.
+
 ### PHASE 16 — VERTICAL SLICE GATE
 The small area must feel like a coherent real game. All must pass **on Android**:
 
