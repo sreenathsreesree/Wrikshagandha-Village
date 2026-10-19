@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/pond_shore.gdshader" id="1"]
+
+[resource]
+resource_name = "pond_shore"
+shader = ExtResource("1")
+shader_parameter/path_patches = PackedVector4Array(5, -4.8, 1.3, 2.3, 6.6, -6.4, 1.2, 2.1, 8, -8, 1.3, 2.2)
+shader_parameter/path_yaws = PackedFloat32Array(-25, 10, -15)

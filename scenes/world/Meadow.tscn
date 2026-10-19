@@ -1,4 +1,4 @@
-[gd_scene load_steps=59 format=3]
+[gd_scene load_steps=60 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/meadow.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/area_entry.gd" id="entry"]
@@ -49,6 +49,7 @@
 [ext_resource type="PackedScene" path="res://scenes/peaceful/RestSpot.tscn" id="44"]
 [ext_resource type="Shader" path="res://shaders/organic_ground.gdshader" id="organic_ground_shader"]
 [ext_resource type="Shader" path="res://shaders/organic_path.gdshader" id="organic_path_shader"]
+[ext_resource type="PackedScene" path="res://scenes/world/PondEdge.tscn" id="pond_edge"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -269,6 +270,9 @@ position = Vector3(7.8, 0, -8.6)
 
 [node name="PondApproachGrass2" parent="Water" instance=ExtResource("13")]
 position = Vector3(8.6, 0, -7.4)
+
+[node name="PondEdge" parent="." instance=ExtResource("pond_edge")]
+position = Vector3(10, 0, -9)
 
 [node name="Vegetation" type="Node3D" parent="."]
 

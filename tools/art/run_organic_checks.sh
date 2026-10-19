@@ -3,8 +3,10 @@
 #   1. bounds        check_organic_assets.gd mode=bounds: actual triangle counts and measured bounds of every prop
 #   2. colliders     the props' collision facts as Godot builds them, here and in a git archive of the baseline
 #                    commit (BASELINE, default 3f2cfaf), compared exactly
-#   3. reproducible  the generator rerun into a temporary folder; every mesh's content hash must equal the
-#                    committed mesh's, and the files must be byte-identical (the generator fixes each mesh's id)
+#   3. reproducible  the generators (organic props, and W1's pond edge) rerun into a temporary folder; every mesh's
+#                    content hash must equal the committed mesh's, and the files must be byte-identical (the generators
+#                    fix each mesh's id)
+#   4. pond edge     check_organic_assets.gd mode=pond: the W1 shore's measured shape, the materials and budgets
 # Any SCRIPT ERROR fails. Nothing in the project is written (the generator's output goes to a temporary folder).
 # Usage: GODOT=/path/to/Godot_v4.7.2 [PROJECT=<dir>] [BASELINE=<commit>] tools/art/run_organic_checks.sh
 set -uo pipefail
@@ -45,6 +47,9 @@ echo "== 3. reproducibility"
 mkdir -p "$work/regen"
 timeout 600 "$godot" --headless --path "$project" -s res://tools/art/generate_organic_assets.gd -- "out=$work/regen" > "$work/regen.log" 2>&1
 grep -q "ORGANIC_GEN OK" "$work/regen.log" && [ "$(grep -c 'SCRIPT ERROR' "$work/regen.log")" -eq 0 ] || { echo "  ORGANIC_CHECK FAIL the generator did not finish ($work/regen.log)"; failed=1; }
+# W1 (D-63): the Living Pond Edge's meshes live in the same folder and are regenerated and compared the same way.
+timeout 600 "$godot" --headless --path "$project" -s res://tools/art/generate_pond_edge.gd -- "out=$work/regen" > "$work/regen_pond.log" 2>&1
+grep -q "POND_GEN OK" "$work/regen_pond.log" && [ "$(grep -c 'SCRIPT ERROR' "$work/regen_pond.log")" -eq 0 ] || { echo "  ORGANIC_CHECK FAIL the pond edge generator did not finish ($work/regen_pond.log)"; failed=1; }
 gd "$project" "$work/hash_now.log" mode=hash "dir=$project/assets/organic/meshes" "out=$work/hash_committed.json"
 gd "$project" "$work/hash_regen.log" mode=hash "dir=$work/regen" "out=$work/hash_regen.json"
 if [ -s "$work/hash_committed.json" ] && cmp -s "$work/hash_committed.json" "$work/hash_regen.json"; then
@@ -57,6 +62,9 @@ for f in "$project"/assets/organic/meshes/*.res; do
   if cmp -s "$f" "$work/regen/$(basename "$f")"; then same=$((same + 1)); else diffb=$((diffb + 1)); echo "  bytes differ: $(basename "$f") ($(cmp "$f" "$work/regen/$(basename "$f")" | head -1))"; fi
 done
 if [ $diffb -eq 0 ]; then echo "  ORGANIC_CHECK PASS byte-identical files: $same of $same"; else echo "  ORGANIC_CHECK FAIL byte-identical files: $same, differing: $diffb"; failed=1; fi
+echo "== 4. pond edge (W1)"
+gd "$project" "$work/pond.log" mode=pond
+grep -E "ORGANIC_CHECK (PASS|FAIL)" "$work/pond.log" | sed 's/^/  /'
 echo "logs: $work"
 if [ $failed -eq 0 ]; then echo "ALL ORGANIC ART CHECKS PASSED IN GODOT"; else echo "ORGANIC ART CHECK FAILED"; fi
 exit $failed

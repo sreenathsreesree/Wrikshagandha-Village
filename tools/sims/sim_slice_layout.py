@@ -72,7 +72,7 @@ SOLID_R = {"TreeRound.tscn": 1.5, "TreeTall.tscn": 1.2, "TreeWide.tscn": 1.8, "R
 SOFT_R = {"GrassClump.tscn": 0.4, "GlowingMotes.tscn": 0.5, "Footprints.tscn": 0.5, "DriftingLeaf.tscn": 0.3, "Butterfly.tscn": 0.3}
 MOVING = ("Wildlife", "Ambient", "EnvironmentalEvents", "WorldSimulation")   # actors that move or carry no footprint
 SLICE = "VerticalSlice"
-ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces", "EarthPrototype", "PeacefulPlaces")   # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places, M11.1 Earth prototype, E1 rest spot: outside the existing-world digest
+ADDED = (SLICE, "WorldRim", "NpcRoutine", "WeatherEvents", "HiddenPlaces", "EarthPrototype", "PeacefulPlaces", "PondEdge")   # M07.2 slice, M07.3 rim, M09.1 routine spots, M09.4 weather events, M10 hidden places, M11.1 Earth prototype, E1 rest spot, W1 pond edge: outside the existing-world digest
 def in_slice(par, name): return any(par == r or par.startswith(r + "/") or (par == "." and name == r) for r in ADDED)
 NODES, OBJECTS, PATCHES, GEOM, BASE_GEOM, PLACED = {}, [], [], [], [], []
 for m in re.finditer(r'^\[node name="([^"]+)"([^\]]*)\]\n(.*?)(?=^\[|\Z)', SCENE, re.M | re.S):
@@ -484,4 +484,81 @@ rface = math.degrees(math.acos(max(-1.0, min(1.0, fwd[0] * to_pond[0] + fwd[1] *
 assert rface <= 5.0, f"the rest spot faces the pond (off by {rface:.1f}°)"
 print(f"rest spot (E1): RestSpot at ({rx}, {rz}), yaw {ryaw}°, {rdist:.2f} m from the pond centre (west side), facing it within "
       f"{rface:.1f}°; clearance >= {rclear:.2f} m beyond the rules; path edge {rgap:.2f} m")
+# W1 (D-63): the Living Pond Edge — one PondEdge instance exactly on the pond, visual only (its scene's contracts are
+# in check_project.py). Its dressing, in the pond's frame (the shore stones and ground-cover tufts from the generator's
+# STONES/TUFTS, the reeds and lily pads from PondEdge.tscn), keeps the seated Rest Mode view and the southern side open:
+# - the shore's inner line stays inside the water's rim (it covers the hard edge) and well outside the in-pond
+#   discoveries; the lip reaches past the rim; the whole ring stays clear of the rest spot and the villager's pond spot;
+# - anything taller than 0.12 m (reeds, tufts, the larger stones) stands on the north half (pond z < -0.5) and 1.4 m
+#   from the line between the Pond Rest Spot and the pond centre; the southern stones stay at or under 0.12 m;
+# - stones, reeds and tufts stay off every path patch (0.2 m outside its ellipse) and 0.5 m from every existing
+#   object, 0.8 m from discoveries and clues; lily pads float wholly inside the shore's inner line, 0.8 m from the
+#   in-pond discoveries and 0.5 m from the existing pads.
+GEN = _src("tools", "art", "generate_pond_edge.gd")
+def gconst(name): return float(re.search(r"^const %s := ([-0-9.]+)" % name, GEN, re.M).group(1))
+def garray(name):
+    import json
+    return json.loads(re.search(r"^const %s := (\[.*?\])\n(?=\S)" % name, GEN, re.M | re.S).group(1))
+edge = [(n, par, a, pr) for n, (par, a, b, pr) in placed.items() if par == "." and n == "PondEdge"]
+assert [(n, inst_of(a)) for n, _, a, _ in edge] == [("PondEdge", "PondEdge.tscn")], f"one PondEdge instance directly under the Meadow ({edge})"
+assert vec(edge[0][3], "position")[0::2] == (pond_x, pond_z) and vec(edge[0][3], "position")[1] == 0.0 and not {"rotation", "scale"} & set(edge[0][3]), \
+    "the pond edge sits exactly on the pond, unrotated and unscaled"
+assert not [n for n, (par, *_) in placed.items() if par.startswith("PondEdge")], "the pond edge's dressing lives in its own scene"
+inner_min, inner_max = gconst("INNER_MEAN") - gconst("INNER_SWING"), gconst("INNER_MEAN") + gconst("INNER_SWING")
+in_pond_r = max(math.hypot(x - pond_x, z - pond_z) for _, x, z in in_pond)
+assert inner_min >= in_pond_r + 0.8 and inner_max <= water_r - 0.05 and gconst("LIP_OUT") >= water_r + 0.1, \
+    f"the shore's inner line {inner_min:.2f}–{inner_max:.2f} m lies inside the water's rim {water_r} and clear of the in-pond discoveries ({in_pond_r:.2f} m)"
+villager = next(xz for n, (par, a, b, pr) in placed.items() if n == "VillagerPond" for xz in [vec(pr, "position")[0::2]])
+assert math.hypot(rx - pond_x, rz - pond_z) - gconst("OUTER") >= 0.5 + ER and math.hypot(villager[0] - pond_x, villager[1] - pond_z) - gconst("OUTER") >= 0.5, \
+    "the shore ring stays clear of the rest spot and the villager's pond spot"
+ROCK_H = {"a": 0.52, "b": 0.34}           # rock_a / rock_b height at scale 1 (B0.1 measured bounds)
+REED_H, TUFT_H, LILY_R = 0.55, 0.40, 0.22  # Reed.tscn's stalk, grass_tuft_a's height, LilyPad.tscn's radius
+pt, pnodes = scene_nodes("scenes/world/PondEdge.tscn")
+def local(props): return vec(props, "position")
+def uscale(props): return vec(props, "scale", (1.0, 1.0, 1.0))[0]
+items = [("stone%d" % i, x, z, ROCK_H[k] * sc + y) for i, (k, x, y, z, _, sc) in enumerate(garray("STONES"))]
+items += [("tuft%d" % i, x, z, TUFT_H * sc) for i, (x, z, _, sc, _) in enumerate(garray("TUFTS"))]
+items += [(n, local(pr)[0], local(pr)[2], REED_H * uscale(pr)) for n, _, par, pr in pnodes if par == "Reeds"]
+lilies = [(n, local(pr)[0], local(pr)[2], LILY_R * uscale(pr)) for n, _, par, pr in pnodes if par == "LilyPads"]
+assert len(items) == 7 + 16 + 3 and len(lilies) == 3, f"the planned dressing: 7 stones, 16 tufts, 3 reeds, 3 lily pads ({len(items)}, {len(lilies)})"
+seat = (rx - pond_x, rz - pond_z)
+def seat_dist(x, z):
+    t = max(0.0, min(1.0, (x * seat[0] + z * seat[1]) / (seat[0] ** 2 + seat[1] ** 2)))
+    return math.hypot(x - seat[0] * t, z - seat[1] * t)
+def patch_yaw(name):
+    body = re.search(r'^\[node name="%s" type="MeshInstance3D" parent="Terrain/Path"\]\n((?:[^\[\n].*\n)*)' % name, SCENE, re.M).group(1)
+    return math.radians(float((re.search(r"rotation_degrees = Vector3\(([^)]*)\)", body) or [None, "0,0,0"])[1].split(",")[1]))
+PATCH_LIST = [(px, pz, sx, sz, patch_yaw(n)) for n, px, pz, sx, sz in PATCHES]
+def off_paths(wx, wz, margin):
+    # into each patch's frame (undo its yaw), then outside its ellipse grown by the margin
+    def outside(px, pz, sx, sz, yaw):
+        dx, dz = wx - px, wz - pz
+        lx, lz = dx * math.cos(yaw) - dz * math.sin(yaw), dx * math.sin(yaw) + dz * math.cos(yaw)
+        return math.hypot(lx / (sx + margin), lz / (sz + margin)) >= 1.0
+    return all(outside(*p) for p in PATCH_LIST)
+near_objs = [(n, ox, oz, k) for n, ox, oz, orr, k in OBJECTS if k != "zone" and math.hypot(ox - pond_x, oz - pond_z) < gconst("OUTER") + 1.0]
+clues = [(n, x, z) for n, x, z, r, k in OBJECTS if n.endswith("Spawn")] + [(n, x, z) for n, (x, z) in ((n, v[0]) for n, v in NODES.items() if n.startswith("Footprints"))]
+tall_n, low_max, edge_gap = 0, 0.0, 9.0
+for n, x, z, top in items:
+    wx, wz = pond_x + x, pond_z + z
+    if top > 0.12:
+        tall_n += 1
+        assert z < -0.5 and seat_dist(x, z) >= 1.4, f"{n} ({top:.2f} m tall) stands on the north half, clear of the rest spot's view ({z:.2f}, {seat_dist(x, z):.2f} m)"
+    else:
+        low_max = max(low_max, top)
+    assert off_paths(wx, wz, 0.2), f"{n} stays off the path patches"
+    for on, ox, oz, k in near_objs:
+        assert math.hypot(wx - ox, wz - oz) >= 0.5, f"{n} keeps 0.5 m from {on}"
+    for cn, cx, cz in clues:
+        assert math.hypot(wx - cx, wz - cz) >= 0.8, f"{n} keeps 0.8 m from {cn}"
+    edge_gap = min(edge_gap, seat_dist(x, z) if top > 0.12 else 9.0)
+for n, x, z, r in lilies:
+    assert math.hypot(x, z) + r <= inner_min - 0.1, f"{n} floats inside the shore's inner line"
+    for cn, cx, cz in in_pond:
+        assert math.hypot(pond_x + x - cx, pond_z + z - cz) >= 0.8, f"{n} keeps 0.8 m from {cn}"
+    for on, ox, oz, k in near_objs:
+        if on.startswith("LilyPad"):
+            assert math.hypot(pond_x + x - ox, pond_z + z - oz) >= 0.5, f"{n} keeps 0.5 m from {on}"
+print(f"pond edge (W1): PondEdge on the pond ({pond_x:g}, {pond_z:g}); shore inner line {inner_min:.2f}–{inner_max:.2f} m inside the {water_r:g} m rim; "
+      f"{tall_n} taller items on the north half, >= {edge_gap:.2f} m from the rest spot's view; southern items <= {low_max:.2f} m; {len(lilies)} lily pads")
 print("ALL SLICE LAYOUT SIMULATIONS PASSED")

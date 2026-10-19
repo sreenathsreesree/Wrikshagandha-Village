@@ -1,0 +1,55 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/pond_shore.res" id="shore"]
+[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/pond_stones.res" id="stones"]
+[ext_resource type="ArrayMesh" path="res://assets/organic/meshes/pond_ground_cover.res" id="cover"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/Reed.tscn" id="reed"]
+[ext_resource type="PackedScene" path="res://scenes/world/props/LilyPad.tscn" id="lily"]
+
+[node name="PondEdge" type="Node3D"]
+
+[node name="Shore" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = ExtResource("shore")
+
+[node name="Stones" type="MeshInstance3D" parent="."]
+mesh = ExtResource("stones")
+
+[node name="GroundCover" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = ExtResource("cover")
+
+[node name="Reeds" type="Node3D" parent="."]
+
+[node name="ReedNorth" parent="Reeds" instance=ExtResource("reed")]
+position = Vector3(0.31, 0, -3.54)
+
+[node name="ReedNorthEast" parent="Reeds" instance=ExtResource("reed")]
+position = Vector3(2.62, 0, -2.62)
+rotation_degrees = Vector3(0, 70, 0)
+scale = Vector3(1.2, 1.2, 1.2)
+
+[node name="ReedNorthWest" parent="Reeds" instance=ExtResource("reed")]
+position = Vector3(-1.75, 0, -3.03)
+rotation_degrees = Vector3(0, 200, 0)
+scale = Vector3(0.9, 0.9, 0.9)
+
+[node name="LilyPads" type="Node3D" parent="."]
+
+[node name="LilyPadNorth" parent="LilyPads" instance=ExtResource("lily")]
+position = Vector3(0.86, 0.06, -2.35)
+rotation_degrees = Vector3(0, 30, 0)
+scale = Vector3(0.9, 1, 0.9)
+cast_shadow = 0
+
+[node name="LilyPadEast" parent="LilyPads" instance=ExtResource("lily")]
+position = Vector3(2.61, 0.06, -0.7)
+rotation_degrees = Vector3(0, 110, 0)
+scale = Vector3(1.15, 1, 1.15)
+cast_shadow = 0
+
+[node name="LilyPadWest" parent="LilyPads" instance=ExtResource("lily")]
+position = Vector3(-2.41, 0.06, -0.65)
+rotation_degrees = Vector3(0, 250, 0)
+scale = Vector3(0.8, 1, 0.8)
+cast_shadow = 0

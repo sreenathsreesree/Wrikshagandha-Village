@@ -136,13 +136,24 @@ A top-level `EarthPrototype` node (outside the existing-world digest) holds the 
 
 A top-level `PeacefulPlaces` node (outside the existing-world digest) holds the one `RestSpot`, `PondRestSpot`, at (4.3, -12.12) with a yaw of -118.7°: open ground on the pond's west side, 6.50 m from the pond centre (2.9 m from the water), facing the pond. It is the nearest cell to the pond that keeps every clearance rule with a 0.30 m margin (pond 4.2 m solid, Reed4 2.9 m, Reed3 3.35 m, Rock4 3.88 m; 3.48 m from the path). The camera-facing south side has no compliant cell (the best fell 0.10–0.13 m short), so no layout exception was taken. The seat has no collider, so the navigation mesh is unchanged; its `SeatPoint` is the spot itself.
 
+## Living Pond Edge (W1, D-63)
+
+A top-level `PondEdge` node (outside the existing-world digest, `89878544adee7640` unchanged) instances
+`scenes/world/PondEdge.tscn` exactly on the pond (10, 0, -9): the shoreline ring, the merged shore stones and
+ground-cover tufts, three reeds and three lily pads — visual only, no collider, no navigation membership, no script.
+The scene digest moved deliberately (`74b798c48a19466b` → `d2a642d51add3a9c`: the one `PondEdge` node).
+`sim_slice_layout.py` checks the dressing in the pond's frame: the shore's inner line inside the water's rim and clear
+of the in-pond discoveries; everything taller than 0.12 m on the north half and 1.4 m from the line between the Pond
+Rest Spot and the pond centre (the seated view stays open), the southern stones at or under 0.12 m; nothing on a path
+patch; 0.5 m from existing objects, 0.8 m from discoveries and clues; lily pads inside the shore's inner line.
+
 ## Machine-readable plan
 
 ```slice-layout
-# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents, HiddenPlaces, EarthPrototype and PeacefulPlaces) — unchanged by M07.2, M07.3, M09.1, M09.4, M10, M11.1 and E1
+# existing Meadow (every node outside VerticalSlice, WorldRim, NpcRoutine, WeatherEvents, HiddenPlaces, EarthPrototype, PeacefulPlaces and PondEdge) — unchanged by M07.2, M07.3, M09.1, M09.4, M10, M11.1, E1 and W1
 digest 89878544adee7640
-# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4), HiddenPlaces (M10), EarthPrototype (M11.1) and PeacefulPlaces (E1) included
-scene_digest 74b798c48a19466b
+# the whole Meadow, VerticalSlice (M07.2, M08.1's house_door entry, M08.3's villager at the NPC spot), WorldRim (M07.3), NpcRoutine (M09.1), WeatherEvents (M09.4), HiddenPlaces (M10), EarthPrototype (M11.1), PeacefulPlaces (E1) and PondEdge (W1) included
+scene_digest d2a642d51add3a9c
 # M09.1 (D-41): the villager's routine spots — dawn/evening/night at home (the NPC spot), morning/afternoon by the pond path
 routine_spot villager_home -19.5 2.2
 routine_spot villager_pond 4.0 -7.0

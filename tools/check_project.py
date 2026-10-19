@@ -1029,7 +1029,9 @@ PINNED = {"scripts/player/player.gd": "1871a0d3db410eb0", "scripts/autoload/inpu
           # (environmental_event.gd re-pinned deliberately by M09.4 (D-44): one export, trigger_weather — a weather-triggered
           #  event is skipped by the distance loop and fired by EnvironmentalEventController.on_weather_changed().)
           "scripts/world_simulation/environmental_event.gd": "a678de1503d5c210",
-          "scripts/world_simulation/time_of_day.gd": "4faf06b101abc1ef"}
+          "scripts/world_simulation/time_of_day.gd": "4faf06b101abc1ef",
+          # W1 (D-63) dresses the pond's edge without touching the pond: its water shader and scene stay exactly as they were.
+          "shaders/water.gdshader": "262cf49afa21bca9", "scenes/world/props/PondWater.tscn": "d7409895eaed75cf"}
 for f, h in PINNED.items():
     got = hashlib.sha256(open(f, "rb").read()).hexdigest()[:16] if os.path.exists(f) else None
     if got != h:
@@ -4411,6 +4413,8 @@ notes.append(f"organic art (B0): {len(B0_COLLIDER_BLOCKS)} props keep their 3f2c
 # the two shader ext_resources and the bodies of the Material_ground and Material_path sub_resources masked, the scene
 # hashes exactly as at 3f2cfaf (D61_MEADOW_REST, recorded from git) — so every node, transform, mesh, collider, the
 # layout digests and the navigation source are untouched. Both shaders are opaque (no ALPHA, no discard).
+# (W1, D-63, developer-approved: the one addition since is the PondEdge instance — its ext_resource line and its node
+#  block, exactly as below, are masked too; the "living pond edge" section checks them. Anything else still fails.)
 D61_MEADOW_REST = "644723524ad9b0dc"
 D61_MATERIALS = {"Material_ground": "res://shaders/organic_ground.gdshader", "Material_path": "res://shaders/organic_path.gdshader"}
 def d61_meadow_rest(text):
@@ -4418,7 +4422,10 @@ def d61_meadow_rest(text):
     text = re.sub(r'^\[ext_resource type="Shader" path="res://shaders/organic_(?:ground|path)\.gdshader" id="[^"]+"\]\n', "", text, flags=re.M)
     for mid in D61_MATERIALS:
         text = re.sub(r'^\[sub_resource type="\w+" id="%s"\]\n(?:[^\[\n].*\n)*' % mid, '[sub_resource id="%s"]\n' % mid, text, flags=re.M)
+    text = text.replace(W1_MEADOW_EXT, "", 1).replace(W1_MEADOW_NODE, "", 1)
     return text
+W1_MEADOW_EXT = '[ext_resource type="PackedScene" path="res://scenes/world/PondEdge.tscn" id="pond_edge"]\n'
+W1_MEADOW_NODE = '[node name="PondEdge" parent="." instance=ExtResource("pond_edge")]\nposition = Vector3(10, 0, -9)\n\n'
 d61_bad = []
 d61_txt = open(MEADOW_SCENE, encoding="utf-8").read()
 if hashlib.sha256(d61_meadow_rest(d61_txt).encode()).hexdigest()[:16] != D61_MEADOW_REST:
@@ -4437,7 +4444,117 @@ for mid, shader in D61_MATERIALS.items():
         d61_bad.append(f"{src}: missing, or not opaque (ALPHA or discard)")
 for b in d61_bad:
     err(f"organic ground and paths (B0.1, D-61): {b}")
-notes.append("organic ground and paths (B0.1): Meadow.tscn equals 3f2cfaf except Material_ground/Material_path (opaque shader materials)")
+notes.append("organic ground and paths (B0.1): Meadow.tscn equals 3f2cfaf except Material_ground/Material_path (opaque shader materials) and W1's PondEdge instance")
+
+# ------------------------------------------------------------ living pond edge (W1, D-63)
+# The pond's shoreline, a few stones, reeds and lily pads and a little ground cover — visual only. One PondEdge instance
+# sits exactly on the Meadow's Pond node (the only Meadow change, masked above). Its scene holds nothing that collides,
+# navigates, runs code or joins a group; the shore and the ground cover cast no shadow, nor do its lily pads. The shore
+# (shaders/pond_shore.gdshader) is opaque and, where a path patch lies under it, draws that patch's colour with the
+# path shader's own arithmetic, copied verbatim (checked here line by line, comments aside) — so its material lists
+# exactly the Meadow's path patches under the ring, with their yaws (radius 1, 10 segments, as the copy assumes). The generator's shape constants
+# keep the lip above the water's highest wave and past its rim, and the bank above every path patch. water.gdshader and
+# PondWater.tscn are pinned (above): the pond itself is unchanged.
+W1_SCENE = "scenes/world/PondEdge.tscn"
+W1_GEN = "tools/art/generate_pond_edge.gd"
+W1_SHADER = "shaders/pond_shore.gdshader"
+W1_MATERIAL = "assets/organic/materials/pond_shore.tres"
+W1_MESHES = {"Shore": "res://assets/organic/meshes/pond_shore.res", "Stones": "res://assets/organic/meshes/pond_stones.res",
+             "GroundCover": "res://assets/organic/meshes/pond_ground_cover.res"}
+W1_INSTANCES = {"Reeds": "res://scenes/world/props/Reed.tscn", "LilyPads": "res://scenes/world/props/LilyPad.tscn"}
+W1_FORBIDDEN = r"Body3D|CollisionShape3D|CollisionPolygon3D|Area3D|Navigation\w*3D|VisibleOnScreen|script = |groups="
+w1_bad = []
+def w1_read(path): return open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+w1_meadow = w1_read(MEADOW_SCENE)
+w1_pond = re.search(r'^\[node name="Pond" parent="Water" instance=ExtResource\("\w+"\)\]\nposition = Vector3\(([^)]*)\)\n', w1_meadow, re.M)
+if w1_meadow.count('path="res://scenes/world/PondEdge.tscn"') != 1 or w1_meadow.count(W1_MEADOW_NODE) != 1 or w1_meadow.count('instance=ExtResource("pond_edge")') != 1 \
+        or not w1_pond or w1_pond.group(1).replace(" ", "") != "10,0,-9":
+    w1_bad.append(f"{MEADOW_SCENE}: exactly one top-level PondEdge instance at the Pond's position (10, 0, -9), unrotated, unscaled")
+w1_txt = w1_read(W1_SCENE)
+w1_ext = dict((i, (t, pth)) for t, pth, i in re.findall(r'^\[ext_resource type="(\w+)" path="([^"]+)" id="([^"]+)"\]', w1_txt, re.M))
+w1_nodes = re.findall(r'^\[node name="([^"]+)"([^\]]*)\]\n((?:[^\[\n].*\n)*)', w1_txt, re.M)
+if not w1_txt or re.search(W1_FORBIDDEN, w1_txt) or "[sub_resource" in w1_txt:
+    w1_bad.append(f"{W1_SCENE}: missing, or holds a collider, area, navigation node, script, group or inline resource")
+for name, attrs, body in w1_nodes:
+    par = (re.search(r'parent="([^"]*)"', attrs) or [None, None])[1]
+    typ = (re.search(r'type="(\w+)"', attrs) or [None, None])[1]
+    inst = re.search(r'instance=ExtResource\("([^"]+)"\)', attrs)
+    if par is None:
+        ok = name == "PondEdge" and typ == "Node3D" and not body.strip()
+    elif par == "." and name in W1_MESHES:
+        mesh = re.search(r'^mesh = ExtResource\("([^"]+)"\)$', body, re.M)
+        ok = typ == "MeshInstance3D" and mesh and w1_ext.get(mesh.group(1), (None, None))[1] == W1_MESHES[name] \
+            and ("cast_shadow = 0" in body) == (name != "Stones") and not re.search(r"^(position|rotation|scale|transform)", body, re.M)
+    elif par == "." and name in W1_INSTANCES:
+        ok = typ == "Node3D" and not body.strip()
+    elif par in W1_INSTANCES:
+        ok = inst is not None and w1_ext.get(inst.group(1), (None, None))[1] == W1_INSTANCES[par] and (par != "LilyPads" or "cast_shadow = 0" in body)
+    else:
+        ok = False
+    if not ok:
+        w1_bad.append(f"{W1_SCENE}: {name} — only the shore, stones and ground-cover meshes (as listed), and reeds and lily pads (instances) under their groups")
+for prop in W1_INSTANCES.values():
+    ptxt = w1_read(prop[len("res://"):])
+    if not ptxt or re.search(W1_FORBIDDEN, ptxt):
+        w1_bad.append(f"{prop}: an instanced dressing prop must hold no collider, area, navigation node, script or group")
+w1_code = w1_read(W1_SHADER)
+w1_path = w1_read("shaders/organic_path.gdshader")
+if not w1_code or re.search(r"\bALPHA\b|\bdiscard\b", re.sub(r"//.*", "", w1_code)) or '#include "res://shaders/organic_ground.gdshaderinc"' not in w1_code:
+    w1_bad.append(f"{W1_SHADER}: missing, not opaque, or not on the meadow's ground colour")
+def w1_lines(code, start, end):
+    m = re.search(re.escape(start) + r".*?" + re.escape(end), code, re.S)
+    return [ln.strip().replace("float earth_w = ", "earth_w = ") for ln in m.group(0).splitlines()
+            if "v_side" not in ln and ln.strip() and not ln.strip().startswith("//")] if m else None
+w1_copy = w1_lines(w1_code, "float tone = wg_fbm", "earth_w *= 1.0 - smoothstep(0.9, 0.99, v_r);")
+w1_orig = w1_lines(w1_path, "float tone = wg_fbm", "earth_w *= 1.0 - smoothstep(0.9, 0.99, v_r);")
+w1_unis = lambda code: re.findall(r"^uniform vec3 (?:earth_light|earth_mid|earth_dark|pebble) .*$", code, re.M)
+if not w1_copy or w1_copy != w1_orig or w1_unis(w1_code) != w1_unis(w1_path) or len(w1_unis(w1_code)) != 4:
+    w1_bad.append(f"{W1_SHADER}: its copy of organic_path.gdshader's earth colour (and the four colour uniforms) differs from the original")
+w1_cyl = re.search(r'\[sub_resource type="CylinderMesh" id="CylinderMesh_path"\]\ntop_radius = ([0-9.]+)\nbottom_radius = [0-9.]+\nheight = ([0-9.]+)\nradial_segments = (\d+)', w1_meadow)
+w1_drop = re.search(r"^uniform float rim_drop = ([0-9.]+);", w1_path, re.M)
+w1_gen = w1_read(W1_GEN)
+def w1_const(name):
+    m = re.search(r"^const %s := ([-0-9.]+)" % name, w1_gen, re.M)
+    return float(m.group(1)) if m else float("nan")
+w1_outer = w1_const("OUTER")
+w1_patches = []
+for pm in re.finditer(r'^\[node name="(\w+)" type="MeshInstance3D" parent="([^"]*)"\]\n((?:[^\[\n].*\n)*)', w1_meadow, re.M):
+    if 'mesh = SubResource("CylinderMesh_path")' not in pm.group(3):
+        continue
+    pos = [float(v) for v in re.search(r"position = Vector3\(([^)]*)\)", pm.group(3)).group(1).split(",")]
+    sc = [float(v) for v in (re.search(r"scale = Vector3\(([^)]*)\)", pm.group(3)) or [None, "1,1,1"])[1].split(",")]
+    rot = [float(v) for v in (re.search(r"rotation_degrees = Vector3\(([^)]*)\)", pm.group(3)) or [None, "0,0,0"])[1].split(",")]
+    if ((pos[0] - 10.0) ** 2 + (pos[2] + 9.0) ** 2) ** 0.5 - max(sc[0], sc[2]) < w1_outer:
+        w1_patches.append((pm.group(1), round(pos[0], 3), round(pos[2], 3), round(sc[0], 3), round(sc[2], 3), round(rot[1], 3),
+                           rot[0] != 0.0 or rot[2] != 0.0 or "\nrotation = " in pm.group(3) or "transform = " in pm.group(3)))
+w1_mat = re.search(r"^shader_parameter/path_patches = PackedVector4Array\(([^)]*)\)$", w1_read(W1_MATERIAL), re.M)
+w1_yaw = re.search(r"^shader_parameter/path_yaws = PackedFloat32Array\(([^)]*)\)$", w1_read(W1_MATERIAL), re.M)
+w1_vals = [round(float(v), 3) for v in w1_mat.group(1).split(",")] if w1_mat else []
+w1_yaws = [round(float(v), 3) for v in w1_yaw.group(1).split(",")] if w1_yaw else []
+w1_listed = sorted(tuple(w1_vals[i:i + 4]) + (w1_yaws[i // 4] if i // 4 < len(w1_yaws) else None,) for i in range(0, len(w1_vals), 4))
+if not w1_cyl or (float(w1_cyl.group(1)), int(w1_cyl.group(3))) != (1.0, 10) or any(p[6] for p in w1_patches) or len(w1_yaws) * 4 != len(w1_vals) \
+        or w1_listed != sorted(p[1:6] for p in w1_patches) or len(w1_listed) != 3 \
+        or "uniform vec4 path_patches[3];" not in w1_code or "uniform float path_yaws[3];" not in w1_code:
+    w1_bad.append(f"{W1_MATERIAL}: path_patches/path_yaws must list exactly the Meadow's path patches under the ring ({[p[0] for p in w1_patches]}) "
+                  "with their yaws — radius-1 10-segment cylinders turned about y only, three of them")
+w1_pw = w1_read("scenes/world/props/PondWater.tscn")
+w1_water = re.search(r'\[sub_resource type="CylinderMesh" id="CylinderMesh_water"\]\ntop_radius = ([0-9.]+)\nbottom_radius = [0-9.]+\nheight = ([0-9.]+)', w1_pw)
+w1_wave = re.search(r"^shader_parameter/wave_height = ([0-9.]+)$", w1_pw, re.M)
+if not (w1_water and w1_wave and w1_drop and w1_cyl):
+    w1_bad.append(f"{W1_GEN}: the pond's water and the path patches' shapes could not be read")
+else:
+    water_r, water_top = float(w1_water.group(1)), float(w1_water.group(2)) / 2 + float(w1_wave.group(1))
+    path_top = float(w1_cyl.group(2)) / 2 + float(w1_cyl.group(2)) / 2   # the patch node's y (half its height) + half its height; rim_drop takes the rim to the ground
+    if w1_const("WATER_RADIUS") != water_r or w1_const("LIP_HEIGHT") < water_top + 0.005 or w1_const("LIP_OUT") < water_r + 0.1 \
+            or w1_const("INNER_MEAN") + w1_const("INNER_SWING") > water_r - 0.05 or w1_const("BANK_HEIGHT") < path_top + 0.002 \
+            or abs(float(w1_drop.group(1)) - path_top) > 1e-6 \
+            or w1_const("EARTH_MEAN") + w1_const("EARTH_SWING") + w1_const("EARTH_FADE") > w1_const("EARTH_END") or w1_const("EARTH_END") > w1_outer:
+        w1_bad.append(f"{W1_GEN}: the shore must keep its lip above the water's highest point ({water_top:g} m) and past its {water_r:g} m rim, "
+                      f"its inner line inside the rim, its bank above the path patches ({path_top:g} m), and its earth inside EARTH_END")
+for b in w1_bad:
+    err(f"living pond edge (W1, D-63): {b}")
+notes.append(f"living pond edge (W1): one PondEdge on the pond; no collider/navigation/script; shore opaque over {len(w1_patches)} path patches "
+             "(the path colour copied verbatim); lip above the water, bank above the paths; water shader and pond scene pinned")
 
 # ------------------------------------------------------------ discovery collection (P0.1)
 # A walk-to-collect runs DiscoveryInteractable.interact() inside the InteractionZone's area_entered signal, where Godot

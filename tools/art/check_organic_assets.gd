@@ -18,6 +18,14 @@ extends SceneTree
 ##   mode=hash dir=<dir> out=<json> a canonical content hash of every mesh
 ##                resource in dir (per surface: primitive, material, the vertex,
 ##                normal, colour and index arrays, the AABB).
+##   mode=pond    the Living Pond Edge's meshes (W1, D-63), measured: the
+##                shore's inner line lies inside the water's rim, its lip stays
+##                above the water's highest wave out past the rim, every vertex
+##                that shows earth or wetness stands above the path patches,
+##                the earth weight is 0 from 5.0 m out, all normals point up, all
+##                its triangles face the same way (up); the stones and the
+##                ground cover use the shared rock and grass materials; the
+##                three stay inside their triangle budgets.
 ## The limits live here and nowhere else. Prints ORGANIC_CHECK PASS|FAIL lines.
 
 const ROOT_BAND_TOP := 0.15
@@ -60,6 +68,8 @@ func _initialize() -> void:
 			_colliders()
 		"hash":
 			_hashes()
+		"pond":
+			_pond()
 		_:
 			check(false, "mode", str(args.get("mode", "")))
 	quit(1 if failures > 0 else 0)
@@ -258,6 +268,82 @@ func _hashes() -> void:
 		out[f] = ctx.finish().hex_encode()
 	_write(str(args["out"]), JSON.stringify(out, "\t", true))
 	print("ORGANIC_CHECK INFO content hashes for %d meshes" % out.size())
+
+## The pond's water (PondWater.tscn: radius 3.6 m, top 0.05 m, wave at most
+## 0.025 m) and the path patches' highest point (0.03 m); the budgets.
+const POND_WATER_RADIUS := 3.6
+const POND_WATER_HIGHEST := 0.075
+const POND_PATH_TOP := 0.03
+const POND_BUDGETS := {"pond_shore.res": 3000, "pond_stones.res": 3000, "pond_ground_cover.res": 1200}
+const POND_MATERIALS := {"pond_shore.res": "res://assets/organic/materials/pond_shore.tres",
+	"pond_stones.res": "res://assets/organic/materials/organic_rock.tres", "pond_ground_cover.res": "res://assets/organic/materials/organic_grass.tres"}
+
+func _pond() -> void:
+	for f: String in POND_BUDGETS:
+		var mesh: ArrayMesh = load(MESH_DIR.path_join(f))
+		if mesh == null:
+			check(false, "pond " + f, "does not load")
+			continue
+		var tris := 0
+		var mats_ok := true
+		for si in mesh.get_surface_count():
+			tris += mesh.surface_get_arrays(si)[Mesh.ARRAY_INDEX].size() / 3
+			var mat := mesh.surface_get_material(si)
+			mats_ok = mats_ok and mat != null and mat.resource_path == POND_MATERIALS[f]
+		check(mesh.get_surface_count() == 1 and mats_ok, "pond %s material" % f, POND_MATERIALS[f])
+		check(tris <= POND_BUDGETS[f], "pond %s triangles" % f, "%d (budget %d)" % [tris, POND_BUDGETS[f]])
+	var shore: ArrayMesh = load(MESH_DIR.path_join("pond_shore.res"))
+	if shore == null:
+		return
+	var a := shore.surface_get_arrays(0)
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = a[Mesh.ARRAY_NORMAL]
+	var c: PackedColorArray = a[Mesh.ARRAY_COLOR]
+	var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+	var inner_min := INF
+	var inner_max := 0.0
+	var lip_low := INF          # the lowest point within 0.1 m past the water's rim
+	var lip_reach := INF        # the smallest radius at which some direction already drops below the highest wave
+	var bank_low := INF         # the lowest vertex that shows earth or wetness
+	var earth_far := 0.0        # the largest radius with any earth
+	var normals_up := true
+	for i in v.size():
+		var r := Vector2(v[i].x, v[i].z).length()
+		if v[i].y < POND_WATER_HIGHEST + 0.005:
+			lip_reach = minf(lip_reach, r)
+		if r <= POND_WATER_RADIUS + 0.1:
+			lip_low = minf(lip_low, v[i].y)
+		if c[i].r > 0.0 or c[i].g > 0.0:
+			bank_low = minf(bank_low, v[i].y)
+		if c[i].r > 0.0:
+			earth_far = maxf(earth_far, r)
+		normals_up = normals_up and n[i].dot(Vector3.UP) > 0.999   # stored compressed, so not bit-exact
+	# The inner line: the innermost vertex of each direction (the generator's first ring).
+	var by_dir := {}
+	for i in v.size():
+		var key := snappedf(atan2(v[i].z, v[i].x), 0.001)
+		var r2 := Vector2(v[i].x, v[i].z).length()
+		by_dir[key] = minf(by_dir.get(key, INF), r2)
+	for k in by_dir:
+		inner_min = minf(inner_min, by_dir[k])
+		inner_max = maxf(inner_max, by_dir[k])
+	var down := 0
+	var up := 0
+	for t in range(0, idx.size(), 3):
+		var fn: Vector3 = (v[idx[t + 1]] - v[idx[t]]).cross(v[idx[t + 2]] - v[idx[t]])
+		if fn.y > 0.0:
+			up += 1
+		else:
+			down += 1
+	check(inner_min >= 3.0 and inner_max <= POND_WATER_RADIUS - 0.05, "pond shore inner line inside the rim",
+		"%.3f–%.3f m (rim %.2f m)" % [inner_min, inner_max, POND_WATER_RADIUS])
+	check(lip_low >= POND_WATER_HIGHEST + 0.005 and lip_reach > POND_WATER_RADIUS + 0.1, "pond shore lip above the water past its rim",
+		"lowest %.3f m within %.2f m; first below the wave at %.3f m" % [lip_low, POND_WATER_RADIUS + 0.1, lip_reach])
+	check(bank_low >= POND_PATH_TOP + 0.002, "pond shore bank above the path patches wherever it shows earth", "lowest %.3f m" % bank_low)
+	check(earth_far < 5.0 + 0.001, "pond shore earth ends by 5.0 m", "%.3f m" % earth_far)
+	check(normals_up, "pond shore normals all up")
+	# Godot's front faces are clockwise seen from the front; seen from above that gives (b - a) x (c - a) pointing down.
+	check(up == 0 and down == idx.size() / 3, "pond shore triangles all face up", "%d of %d" % [down, idx.size() / 3])
 
 func _plain(v: Variant) -> Variant:
 	if v is Dictionary:
