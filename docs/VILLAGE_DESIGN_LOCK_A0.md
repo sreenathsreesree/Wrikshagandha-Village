@@ -103,7 +103,7 @@ the same equations only for the seated frame at 8 m (the seat checks) and the cr
 | Distance from the square | 19.1 m (square centre (−41.5, 4) to the trunk) | model |
 | Approach | the **tree road** (2 m) from the square's north-west edge (−44.2, −3.5) to the katte's apron (−46.2, −8.9), 5.4 m from the trunk | model: stops 4.4 m from the trunk (katte + 0.3 m clear) |
 | Reveal | walking north, the crown's underside is in the frame top by **12 m** south of the trunk at the default arm (the model's check; its centre-line estimate first shows the crown at about 13 m); zoomed out it shows earlier (not checked by the model); the square's north-west edge, where the tree road starts, is 11.1 m from the trunk — so the crown is in view as the player leaves the square | model, default arm only — a geometric estimate that ignores other trees in the line of sight |
-| Seats | three `RestSpot`s 4.6 m from the trunk, facing it: **katte_west** (−50.64, −10.23) yaw −35°, **katte_south** (−48.80, −9.47) yaw −10°, **katte_east** (−44.48, −11.04) yaw 50° | model: the trunk base (0.5 m and 1.2 m) is in each default seated frame; no seat on a path; the crown is never between the camera and the seated player |
+| Seats | three `RestSpot`s 4.6 m from the trunk, facing it: **katte_west** (−50.64, −10.23) yaw −35°, **katte_south** (−48.80, −9.47) yaw −10°, **katte_east** (−44.48, −11.04) yaw 50° | model: the trunk base (0.5 m and 1.2 m) is in each default seated frame; no seat on a path; at that default seated view (yaw 0, 8 m) the crown, modelled as a cylinder, is not between the camera and the seated player (0.9 m) — other seated views are not checked (§12) |
 | What a seat sees | the trunk's base, roots, the katte's stones and lamps at the top of the frame; the crown stays above the frame (it shades the scene instead) | §3 |
 | Gathering | evening routine spots for villagers around the katte, as data (`NpcRoutineSpot`, D-41) — no new NPC behaviour | D-41, D-53 |
 
@@ -113,9 +113,25 @@ assume OD-2's recommendation (a), which is **not decided**. If OD-2 goes another
 re-planned and re-checked by the model before A3; until then they are a planning baseline, not settled design. The
 model checks what each seat's default frame contains, not which way the seat faces (§12).
 
-**Occlusion (OD-2):** the crown hides a player standing north of the trunk (B0.1 finding). Recommended: keep all
-paths and seats south of the trunk (the plan does); the opt-in canopy fade stays off unless a phone playtest shows
-players going north of it.
+**Occlusion (OD-2):**
+- **B0.1 finding** (blueprint §4; plan, B0.1 record): the crown "hides the player completely whenever the player is
+  under or north of its crown" — measured in the B0.1 desktop preview capture at the follow camera's angle.
+- **What the model checks:** only the seated start view (yaw 0, 8 m): the crown, as a cylinder (reach 7.86 m,
+  4.62–9.43 m up), is not between the camera and each seated player (a point 0.9 m up). Standing players, other zoom
+  distances and the seated yaw range are not checked (§12).
+- **Estimates, not runtime results** (the committed model's own camera function and crown cylinder, run read-only; not
+  asserted by the model): a standing player due south of the trunk is hidden up to about 3.9–4.1 m from it at 7, 11
+  and 15 m zoom — the south half of the katte (r 4.0, no collider) — but not at the tree road's end (5.4 m). Seated,
+  `katte_west` is hidden at one end of Rest Mode's ±45° yaw range (about 41–45° at 8 m, 36–45° at 10 m); `katte_east`
+  only marginally (its 1.4 m point, at 10 m and the other end of the range); `katte_south` at no yaw or zoom tested.
+- **Still needed:** a PC visual review and an exported-Android playtest at A3, at both zoom ends (blueprint §4),
+  covering the katte's south half and the seated yaw range. The canopy fade, if ever enabled, needs its own PC/Android
+  check for dither on small screens (blueprint §4).
+
+Recommended: keep all paths and seats south of the trunk (the plan does); the opt-in canopy fade stays off unless a
+phone playtest shows players going north of it. This layout recommendation addresses the planned placement of paths
+and seats south of the trunk; it does not establish that occlusion is eliminated on the katte's south half or across
+the seated yaw range.
 
 **Cultural details (OD-9):** kalava threads and clay diyas are in the preview asset; their use at a village shrine
 tree deserves review before A3 (D-54's principle of review for cultural content).
@@ -271,6 +287,10 @@ village; stream; waterfall (licensed audio for its sound); the Secret Tree Sanct
 - **Seat facing:** each seat's yaw is recorded in the plan but not checked; the model checks only what the default
   seated frame contains at yaw 0 (the view every sit starts with, as the camera code works today — the model assumes
   it rather than reading it).
+- **Great Tree occlusion:** the model checks only the seated start view (yaw 0, 8 m), with the crown as a cylinder and
+  the seated player as a point 0.9 m up. It does not check standing players under or near the crown, other zoom
+  distances (standing 7–15 m, P-03; seated 7–10 m, D-62) or the seated ±45° yaw range (D-62). The estimates in §4 use
+  the same functions but are not asserted by the model.
 - **Areas against Stage A features:** provisional areas are checked only against the target bounds, so the South
   Ridge / south lane overlap (§7) is not caught.
 - **The §3 camera table** is not printed or asserted by the model (§3).
