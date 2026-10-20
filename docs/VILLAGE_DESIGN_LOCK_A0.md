@@ -14,7 +14,7 @@ checked figures and corrections of §2–§5) or **OPEN** (a decision that still
 recommendation are given, and **a recommendation is not a decision**). Items marked *provisional* in the plan block
 are candidates the model checks for fit, not locked designs. A LOCK item is a planning baseline only: building any of
 it waits for the Phase 16 gate and its own approved milestone. Where a LOCK item depends on an open decision, it says
-so (§4: OD-1, OD-2).
+so (§4: OD-2). OD-1 is decided: option (b), Stage A first (D-65, 2026-10-20; planning sequence only).
 
 ---
 
@@ -36,12 +36,12 @@ so (§4: OD-1, OD-2).
 
 ---
 
-## 2. Bounds and dimensions (LOCK the relationship; OPEN the staging, OD-1)
+## 2. Bounds and dimensions (LOCK the relationship; staging decided — OD-1 option (b), D-65)
 
 | Rectangle | x | z | Size | Area |
 |---|---|---|---|---|
 | Today's ground (Meadow) | −32 … 32 | −32 … 32 | 64 × 64 m | 4,096 m² |
-| **Stage A — first village** (proposed) | **−64 … 32** | **−32 … 32** | **96 × 64 m** | **6,144 m² (1.50×)** |
+| **Stage A — first village** (D-65) | **−64 … 32** | **−32 … 32** | **96 × 64 m** | **6,144 m² (1.50×)** |
 | Long-term target (blueprint) | −96 … 32 | −64 … 32 | 128 × 96 m | 12,288 m² (3.00×) |
 
 - Stage A shares today's east, north and south edges: it adds one 32 m-wide strip **west** of the Meadow (x −64 … −32),
@@ -94,7 +94,7 @@ the same equations only for the seated frame at 8 m (the seat checks) and the cr
 
 ---
 
-## 4. The Great Tree — the social heart (LOCK position and seats, conditional on OD-1 and OD-2; OPEN details)
+## 4. The Great Tree — the social heart (LOCK position and seats, conditional on OD-2 — OD-1 decided, D-65; OPEN details)
 
 | Item | Value | Evidence |
 |---|---|---|
@@ -107,9 +107,9 @@ the same equations only for the seated frame at 8 m (the seat checks) and the cr
 | What a seat sees | the trunk's base, roots, the katte's stones and lamps at the top of the frame; the crown stays above the frame (it shades the scene instead) | §3 |
 | Gathering | evening routine spots for villagers around the katte, as data (`NpcRoutineSpot`, D-41) — no new NPC behaviour | D-41, D-53 |
 
-**Conditional on open decisions:** the position (−48, −14) assumes Stage A's west edge at x −64 with a 4 m band —
-OD-1's recommendation (b), which is not decided. The three seats, the tree road and every path south of the trunk
-assume OD-2's recommendation (a), also not decided. If either decision goes another way, the position and seats are
+**Conditional on an open decision:** the position (−48, −14) assumes Stage A's west edge at x −64 with a 4 m band —
+OD-1 option (b), **decided by D-65** (2026-10-20). The three seats, the tree road and every path south of the trunk
+assume OD-2's recommendation (a), which is **not decided**. If OD-2 goes another way, the position and seats are
 re-planned and re-checked by the model before A3; until then they are a planning baseline, not settled design. The
 model checks what each seat's default frame contains, not which way the seat faces (§12).
 
@@ -224,9 +224,11 @@ screen), each run with a fresh user-data folder, 30 settle frames then the mean 
 
 ## 10. Open decisions (need the developer)
 
+OD-1 is decided (D-65: option (b), planning sequence only); OD-2 … OD-11 remain open.
+
 | # | Decision | Options | Recommendation | Why |
 |---|---|---|---|---|
-| OD-1 | Staging | (a) full 128 × 96 m at once; (b) Stage A (x −64 … 32) first | **(b)** | 1.5× the area, not 3×; measurable before growing further |
+| OD-1 | Staging — **decided: (b)** (D-65, 2026-10-20; planning sequence only, no construction) | (a) full 128 × 96 m at once; (b) Stage A (x −64 … 32) first | **(b)** | 1.5× the area, not 3×; measurable before growing further |
 | OD-2 | Great Tree occlusion | (a) paths and seats south of the trunk; (b) canopy fade; (c) camera response | **(a)** | no camera change; fade needs phone checks |
 | OD-3 | Stream/waterfall form | (a) flat world, visual cliff; (b) heightmap; (c) terraces | **(a)** | keeps navigation, camera and budgets |
 | OD-4 | Lotus Pond ghat side | decided with the pond's layout (Stage B) | keep **open** | depends on the pond's shape and the frame check |

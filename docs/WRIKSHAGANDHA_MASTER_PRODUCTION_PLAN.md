@@ -1939,7 +1939,9 @@ gate on an exported Godot 4.7.x Android build (§7, §8).**
 - **Render figures:** desktop software-rendering baselines from the W1 commit (`ca9b3b0`) only; the view-cost
   comparisons are hypotheses, not mobile acceptance thresholds. Android frame rate and navigation bake time stay
   unmeasured until an exported Godot 4.7.x build is tested on a device.
-- **Open (not decided):** OD-1 staging, OD-2 occlusion, OD-3 stream/waterfall form, OD-4 lotus ghat, OD-5 viewpoints,
+- **Decided:** OD-1 staging — option (b), Stage A (x −64 … 32, z −32 … 32) first (D-65, 2026-10-20; planning sequence
+  only, no construction).
+- **Open (not decided):** OD-2 occlusion, OD-3 stream/waterfall form, OD-4 lotus ghat, OD-5 viewpoints,
   OD-6/OD-7 sanctuary location, meaning and reward, OD-8 navigation regions, OD-9 cultural review, OD-10 target and
   waterfall timing, OD-11 edge backdrop — each with a recommendation, none adopted.
 - **Next (after the gate only):** A1 ground/rim/bounds/bands → A2 road, threshold, square → A3 Great Tree, seats, tree

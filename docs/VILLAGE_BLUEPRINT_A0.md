@@ -7,7 +7,7 @@
 >   (the door is on its east wall). The lock's road leaves the planned `to_forest` path north of the house and
 >   narrows to 2 m through the strip at z ≈ −8.9.
 > - **Great Tree (§2):** at (−52, −14) its 10 m keep-clear circle would overlap a 4 m west edge band of a first stage
->   ending at x −64; the lock places it at (−48, −14), conditional on that staging (OD-1, still open).
+>   ending at x −64; the lock places it at (−48, −14), on that staging (OD-1 option (b), decided by D-65).
 > - **Village Square (§2):** at (−40, 4) its edge enters a forest-strip tree's canopy radius; the lock uses (−41.5, 4).
 > - **South Village (§2):** its extent (x −34 … −20) overlaps the existing west forest strip; the lock's provisional
 >   houses stand west of the strip, south of the square.
@@ -15,8 +15,8 @@
 >   not in frame (default arm: nothing above ~0.1 m at 20 m ahead) and seats frame only ~9 m ahead; the lock has no
 >   vista viewpoints (OD-5).
 >
-> The lock also proposes staging growth (a first stage x −64 … 32; the staging decision, OD-1, remains open) and keeps
-> the Phase 16 Android gate: nothing here is authorised for construction.
+> The lock also stages growth (a first stage x −64 … 32 — OD-1 option (b), decided by D-65 as a planning sequence only)
+> and keeps the Phase 16 Android gate: nothing here is authorised for construction.
 
 Status: **proposal for review — nothing here is implemented.** Stage A (the world expansion) has not started; this
 document changes no scene, script, data file, test or digest. Written alongside Stage B0.1 (D-60, D-61) on

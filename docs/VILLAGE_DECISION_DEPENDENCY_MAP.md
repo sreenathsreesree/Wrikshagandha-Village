@@ -5,6 +5,10 @@ below keeps its status in `docs/VILLAGE_DESIGN_LOCK_A0.md` §10 (**open**, need 
 recommendation is the lock's own, restated with its evidence — **a recommendation is not a decision**. It approves no
 construction and does not satisfy, replace or shorten the Phase 16 gate (§8 below).
 
+> **Update (2026-10-20): OD-1 is decided** — option (b), Stage A first (D-65; planning sequence only). The review below
+> is kept as committed in `a919ceb` (reviewed against `ca45956`, when OD-1 was still open). OD-2 … OD-11 remain open,
+> and the Great Tree position and seats stay conditional on OD-2 (a).
+
 > This review is not the lock's construction step *A1 — Ground, rim, bounds, bands* (lock §11), which still waits for
 > Phase 16 and its own approval.
 
