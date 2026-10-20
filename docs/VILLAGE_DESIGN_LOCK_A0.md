@@ -14,7 +14,8 @@ checked figures and corrections of §2–§5) or **OPEN** (a decision that still
 recommendation are given, and **a recommendation is not a decision**). Items marked *provisional* in the plan block
 are candidates the model checks for fit, not locked designs. A LOCK item is a planning baseline only: building any of
 it waits for the Phase 16 gate and its own approved milestone. Where a LOCK item depends on an open decision, it says
-so (§4: OD-2). OD-1 is decided: option (b), Stage A first (D-65, 2026-10-20; planning sequence only).
+so. OD-1 and OD-2 are decided — D-65: option (b), Stage A first; D-66: option (a), as the layout rule (both 2026-10-20;
+planning only).
 
 ---
 
@@ -94,7 +95,7 @@ the same equations only for the seated frame at 8 m (the seat checks) and the cr
 
 ---
 
-## 4. The Great Tree — the social heart (LOCK position and seats, conditional on OD-2 — OD-1 decided, D-65; OPEN details)
+## 4. The Great Tree — the social heart (LOCK position and seats — OD-1 and OD-2 decided, D-65 and D-66; OPEN details)
 
 | Item | Value | Evidence |
 |---|---|---|
@@ -107,10 +108,11 @@ the same equations only for the seated frame at 8 m (the seat checks) and the cr
 | What a seat sees | the trunk's base, roots, the katte's stones and lamps at the top of the frame; the crown stays above the frame (it shades the scene instead) | §3 |
 | Gathering | evening routine spots for villagers around the katte, as data (`NpcRoutineSpot`, D-41) — no new NPC behaviour | D-41, D-53 |
 
-**Conditional on an open decision:** the position (−48, −14) assumes Stage A's west edge at x −64 with a 4 m band —
+**Decisions this rests on:** the position (−48, −14) assumes Stage A's west edge at x −64 with a 4 m band —
 OD-1 option (b), **decided by D-65** (2026-10-20). The three seats, the tree road and every path south of the trunk
-assume OD-2's recommendation (a), which is **not decided**. If OD-2 goes another way, the position and seats are
-re-planned and re-checked by the model before A3; until then they are a planning baseline, not settled design. The
+follow OD-2 option (a), **decided by D-66** (2026-10-20) as the layout rule only — it does not establish that occlusion
+is eliminated (see *Occlusion* below). If either decision is revisited, the position and seats are re-planned and
+re-checked by the model before A3; until then they are a planning baseline, not settled design. The
 model checks what each seat's default frame contains, not which way the seat faces (§12).
 
 **Occlusion (OD-2):**
@@ -127,11 +129,21 @@ model checks what each seat's default frame contains, not which way the seat fac
 - **Still needed:** a PC visual review and an exported-Android playtest at A3, at both zoom ends (blueprint §4),
   covering the katte's south half and the seated yaw range. The canopy fade, if ever enabled, needs its own PC/Android
   check for dither on small screens (blueprint §4).
+- **Proposed A3 occlusion coverage** (to be adopted or amended when A3 is approved; not yet a requirement): a PC visual
+  review first, then the same on an exported Godot 4.7.x Android build. Standing, at zoom 7, 11 and 15 m: along the
+  tree road, at the apron, on the katte's south half and north of the trunk. Seated, at each katte seat: zoom 7, 8 and
+  10 m across the existing ±45° yaw range. For each view, record whether the player is hidden; also record whether
+  players go north of the trunk.
 
 Recommended: keep all paths and seats south of the trunk (the plan does); the opt-in canopy fade stays off unless a
 phone playtest shows players going north of it. This layout recommendation addresses the planned placement of paths
 and seats south of the trunk; it does not establish that occlusion is eliminated on the katte's south half or across
 the seated yaw range.
+
+**Decided by D-66** (2026-10-20) as the layout rule: no camera change, and the fade stays off. Enabling the fade would
+be a separate decision after a PC and exported-Android visual check of its dither. Besides players going north of the
+trunk, players found hidden on the katte's south half or at a katte seat during A3 testing also prompt that review;
+neither condition enables the fade.
 
 **Cultural details (OD-9):** kalava threads and clay diyas are in the preview asset; their use at a village shrine
 tree deserves review before A3 (D-54's principle of review for cultural content).
@@ -240,12 +252,13 @@ screen), each run with a fresh user-data folder, 30 settle frames then the mean 
 
 ## 10. Open decisions (need the developer)
 
-OD-1 is decided (D-65: option (b), planning sequence only); OD-2 … OD-11 remain open.
+OD-1 and OD-2 are decided (D-65: option (b), planning sequence only; D-66: option (a), as the layout rule only);
+OD-3 … OD-11 remain open.
 
 | # | Decision | Options | Recommendation | Why |
 |---|---|---|---|---|
 | OD-1 | Staging — **decided: (b)** (D-65, 2026-10-20; planning sequence only, no construction) | (a) full 128 × 96 m at once; (b) Stage A (x −64 … 32) first | **(b)** | 1.5× the area, not 3×; measurable before growing further |
-| OD-2 | Great Tree occlusion | (a) paths and seats south of the trunk; (b) canopy fade; (c) camera response | **(a)** | no camera change; fade needs phone checks |
+| OD-2 | Great Tree occlusion — **decided: (a)** (D-66, 2026-10-20; layout rule only — runtime occlusion unresolved) | (a) paths and seats south of the trunk; (b) canopy fade; (c) camera response | **(a)** | no camera change; fade needs phone checks |
 | OD-3 | Stream/waterfall form | (a) flat world, visual cliff; (b) heightmap; (c) terraces | **(a)** | keeps navigation, camera and budgets |
 | OD-4 | Lotus Pond ghat side | decided with the pond's layout (Stage B) | keep **open** | depends on the pond's shape and the frame check |
 | OD-5 | Vista viewpoints (ridge, waterfall from afar) | (a) none — close views only; the South Ridge, if built, is a quiet resting place; (b) a per-spot seated pitch (a camera change E1 left "for a later viewpoint decision") | **(a) for Stage A**; (b) only as its own, separately approved camera decision later | the current rig cannot frame vistas (§3) |
