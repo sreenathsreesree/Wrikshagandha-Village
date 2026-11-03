@@ -2035,6 +2035,20 @@ runtime component of its own).
   status — the pack only gathers the existing criteria.
 - **Done when:** the developer accepts the pack as runnable on the phone; `check_pack.py` and `run_all.sh` pass.
 
+### TOOLING — ANDROID EXPORT READINESS (T2)
+**T2 — Android export readiness** — configured and checked statically; a PCK dry run on desktop; no APK built (D-68).
+*Reconstructed 2026-11-01 after the original commit was lost unpushed; D-68's text survived and is the source.*
+- **Change:** the Android preset in `export_presets.cfg` excludes `scenes/dev/*` (the B0 organic art preview, which no
+  game file refers to); every other preset setting unchanged, signing included.
+- **Checks:** `tools/check_project.py` section "Android export preset (T2, D-68)" — one Android preset, arm64-v8a only,
+  the package name, all resources except exactly `scenes/dev/*`, ETC2/ASTC import on, the main scene outside the
+  exclusion, no game file referring to `scenes/dev/`, `tools/.gdignore` present (17 scratch-copy mutations, each caught).
+- **Evidence (desktop, Godot 4.7.2):** `--export-pack "Android"` on an isolated copy — 512 entries, 1,458,668 bytes; no
+  `scenes/dev/`, `tools/` or `docs/` entry; the main scene, `project.binary` and the game data present; against the
+  unchanged preset only the two preview scenes and their two remaps are gone.
+- **Not verified:** an APK export (Godot 4.7.x export templates, the Android SDK and a debug keystore on the
+  developer's PC) and anything on a device; no milestone status changes.
+
 ### LATER PHASES (only after Phase 16)
 - Full world and complete elemental regions
 - Villages and full NPC populations

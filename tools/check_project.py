@@ -4407,6 +4407,51 @@ for b in b0_bad:
     err(f"organic art (B0, D-60): {b}")
 notes.append(f"organic art (B0): {len(B0_COLLIDER_BLOCKS)} props keep their 3f2cfaf colliders; meshes from assets/organic/; preview isolated")
 
+# ------------------------------------------------------------ Android export preset (T2, D-68)
+# The project's one Android preset exports every resource except the dev preview: export_filter "all_resources", no
+# include filter, and exclude_filter exactly "scenes/dev/*" — the B0 organic art preview, which no game file refers to.
+# The rest of what Android needs stays as approved: arm64-v8a only, the package name, ETC2/ASTC texture import on, the
+# main scene outside the exclusion, tools/ kept out of the export by tools/.gdignore. No APK is built here; the desktop
+# evidence is a PCK dry run (Godot --export-pack "Android" on an isolated copy, D-68).
+import fnmatch
+T2_EXCLUDE = "scenes/dev/*"
+t2_bad = []
+t2_cfg = open("export_presets.cfg", encoding="utf-8").read() if os.path.exists("export_presets.cfg") else ""
+t2_presets = re.findall(r'^\[preset\.(\d+)\]\n(.*?)(?=^\[preset\.\d+\.options\]|\Z)', t2_cfg, re.M | re.S)
+t2_android = [(i, body) for i, body in t2_presets if re.search(r'^platform="Android"$', body, re.M)]
+if len(t2_android) != 1:
+    t2_bad.append(f"export_presets.cfg: exactly one Android preset (found {len(t2_android)})")
+else:
+    t2_idx, t2_body = t2_android[0]
+    t2_opts_m = re.search(rf'^\[preset\.{t2_idx}\.options\]\n(.*?)(?=^\[preset\.|\Z)', t2_cfg, re.M | re.S)
+    t2_opts = dict(re.findall(r'^([\w/.\-]+)=(.*)$', t2_opts_m.group(1) if t2_opts_m else "", re.M))
+    t2_vals = dict(re.findall(r'^(\w+)=(.*)$', t2_body, re.M))
+    t2_arch = {k.split("/", 1)[1]: v for k, v in t2_opts.items() if k.startswith("architectures/")}
+    if t2_arch.get("arm64-v8a") != "true" or any(v != "false" for k, v in t2_arch.items() if k != "arm64-v8a"):
+        t2_bad.append(f"export_presets.cfg: the Android preset builds arm64-v8a only (found {t2_arch})")
+    if t2_opts.get("package/unique_name") != '"com.wrikshagandha.village"':
+        t2_bad.append(f"export_presets.cfg: package/unique_name is \"com.wrikshagandha.village\" (found {t2_opts.get('package/unique_name')})")
+    if t2_vals.get("export_filter") != '"all_resources"' or t2_vals.get("include_filter") != '""' \
+       or t2_vals.get("exclude_filter") != f'"{T2_EXCLUDE}"':
+        t2_bad.append(f"export_presets.cfg: all resources except exactly {T2_EXCLUDE} (export_filter {t2_vals.get('export_filter')}, "
+                      f"include_filter {t2_vals.get('include_filter')}, exclude_filter {t2_vals.get('exclude_filter')})")
+if not re.search(r"^textures/vram_compression/import_etc2_astc=true$", cfg, re.M):
+    t2_bad.append("project.godot: ETC2/ASTC texture import is on (textures/vram_compression/import_etc2_astc=true) — Android needs it")
+t2_main = re.search(r'^run/main_scene="res://([^"]+)"$', cfg, re.M)
+if not t2_main or fnmatch.fnmatch(t2_main.group(1), T2_EXCLUDE) or not os.path.exists(t2_main.group(1)):
+    t2_bad.append(f"project.godot: the main scene exists and lies outside the export exclusion {T2_EXCLUDE}")
+for pth in sorted(set(glob.glob("**/*.tscn", recursive=True) + glob.glob("**/*.tres", recursive=True) + glob.glob("**/*.gd", recursive=True)
+                      + glob.glob("**/*.gdshader", recursive=True)) | {"project.godot"}):
+    if pth.startswith(("scenes/dev/", "tools/", ".godot/", "addons/")):
+        continue
+    if "scenes/dev/" in open(pth, encoding="utf-8").read():
+        t2_bad.append(f"{pth}: refers to scenes/dev/ — the export leaves that folder out")
+if not os.path.exists("tools/.gdignore"):
+    t2_bad.append("tools/.gdignore: missing — tooling would be imported and exported with the game")
+for b in t2_bad:
+    err(f"Android export preset (T2, D-68): {b}")
+notes.append(f"Android export preset (T2): one preset, arm64-v8a, all resources except {T2_EXCLUDE}; ETC2/ASTC on; tools/ ignored")
+
 # ------------------------------------------------------------ organic ground and paths (Stage B0.1, D-61)
 # The one live-game visual change of B0.1: the meadow's ground and path materials become shader materials (world-space
 # grass patches; worn, ragged-edged earth paths). Nothing else in Meadow.tscn may change: with the scene's load_steps,
