@@ -38,11 +38,16 @@ DISC = {v["id"]: int(v.get("points_value", "10")) for v in map(_vals, sorted(glo
 ONCE_EVER = {v["id"] for v in map(_vals, glob.glob(os.path.join(REPO, "data", "discoveries", "*.tres"))) if float(v.get("respawn_seconds", "60")) <= 0}  # M05.3
 COLLECT = {v["discovery_id"]: v["id"] for v in map(_vals, glob.glob(os.path.join(REPO, "data", "items", "*.tres"))) if v.get("category") == "collectible"}
 DAILY = RULES["daily_discovery"][0]
-assert "if _reached_landmarks.has(landmark_id):" in EX["mark_landmark_reached"] and "if _found_secret_locations.has(location_id):" in EX["mark_secret_location_found"]
-assert "and not _all_secrets_bonus_awarded:" in EX["mark_secret_location_found"] and "if _curiosity_bonus_given:" in EX["_maybe_award_curiosity_bonus"]
-assert '"landmarks": Array(_reached_landmarks)' in EX["get_save_data"] and '"curiosity_bonus": _curiosity_bonus_given' in EX["get_save_data"]
+# M13.1 (D-70): each once-ever reward is checked against, recorded in and paid from its own list by the shared path.
+PR_SRC = _src("scripts", "rewards", "progression_rewards.gd")
+assert "if record.has(id):\n\t\treturn -1\n\trecord.append(id)" in PR_SRC
+assert 'ProgressionRewards.reach(_reached_landmarks, landmark_id, _rewards, "landmark")' in EX["mark_landmark_reached"] \
+    and 'ProgressionRewards.reach(_found_secret_locations, location_id, _rewards, "secret_location")' in EX["mark_secret_location_found"]
+assert "ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE, _rewards, ALL_SECRETS_RULE)" in EX["mark_secret_location_found"] \
+    and "ProgressionRewards.reach(_bonuses_paid, CURIOSITY_RULE, _rewards, CURIOSITY_RULE)" in EX["_maybe_award_curiosity_bonus"]
+assert '"landmarks": Array(_reached_landmarks)' in EX["get_save_data"] and '"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE)' in EX["get_save_data"]
 assert "return value if typeof(value) == TYPE_BOOL else true" in EX["_was_paid"] and "place.secret != secret" in EX["_restore_places"]
-assert '_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")' in EX["apply_save_data"]
+assert 'if _was_paid(data, "all_secrets_bonus"):\n\t\t_bonuses_paid.append(ALL_SECRETS_RULE)' in EX["apply_save_data"]
 SMS = _src("scripts", "autoload", "save_manager.gd")
 assert '"exploration": ExplorationManager.get_save_data(),' in SMS and re.search(r"^\t\t\t4:\s*pass", SMS, re.M)
 assert int(re.search(r"^const SAVE_VERSION := (\d+)", SMS, re.M).group(1)) >= 5  # v5 = M05.2 (exploration); later sections bump it (M08.5: v6)

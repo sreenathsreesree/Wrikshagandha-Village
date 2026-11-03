@@ -1019,7 +1019,12 @@ PINNED = {"scripts/player/player.gd": "1871a0d3db410eb0", "scripts/autoload/inpu
           #  area_entered signal, where Godot blocked the direct write — and makes it available again at the end with
           #  set_deferred("monitorable", unlocked), so the two always land in order even within one frame; nothing else
           #  changed: no rule, reward, timing or save.)
-          "scripts/autoload/farm_manager.gd": "21c7e9be70c17230", "scripts/farming/farm_plot.gd": "91635f5d00da818b",
+          # (farm_manager.gd re-pinned deliberately by M13.1, developer-approved: _reach() records and pays through the
+          #  shared progression path, ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, the milestone's
+          #  id when the reward data names it, else "" — silent, as before) — the same once-ever guard, record,
+          #  reward-by-id and payment, in the same order before the unlocks and the announcement; no amount, signal,
+          #  card, unlock or save changed.)
+          "scripts/autoload/farm_manager.gd": "29723290a6ab1f01", "scripts/farming/farm_plot.gd": "91635f5d00da818b",
           "scripts/autoload/save_manager.gd": "c1a0f5cd9bc631a1", "scripts/autoload/game_state.gd": "82048ee94f56d7cb",
           # M03.3 persists farm plots only: discovery respawns, environmental events and time of day stay as they were.
           # (discovery_spawn_point.gd re-pinned deliberately by M05.3: a claimed once-ever discovery isn't spawned;
@@ -1810,7 +1815,8 @@ notes.append(f"wallet: ledger-derived balance, API {len(WL_API)} functions; one 
 # once-ever bonuses. Every exploration reward is paid only behind its
 # "already?" check; loading restores that state and pays nothing; malformed
 # saved state can only make a bonus count as paid. Repeatable discovery
-# collection (points, collectibles, daily) is unchanged.
+# collection (points, collectibles, daily) is unchanged. Since M13.1 (D-70) each once-ever exploration reward is
+# checked, recorded and paid by the shared path, ProgressionRewards.reach(), with these lists as its records.
 EXF = "scripts/autoload/exploration_manager.gd"
 ex_src = scripts.get(EXF, "")
 exf = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", ex_src, re.M | re.S)}
@@ -1819,31 +1825,35 @@ pays = {}
 for fn, body in exf.items():
     n = len(re.findall(r"PointsManager\.add_points\(", body))
     if n: pays[fn] = n
-if pays != {"_on_discovery_made": 1, "mark_landmark_reached": 1, "mark_secret_location_found": 2, "_maybe_award_curiosity_bonus": 1}:
-    err(f"{EXF}: exploration pays points only in its known reward sites ({pays})")
+if pays != {"_on_discovery_made": 1}:
+    err(f"{EXF}: exploration pays points itself only for D-21's discovery-count thresholds (found {pays}); its once-ever rewards pay through ProgressionRewards.reach (M13.1)")
 ml, ms, mc = exf.get("mark_landmark_reached", ""), exf.get("mark_secret_location_found", ""), exf.get("_maybe_award_curiosity_bonus", "")
-if not (0 <= ml.find("if _reached_landmarks.has(landmark_id):\n\t\treturn") < ml.find("_reached_landmarks.append(landmark_id)") < ml.find('var bonus := _rewards.points("landmark")') < ml.find("PointsManager.add_points(bonus)")):
-    err(f"{EXF}: a landmark pays once ever — checked, recorded, then paid")
-if not (0 <= ms.find("if _found_secret_locations.has(location_id):\n\t\treturn") < ms.find("_found_secret_locations.append(location_id)") < ms.find('var bonus := _rewards.points("secret_location")') < ms.find("PointsManager.add_points(bonus)")) \
-   or not re.search(r'and not _all_secrets_bonus_awarded:\s*_all_secrets_bonus_awarded = true\s*var all_bonus := _rewards\.points\("all_secret_locations"\)\s*PointsManager\.add_points\(all_bonus\)', ms):
-    err(f"{EXF}: a secret place and 'every secret found' each pay once ever — checked, recorded, then paid")
-if not (0 <= mc.find("if _curiosity_bonus_given:\n\t\treturn") < mc.find("_curiosity_bonus_given = true") < mc.find('var bonus := _rewards.points("curiosity")') < mc.find("PointsManager.add_points(bonus)")):
-    err(f"{EXF}: the curiosity bonus pays once ever — checked, recorded, then paid")
-ONCE = {"_reached_landmarks": {"mark_landmark_reached", "apply_save_data"}, "_found_secret_locations": {"mark_secret_location_found", "apply_save_data"},
-        "_all_secrets_bonus_awarded": {"mark_secret_location_found", "apply_save_data"}, "_curiosity_bonus_given": {"_maybe_award_curiosity_bonus", "apply_save_data"}}
-for var, allowed in ONCE.items():
-    writers = {fn for fn, b in exf.items() if re.search(rf"\b{var}\s*(=[^=]|\.(append|clear|erase|remove_at|assign)\b)", b)}
-    if writers != allowed:
-        err(f"{EXF}: {var} is written only when its reward is paid and on load (found {sorted(writers)})")
+if not re.search(r'^\tvar bonus := ProgressionRewards\.reach\(_reached_landmarks, landmark_id, _rewards, "landmark"\)\s*if bonus < 0:\s*return\s*'
+                 r'landmark_reached\.emit\(landmark_id, bonus\)', ml, re.M):
+    err(f"{EXF}: a landmark pays once ever — checked, recorded and paid by the shared path, then announced")
+if not re.search(r'^\tvar bonus := ProgressionRewards\.reach\(_found_secret_locations, location_id, _rewards, "secret_location"\)\s*if bonus < 0:\s*return\s*'
+                 r'secret_location_found\.emit\(location_id, bonus\)', ms, re.M) \
+   or not re.search(r"if _secret_place_count > 0 and _found_secret_locations\.size\(\) >= _secret_place_count:\s*"
+                    r"var all_bonus := ProgressionRewards\.reach\(_bonuses_paid, ALL_SECRETS_RULE, _rewards, ALL_SECRETS_RULE\)\s*"
+                    r"if all_bonus >= 0:\s*all_secret_locations_found\.emit\(all_bonus\)", ms):
+    err(f"{EXF}: a secret place and 'every secret found' each pay once ever — checked, recorded and paid by the shared path, then announced")
+if not re.search(r'if paired_discovery_id == "" or DiscoveryManager\.is_discovered\(paired_discovery_id\):\s*return\s*'
+                 r"var bonus := ProgressionRewards\.reach\(_bonuses_paid, CURIOSITY_RULE, _rewards, CURIOSITY_RULE\)\s*"
+                 r"if bonus >= 0:\s*curiosity_bonus_awarded\.emit\(location_id, bonus\)", mc):
+    err(f"{EXF}: the curiosity bonus pays once ever — checked, recorded and paid by the shared path, then announced")
+for var in ("_reached_landmarks", "_found_secret_locations", "_bonuses_paid"):
+    writers = {fn for fn, b in exf.items() if re.search(rf"\b{var}\s*(=[^=]|\.(append|clear|erase|remove_at|assign|push_back|insert)\b)", b)}
+    if writers != {"apply_save_data"}:
+        err(f"{EXF}: {var} is written directly only on load — otherwise only the shared path records in it (found {sorted(writers)})")
 if not re.search(r'return \{\s*"landmarks": Array\(_reached_landmarks\),\s*"secrets": Array\(_found_secret_locations\),\s*'
-                 r'"all_secrets_bonus": _all_secrets_bonus_awarded,\s*"curiosity_bonus": _curiosity_bonus_given,\s*\}', exf.get("get_save_data", "")):
+                 r'"all_secrets_bonus": _bonuses_paid\.has\(ALL_SECRETS_RULE\),\s*"curiosity_bonus": _bonuses_paid\.has\(CURIOSITY_RULE\),\s*\}', exf.get("get_save_data", "")):
     err(f"{EXF}: the save holds exactly the places reached, secrets found and the two once-ever bonus flags")
 apx = exf.get("apply_save_data", "")
 if not re.search(r"_reached_landmarks\.clear\(\)\s*_found_secret_locations\.clear\(\)\s*"
                  r'_restore_places\(data\.get\("landmarks", \[\]\), false, _reached_landmarks\)\s*'
                  r'_restore_places\(data\.get\("secrets", \[\]\), true, _found_secret_locations\)\s*'
-                 r'_curiosity_bonus_given = _was_paid\(data, "curiosity_bonus"\)\s*'
-                 r'_all_secrets_bonus_awarded = _was_paid\(data, "all_secrets_bonus"\)\s*$', apx):
+                 r'_bonuses_paid\.clear\(\)\s*if _was_paid\(data, "curiosity_bonus"\):\s*_bonuses_paid\.append\(CURIOSITY_RULE\)\s*'
+                 r'if _was_paid\(data, "all_secrets_bonus"\):\s*_bonuses_paid\.append\(ALL_SECRETS_RULE\)\s*$', apx):
     err(f"{EXF}: a load restores places of the right kind and the two once-ever flags")
 for fn in ("apply_save_data", "_restore_places", "_was_paid"):
     if re.search(r"PointsManager|FarmManager|\.emit\(|mark_\w+\(|_maybe_award", exf.get(fn, "")):
@@ -1936,7 +1946,9 @@ for f, s2 in scripts.items():
     code = code_only(s2)
     for rid in re.findall(r'_rewards\.points\("(\w+)"\)|RewardRules\.new\(\)\.points\("(\w+)"\)', code):
         used.update(x for x in rid if x)
-    for const_name in re.findall(r"_rewards\.points\(([A-Z_]+)\)", code):
+    for rid in re.findall(r'ProgressionRewards\.reach\([^()]*, _rewards, "(\w+)"\)', code):   # M13.1: the rule the shared path pays
+        used.add(rid)
+    for const_name in re.findall(r"_rewards\.points\(([A-Z_]+)\)", code) + re.findall(r"ProgressionRewards\.reach\([^()]*, _rewards, ([A-Z_]+)\)", code):
         m = re.search(rf'^const {const_name} := "(\w+)"', s2, re.M)
         if m: used.add(m.group(1))
         else: err(f"{f}: reward id constant {const_name} not found")
@@ -1953,13 +1965,13 @@ unused = {r for r, (_, t) in rules.items() if not t} - used
 if unused:
     err(f"data/rewards: rules no code pays {sorted(unused)}")
 PAY_SITES = {("scripts/autoload/discovery_manager.gd", "discover"): 1, ("scripts/farming/farm_plot.gd", "_run_harvest_sequence"): 1,
-             ("scripts/autoload/farm_manager.gd", "_reach"): 1, ("scripts/autoload/daily_discovery_manager.gd", "_on_discovery_made"): 1,
-             (EXF, "_on_discovery_made"): 1, (EXF, "mark_landmark_reached"): 1, (EXF, "mark_secret_location_found"): 2,
-             (EXF, "_maybe_award_curiosity_bonus"): 1, ("scripts/autoload/requests.gd", "complete"): 1}  # M08.6 (D-39): a completed request, once
+             ("scripts/autoload/daily_discovery_manager.gd", "_on_discovery_made"): 1, (EXF, "_on_discovery_made"): 1,
+             ("scripts/rewards/progression_rewards.gd", "reach"): 1,   # M13.1 (D-70): every once-ever progression reward
+             ("scripts/autoload/requests.gd", "complete"): 1}  # M08.6 (D-39): a completed request, once
 sites = {}
 for f, s2 in scripts.items():
     if f.startswith("tools/"): continue
-    for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", s2, re.M | re.S):
+    for m in re.finditer(r"^(?:static )?func (\w+)\(.*?(?=^(?:static )?func |\Z)", s2, re.M | re.S):
         n = len(re.findall(r"PointsManager\.add_points\(", code_only(m.group(0))))
         if n: sites[(f, m.group(1))] = n
 if sites != PAY_SITES:
@@ -2218,16 +2230,17 @@ notes.append(f"selling: Market.sell() the one coin source (produce only, {sum(1 
 # plots' unlock_on_milestone, MilestoneReveals' milestone_id, farm reward rules and the Journal's
 # get_milestones() all name registered milestones. Milestones are reached only from game events.
 fmm = {m.group(1): code_only(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", fm_src_m, re.M | re.S)}
-REACH_BODY = ["if _milestones_reached.has(milestone_id):", "return false", "_milestones_reached.append(milestone_id)",
-              "var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0",
-              "if bonus_points > 0:", "PointsManager.add_points(bonus_points)",
+# (M13.1, D-70: the once-ever guard, record and reward-by-id payment are the shared path's, ProgressionRewards.reach, given
+#  the milestone's id as the rule when the reward data names it, else "" — silent, as before; -1 = already reached.)
+REACH_BODY = ['var bonus_points := ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, milestone_id if _rewards.has(milestone_id) else "")',
+              "if bonus_points < 0:", "return false",
               "if _unlock_plots_for(milestone_id) > 0:", 'message += " There\'s room to grow a little more."',
               "milestone_reached.emit(milestone_id, message, bonus_points)", "return true"]
 reach_lines = [l.strip() for l in fmm.get("_reach", "").splitlines()[1:] if l.strip()]
 if reach_lines != REACH_BODY or not fmm.get("_reach", "").startswith("func _reach(milestone_id: String, message: String) -> bool:"):
     err(f"{FM}: _reach(id, message) is the one milestone path — once ever, the id's reward from reward data, unlocks, then the announcement")
 fm_code_m = code_only(fm_src_m)
-if fm_code_m.count("milestone_reached.emit(") != 1 or re.findall(r"\b_rewards\.\w+", fm_code_m) != ["_rewards.points", "_rewards.has"] \
+if fm_code_m.count("milestone_reached.emit(") != 1 or re.findall(r"\b_rewards\.\w+", fm_code_m) != ["_rewards.has"] \
    or "_rewards = RewardRules.new()" not in fmm.get("_ready", "") or "PointsManager" in fm_code_m.replace(fmm.get("_reach", ""), ""):
     err(f"{FM}: milestone rewards are read only in _reach(); nothing else in FarmManager pays or announces a milestone")
 reach_calls = re.findall(r"\b_reach\((.*)\)", fm_code_m.replace(fmm.get("_reach", ""), ""))
@@ -2257,6 +2270,56 @@ rule_like = {r for r in rules if r.startswith(("first_", "garden_", "all_starter
 if rule_like - FARM_MILESTONES:
     err(f"data/rewards: farm-milestone rules {sorted(rule_like - FARM_MILESTONES)} name no registered milestone")
 notes.append(f"farm milestones: {len(FARM_MILESTONES)} registered, {len(FARM_MILESTONES & set(rules))} rewarded by data; one path (_reach); hooks checked")
+
+# ------------------------------------------------------------ one progression path (M13.1, D-70)
+# Every once-ever progression reward is checked, recorded and paid in one place: ProgressionRewards.reach(record, id,
+# rewards, rule) (scripts/rewards/progression_rewards.gd — one static function, no state, no autoload). An id already in
+# the owner's record returns -1 and does nothing; otherwise the id is recorded, then the rule's points are paid (rule ""
+# pays nothing; an unknown rule pays 0 with RewardRules' own warning) and returned; the owner announces afterwards. Each
+# system keeps its own record, saved in its own section as before (no save change). Exactly five callers: the farm
+# milestones (FarmManager._reach, _milestones_reached) and the four once-ever exploration rewards — a landmark
+# (_reached_landmarks, "landmark"), a secret place (_found_secret_locations, "secret_location"), "every secret found" and
+# the curiosity bonus (_bonuses_paid, ALL_SECRETS_RULE / CURIOSITY_RULE). D-21's discovery-count thresholds, discoveries,
+# the daily bonus, harvests and requests stay outside it. O-04 (how progression is finally structured) stays open.
+PR_GD = "scripts/rewards/progression_rewards.gd"
+M13 = "one progression path (M13.1, D-70): "
+pr_src = scripts.get(PR_GD, "")
+pr_code = code_only(pr_src)
+if not re.search(r"^extends RefCounted\s*class_name ProgressionRewards$", pr_code, re.M) or re.search(r"^(var|const|signal|@export|@onready) ", pr_code, re.M) \
+   or re.findall(r"^(?:static )?func (\w+)", pr_code, re.M) != ["reach"] \
+   or not re.fullmatch(r"static func reach\(record: Array\[String\], id: String, rewards: RewardRules, rule_id: String\) -> int:\s*"
+                       r"if record\.has\(id\):\s*return -1\s*record\.append\(id\)\s*"
+                       r"var points := rewards\.points\(rule_id\) if rule_id != \"\" else 0\s*"
+                       r"if points > 0:\s*PointsManager\.add_points\(points\)\s*return points\s*", code_only(func_body(pr_src.replace("static func", "func"), "reach") or "").replace("func reach", "static func reach", 1)):
+    err(f"{M13}{PR_GD}: one static function and no state — an id already recorded returns -1 and does nothing; otherwise record it, "
+        f"then pay the rule's points (\"\" = none; an unknown rule warns through RewardRules) and return them")
+m13_calls = []
+for f, s2 in scripts.items():
+    if f.startswith("tools/") or f == PR_GD: continue
+    for m in re.finditer(r"^(?:static )?func (\w+)\(.*?(?=^(?:static )?func |\Z)", s2, re.M | re.S):
+        for call in re.findall(r"\bProgressionRewards\.\w+\(.*\)", code_only(m.group(0))):
+            m13_calls.append((f, m.group(1), call))
+M13_CALLS = sorted([
+    ("scripts/autoload/farm_manager.gd", "_reach", 'ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, milestone_id if _rewards.has(milestone_id) else "")'),
+    (EXF, "mark_landmark_reached", 'ProgressionRewards.reach(_reached_landmarks, landmark_id, _rewards, "landmark")'),
+    (EXF, "mark_secret_location_found", 'ProgressionRewards.reach(_found_secret_locations, location_id, _rewards, "secret_location")'),
+    (EXF, "mark_secret_location_found", "ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE, _rewards, ALL_SECRETS_RULE)"),
+    (EXF, "_maybe_award_curiosity_bonus", "ProgressionRewards.reach(_bonuses_paid, CURIOSITY_RULE, _rewards, CURIOSITY_RULE)")])
+if sorted(m13_calls) != M13_CALLS:
+    err(f"{M13}exactly the five once-ever progression rewards reach the shared path, each with its own record and rule "
+        f"(found {sorted(m13_calls)})")
+if not re.search(r'^const CURIOSITY_RULE := "curiosity"$', ex_code, re.M) or not re.search(r'^const ALL_SECRETS_RULE := "all_secret_locations"$', ex_code, re.M) \
+   or not re.search(r"^var _bonuses_paid: Array\[String\] = \[\]$", ex_code, re.M):
+    err(f"{M13}{EXF}: the two once-ever bonuses are rule ids (CURIOSITY_RULE, ALL_SECRETS_RULE), recorded in _bonuses_paid")
+for rid in ("landmark", "secret_location", "curiosity", "all_secret_locations"):
+    if rid not in rules:
+        err(f"{M13}data/rewards/{rid}.tres: an exploration progression rule exists — the shared path pays it")
+fm_writes = {fn for fn, b in fmm.items() if re.search(r"\b_milestones_reached\s*(=[^=]|\.(append|clear|erase|remove_at|assign|push_back|insert)\b)", b)}
+if fm_writes != {"apply_save_data"}:
+    err(f"{M13}{FM}: _milestones_reached is written directly only on load — otherwise only the shared path records in it (found {sorted(fm_writes)})")
+if not os.path.isfile("tools/sims/sim_progression.py"):
+    err(f"{M13}tools/sims/sim_progression.py exists")
+notes.append(f"one progression path (M13.1): ProgressionRewards.reach, {len(m13_calls)} once-ever callers (farm milestones + four exploration rewards); records per system; no save change")
 
 # ------------------------------------------------------------ farming frozen (M06.5, D-11)
 # Phase 06 leaves FarmManager with farm rules, plots, crops, milestones and the farm save; seeds and
@@ -3709,8 +3772,9 @@ if [l for f in glob.glob("scenes/**/*.tscn", recursive=True) for l in re.findall
     err(f"{MEADOW_SCENE}: the Hidden Hollow is named once, by its landmark — no event, entry or second trigger refers to it (D-45)")
 ex_save = func_body(ex, "get_save_data") or ""
 if re.findall(r'^\t\t"(\w+)":', ex_save, re.M) != ["landmarks", "secrets", "all_secrets_bonus", "curiosity_bonus"] \
-   or 'if _secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count and not _all_secrets_bonus_awarded:' not in (func_body(ex, "mark_secret_location_found") or "") \
-   or '_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")' not in (func_body(ex, "apply_save_data") or ""):
+   or 'if _secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count:' not in (func_body(ex, "mark_secret_location_found") or "") \
+   or "ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE, _rewards, ALL_SECRETS_RULE)" not in (func_body(ex, "mark_secret_location_found") or "") \
+   or 'if _was_paid(data, "all_secrets_bonus"):\n\t\t_bonuses_paid.append(ALL_SECRETS_RULE)' not in (func_body(ex, "apply_save_data") or ""):
     err(f"{EXPLO}: the Hollow is saved in the existing exploration section (no new field); 'every secret found' counts the data's secrets and a paid bonus stays paid (D-45)")
 for f, s2 in scripts.items():
     if not f.startswith("tools/") and re.search(r"hidden_hollow|HiddenPlaces|Hidden Hollow", s2):

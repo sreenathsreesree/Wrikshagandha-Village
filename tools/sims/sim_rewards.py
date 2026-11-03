@@ -29,6 +29,9 @@ ONCE_EVER = {d for d, r, _ in DISC if r <= 0}
 assert ONCE_EVER == {"ancient_seed"}, f"the once-ever discoveries are exactly the Ancient Seed today ({ONCE_EVER})"
 EX, FM, DD = _src("scripts", "autoload", "exploration_manager.gd"), _src("scripts", "autoload", "farm_manager.gd"), _src("scripts", "autoload", "daily_discovery_manager.gd")
 PAID = set(re.findall(r'_rewards\.points\("(\w+)"\)', EX)) | set(re.findall(r'RewardRules\.new\(\)\.points\("(\w+)"\)', DD))
+# M13.1 (D-70): the once-ever exploration rewards name their rule to the shared path (a literal, or a rule-id constant).
+PAID |= set(re.findall(r'ProgressionRewards\.reach\([^()]*, _rewards, "(\w+)"\)', EX))
+PAID |= {re.search(rf'^const {c} := "(\w+)"', EX, re.M).group(1) for c in re.findall(r"ProgressionRewards\.reach\([^()]*, _rewards, ([A-Z_]+)\)", EX)}
 def _farm_milestones(fm):  # M06.4: get_milestones()'s registered ids (constants + "grown:<starter crop>")
     gm = re.search(r"^func get_milestones\(.*?(?=^func )", fm, re.M | re.S).group(0)
     ids = {re.search(rf'^const {c} := "(\w+)"', fm, re.M).group(1) for c in re.findall(r"_milestone_row\(([A-Z_]+),", gm)}
@@ -37,7 +40,9 @@ def _farm_milestones(fm):  # M06.4: get_milestones()'s registered ids (constants
         for f in glob.glob(os.path.join(REPO, "data", "crops", "*.tres")):
             t = open(f, encoding="utf-8").read(); st = re.search(r"^starting_seeds = (\d+)", t, re.M)
             if int(st.group(1) if st else 1) > 0: ids.add(prefix + re.search(r'crop_id = "([^"]+)"', t).group(1))
-    assert "var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0" in fm, "farm milestones pay by id in _reach()"
+    # M13.1 (D-70): _reach() hands the milestone's id to the shared progression path as the rule when the data names it.
+    assert 'ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, milestone_id if _rewards.has(milestone_id) else "")' in fm \
+        and 'var points := rewards.points(rule_id) if rule_id != "" else 0' in _src("scripts", "rewards", "progression_rewards.gd"), "farm milestones pay by id in _reach()"
     return ids
 PAID |= _farm_milestones(FM) & {os.path.basename(f)[:-5] for f in glob.glob(os.path.join(REPO, "data", "rewards", "*.tres"))}
 DM, SP = _funcs(_src("scripts", "autoload", "discovery_manager.gd")), _funcs(_src("scripts", "interactables", "discovery_spawn_point.gd"))

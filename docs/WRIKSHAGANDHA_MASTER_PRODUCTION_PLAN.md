@@ -1843,8 +1843,15 @@ Goal: the small playable test area (placeholders).
 ### PHASE 13 — PROGRESSION
 | Milestone | Objective | Done when | Status |
 |---|---|---|---|
-| M13.1 | Unify farm milestones, exploration bonuses and future rewards into one progression record | One path; paid once ever | `[ ]` |
+| M13.1 | Unify farm milestones, exploration bonuses and future rewards into one progression record | One path; paid once ever | `[~]` implemented; desktop automated validation passed; device regression pending — one shared recording-and-payment path for the once-ever rewards, each system keeping its own saved record (D-70); O-04 stays open |
 | M13.2 | Discovery → Understanding → World Change → New Access → New Discovery (per O-04) | One full chain in the slice | `[!]` O-04 |
+
+**M13.1 — One progression path** `[~]` implemented; desktop automated validation passed; device regression pending (D-70)
+- **Developer-approved scope:** before O-04 (which stays open; M13.2 not started); one shared recording-and-payment path, each system keeping its own saved state (no save-format change); once-ever rewards only — D-21's per-session discovery-count bonuses unchanged.
+- **Game code:** `scripts/rewards/progression_rewards.gd` (`ProgressionRewards.reach(record, id, rewards, rule)`, one static function, no state); `FarmManager._reach` records and pays through it (pin re-recorded with its reason); ExplorationManager's landmark, secret, curiosity and every-secret rewards through it, the two bonus flags now one record, `_bonuses_paid`, saved as `curiosity_bonus` / `all_secrets_bonus` exactly as before.
+- **Tooling:** checker section "one progression path (M13.1, D-70)" and the old-code contracts restated (M05.2, the pay sites, M06.4, the Hidden Hollow, the state registry); `tools/sims/sim_progression.py`; the shared path in `sim_economy`, `sim_milestones`, `sim_hidden_hollow`, `sim_rewards`, `sim_points_coins`, `sim_repeat_rewards` and `sim_state_registry`; `force_stop_check.gd` reads the two flags through `get_save_data()`.
+- *Reconstructed 2026-11-01 after the original commit was lost unpushed; D-70's text survived. Results of this reconstruction's runs are in D-70.*
+- **Pending:** the device regression — Device Playtest Pack S3.2, S3.5, S4.1 and S4.2 on an exported Godot 4.7.x build (§7): milestone cards, exploration bonuses, relaunch and force-stop exactly as before; `[~]` → `[x]` only on the developer's report.
 
 ### PHASE 14 — JOURNAL / COLLECTION
 | Milestone | Objective | Done when | Status |

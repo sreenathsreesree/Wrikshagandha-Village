@@ -6,9 +6,11 @@ extends Node
 ## Saved (M05.2, P-02, D-21): which places were reached and which secret
 ## places found, and whether the "every secret found" and curiosity bonuses
 ## were paid — each of those rewards is once ever, so a relaunch never pays
-## them again. Session-only, as before: the discovery-count thresholds
-## (they count first-ever discoveries, which are themselves saved, so they
-## are bounded), the first/rare discovery beats and the session summary.
+## them again. Each is recorded and paid through the shared progression
+## path (ProgressionRewards.reach, M13.1), with these lists as its records.
+## Session-only, as before: the discovery-count thresholds (they count
+## first-ever discoveries, which are themselves saved, so they are bounded),
+## the first/rare discovery beats and the session summary.
 ## Every bonus amount and the discovery-count thresholds are reward data
 ## (data/rewards/, M05.3), not constants; places — their
 ## names, order, secret/garden roles and curiosity pairings — are
@@ -37,6 +39,9 @@ signal curiosity_bonus_awarded(location_id: String, bonus_points: int)
 signal session_summary_ready(summary: Dictionary)
 
 const RARE_RARITIES := ["rare", "very_rare", "legendary"]
+## The two once-ever bonuses: their reward ids, and their record's entries.
+const CURIOSITY_RULE := "curiosity"
+const ALL_SECRETS_RULE := "all_secret_locations"
 
 ## Where the place definitions live (the Journal's "Places" list, arrival
 ## names, curiosity pairings, which places are secrets, which is the garden).
@@ -57,8 +62,9 @@ var _reached_landmarks: Array[String] = []
 var _found_secret_locations: Array[String] = []
 var _first_discovery_announced: bool = false
 var _rare_discovery_announced: bool = false
-var _all_secrets_bonus_awarded: bool = false
-var _curiosity_bonus_given: bool = false
+## The once-ever bonuses already paid (CURIOSITY_RULE, ALL_SECRETS_RULE) —
+## saved as the "curiosity_bonus" and "all_secrets_bonus" flags, as before.
+var _bonuses_paid: Array[String] = []
 var _summary_shown: bool = false
 
 func _ready() -> void:
@@ -110,11 +116,9 @@ func has_reached_landmark(landmark_id: String) -> bool:
 	return _reached_landmarks.has(landmark_id)
 
 func mark_landmark_reached(landmark_id: String) -> void:
-	if _reached_landmarks.has(landmark_id):
+	var bonus := ProgressionRewards.reach(_reached_landmarks, landmark_id, _rewards, "landmark")
+	if bonus < 0:
 		return
-	_reached_landmarks.append(landmark_id)
-	var bonus := _rewards.points("landmark")
-	PointsManager.add_points(bonus)
 	landmark_reached.emit(landmark_id, bonus)
 	FarmManager.notify_place_reached(landmark_id)
 
@@ -122,37 +126,31 @@ func has_found_secret_location(location_id: String) -> bool:
 	return _found_secret_locations.has(location_id)
 
 func mark_secret_location_found(location_id: String) -> void:
-	if _found_secret_locations.has(location_id):
+	var bonus := ProgressionRewards.reach(_found_secret_locations, location_id, _rewards, "secret_location")
+	if bonus < 0:
 		return
-	_found_secret_locations.append(location_id)
-	var bonus := _rewards.points("secret_location")
-	PointsManager.add_points(bonus)
 	secret_location_found.emit(location_id, bonus)
 	FarmManager.notify_place_reached(location_id)
 
 	_maybe_award_curiosity_bonus(location_id)
 
-	if _secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count and not _all_secrets_bonus_awarded:
-		_all_secrets_bonus_awarded = true
-		var all_bonus := _rewards.points("all_secret_locations")
-		PointsManager.add_points(all_bonus)
-		all_secret_locations_found.emit(all_bonus)
+	if _secret_place_count > 0 and _found_secret_locations.size() >= _secret_place_count:
+		var all_bonus := ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE, _rewards, ALL_SECRETS_RULE)
+		if all_bonus >= 0:
+			all_secret_locations_found.emit(all_bonus)
 
 ## Rewards exploration *order*, not grinding: reaching this secret spot
 ## before the nearby discovery it's paired with means the player found it
 ## out of curiosity, not by following the item's own trail. Fires at most
 ## once ever (saved), whichever qualifying location gets there first.
 func _maybe_award_curiosity_bonus(location_id: String) -> void:
-	if _curiosity_bonus_given:
-		return
 	var place := _find_place(location_id)
 	var paired_discovery_id := place.curiosity_discovery_id if place else ""
 	if paired_discovery_id == "" or DiscoveryManager.is_discovered(paired_discovery_id):
 		return
-	_curiosity_bonus_given = true
-	var bonus := _rewards.points("curiosity")
-	PointsManager.add_points(bonus)
-	curiosity_bonus_awarded.emit(location_id, bonus)
+	var bonus := ProgressionRewards.reach(_bonuses_paid, CURIOSITY_RULE, _rewards, CURIOSITY_RULE)
+	if bonus >= 0:
+		curiosity_bonus_awarded.emit(location_id, bonus)
 
 ## One row per place, in its fixed order, with the caller deciding
 ## how to render "not visited yet" (the Journal screen shows "???").
@@ -217,8 +215,8 @@ func get_save_data() -> Dictionary:
 	return {
 		"landmarks": Array(_reached_landmarks),
 		"secrets": Array(_found_secret_locations),
-		"all_secrets_bonus": _all_secrets_bonus_awarded,
-		"curiosity_bonus": _curiosity_bonus_given,
+		"all_secrets_bonus": _bonuses_paid.has(ALL_SECRETS_RULE),
+		"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE),
 	}
 
 ## For SaveManager, at boot, before any landmark exists. Pays nothing and
@@ -234,8 +232,11 @@ func apply_save_data(data: Dictionary) -> void:
 	_found_secret_locations.clear()
 	_restore_places(data.get("landmarks", []), false, _reached_landmarks)
 	_restore_places(data.get("secrets", []), true, _found_secret_locations)
-	_curiosity_bonus_given = _was_paid(data, "curiosity_bonus")
-	_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")
+	_bonuses_paid.clear()
+	if _was_paid(data, "curiosity_bonus"):
+		_bonuses_paid.append(CURIOSITY_RULE)
+	if _was_paid(data, "all_secrets_bonus"):
+		_bonuses_paid.append(ALL_SECRETS_RULE)
 
 func _restore_places(saved: Variant, secret: bool, into: Array[String]) -> void:
 	if typeof(saved) != TYPE_ARRAY:

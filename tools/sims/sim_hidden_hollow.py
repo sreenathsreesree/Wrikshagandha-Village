@@ -85,6 +85,7 @@ def landmarks_of(meadow):
 def sources():
     return {"ex": _src("scripts", "autoload", "exploration_manager.gd"), "lm": _src("scripts", "world_simulation", "exploration_landmark.gd"),
             "lc": _src("scripts", "world_simulation", "exploration_landmark_controller.gd"), "sm": _src("scripts", "autoload", "save_manager.gd"),
+            "pr": _src("scripts", "rewards", "progression_rewards.gd"),
             "meadow": _src("scenes", "world", "Meadow.tscn"),
             "places": {os.path.basename(f): open(f, encoding="utf-8").read() for f in sorted(glob.glob(os.path.join(REPO, "data", "places", "*.tres")))},
             "rewards": {re.search(r'^id = "(\w+)"', t, re.M).group(1): int(re.search(r"^points = (\d+)", t, re.M).group(1))
@@ -99,8 +100,10 @@ def build(s):
     ex = re.sub(r"(?<![\w\]])\[\]", "GArray()", ex)                               # empty arrays are Godot Arrays
     ledger = Ledger()
     ext = {"PointsManager": "LEDGER", "FarmManager": "LEDGER", "DiscoveryManager": "LEDGER", "Wallet": "LEDGER", "Inventory": "LEDGER",
-           "ItemManager": "LEDGER", "ExplorationManager": "CURRENT.em"}
+           "ItemManager": "LEDGER", "ExplorationManager": "CURRENT.em", "ProgressionRewards": "PROGRESSION"}
     gd_port.HELPERS["LEDGER"], gd_port.HELPERS["CURRENT"] = ledger, CURRENT
+    PR, _ = translate(s["pr"], "ProgressionRewards", ext, ["reach"])   # the shared once-ever path (M13.1)
+    gd_port.HELPERS["PROGRESSION"] = PR()
     EM, _ = translate(ex, "ExplorationManager", ext, EX_FUNCS)
     lm = s["lm"].replace("Kind.SECRET_LOCATION", "1")
     LM, _ = translate(lm, "ExplorationLandmark", ext, ["is_reached", "mark_reached"])
@@ -229,15 +232,15 @@ def run(s):
     def pay(em, pid):
         b = ledger.points; em.mark_secret_location_found(pid); return ledger.points - b
     em = manager()
-    if pay(em, "hidden_hollow") != 15 or em._curiosity_bonus_given:
+    if pay(em, "hidden_hollow") != 15 or em.get_save_data()["curiosity_bonus"]:
         p.append("the Hollow has no curiosity pairing — found first, it pays 15 and leaves the curiosity bonus unpaid")
     def manager(manager=manager):   # below, the curiosity bonus is taken as paid so only the secret rewards show
-        em = manager(); em._curiosity_bonus_given = True; return em
+        em = manager(); em._bonuses_paid.append("curiosity"); return em
     em = manager()
     first4 = [pay(em, pid) for pid in OLD_SECRETS]
-    if first4 != [15, 15, 15, 15] or em._all_secrets_bonus_awarded:
+    if first4 != [15, 15, 15, 15] or em.get_save_data()["all_secrets_bonus"]:
         p.append(f"the four older secrets no longer pay 'every secret found' — it needs five ({first4})")
-    if pay(em, "hidden_hollow") != 65 or not em._all_secrets_bonus_awarded or pay(em, "hidden_hollow") != 0:
+    if pay(em, "hidden_hollow") != 65 or not em.get_save_data()["all_secrets_bonus"] or pay(em, "hidden_hollow") != 0:
         p.append("the Hollow as the fifth secret pays 15 + the 50-point bonus, once")
     for order in ([("hidden_hollow")] + OLD_SECRETS, OLD_SECRETS[:2] + ["hidden_hollow"] + OLD_SECRETS[2:]):
         em = manager(); got = [pay(em, pid) for pid in order]
@@ -252,7 +255,7 @@ def run(s):
             p.append(f"loading a save pays nothing ({what})")
         got = pay(em, "hidden_hollow")
         again, _ = relaunch(s, em, manager)
-        if got != want or pay(again, "hidden_hollow") != 0 or not again._all_secrets_bonus_awarded:
+        if got != want or pay(again, "hidden_hollow") != 0 or not again.get_save_data()["all_secrets_bonus"]:
             p.append(f"{what}: the Hollow pays {want} once and the bonus stays paid after a relaunch (got {got})")
     # ---- 5. the save format
     sm = s["sm"]
@@ -277,15 +280,15 @@ def mutate(key, old, new, place=None):
     return s
 MUTANTS = {
     "the bonus counts four secrets (hard-coded)": mutate("ex", "_found_secret_locations.size() >= _secret_place_count", "_found_secret_locations.size() >= 4"),
-    "the bonus ignores the saved flag": mutate("ex", " and not _all_secrets_bonus_awarded:", ":"),
-    "a relaunch forgets the paid bonus": mutate("ex", '_all_secrets_bonus_awarded = _was_paid(data, "all_secrets_bonus")', "_all_secrets_bonus_awarded = false"),
-    "a secret pays again on re-entry": mutate("ex", "\tif _found_secret_locations.has(location_id):\n\t\treturn\n\t_found_secret_locations.append(location_id)",
-                                              "\tif not _found_secret_locations.has(location_id):\n\t\t_found_secret_locations.append(location_id)"),
+    "the bonus ignores the saved flag (checked against the wrong record)": mutate("ex", "ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE,", "ProgressionRewards.reach(_found_secret_locations, ALL_SECRETS_RULE,"),
+    "a relaunch forgets the paid bonus": mutate("ex", 'if _was_paid(data, "all_secrets_bonus"):\n\t\t_bonuses_paid.append(ALL_SECRETS_RULE)', "if false:\n\t\t_bonuses_paid.append(ALL_SECRETS_RULE)"),
+    "a secret pays again on re-entry": mutate("ex", '\tvar bonus := ProgressionRewards.reach(_found_secret_locations, location_id, _rewards, "secret_location")\n\tif bonus < 0:\n\t\treturn\n',
+                                              '\tvar bonus := _rewards.points("secret_location")\n\tPointsManager.add_points(bonus)\n\tif not _found_secret_locations.has(location_id):\n\t\t_found_secret_locations.append(location_id)\n'),
     "found secrets are not saved": mutate("ex", '"secrets": Array(_found_secret_locations),', '"secrets": GArray(),'),
-    "a new save field": mutate("ex", '"curiosity_bonus": _curiosity_bonus_given,', '"curiosity_bonus": _curiosity_bonus_given,\n\t\t"hollow": true,'),
+    "a new save field": mutate("ex", '"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE),', '"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE),\n\t\t"hollow": true,'),
     "the Hollow also gives coins": mutate("ex", "\tsecret_location_found.emit(location_id, bonus)", "\tsecret_location_found.emit(location_id, bonus)\n\tWallet.add_coins(5)"),
     "the Hollow also gives an item": mutate("ex", "\tsecret_location_found.emit(location_id, bonus)", "\tsecret_location_found.emit(location_id, bonus)\n\tInventory.add_item(location_id, 1)"),
-    "the secret reward doubled": mutate("ex", 'var bonus := _rewards.points("secret_location")', 'var bonus := 2 * _rewards.points("secret_location")'),
+    "the secret reward doubled": mutate("ex", '_rewards, "secret_location")\n\tif bonus < 0:\n\t\treturn\n', '_rewards, "secret_location")\n\tif bonus < 0:\n\t\treturn\n\tPointsManager.add_points(bonus)\n'),
     "the Hollow is not a secret (data)": mutate(None, "secret = true\n", "", place="hidden_hollow.tres"),
     "the Hollow listed first (data)": mutate(None, "order = 55", "order = 5", place="hidden_hollow.tres"),
     "the Hollow's landmark is a plain landmark": mutate("meadow", 'location_id = "hidden_hollow"\nkind = 1', 'location_id = "hidden_hollow"\nkind = 0'),

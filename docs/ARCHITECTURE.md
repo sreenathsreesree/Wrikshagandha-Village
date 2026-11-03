@@ -313,8 +313,7 @@ exploration_manager._reached_landmarks persistent:exploration
 exploration_manager._found_secret_locations persistent:exploration
 exploration_manager._first_discovery_announced session
 exploration_manager._rare_discovery_announced session
-exploration_manager._all_secrets_bonus_awarded persistent:exploration
-exploration_manager._curiosity_bonus_given persistent:exploration
+exploration_manager._bonuses_paid persistent:exploration
 exploration_manager._summary_shown session
 farm_manager._crops data
 farm_manager._rewards data

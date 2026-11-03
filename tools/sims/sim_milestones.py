@@ -3,8 +3,9 @@
 1. Read from the project: the registered milestones (FarmManager.get_milestones():
    its constants + "grown:<starter crop>"), the reward rules (data/rewards/), the
    scene hooks (plots' unlock_on_milestone, MilestoneReveals' milestone_id), and
-   _reach()'s own body (its order: once-ever guard, record, the id's reward, pay,
-   unlocks, announce).
+   _reach()'s own body and the shared progression path it records and pays through
+   (M13.1: once-ever guard, record, the id's reward, pay — then _reach's unlocks and
+   announcement).
 2. One reward path: every milestone's reward is the rule named by its id (none =
    0); the resulting table equals the amounts the call sites paid before M06.4
    (a deliberate REGRESSION SNAPSHOT — update only with a deliberate reward
@@ -52,11 +53,17 @@ for scene in glob.glob(os.path.join(REPO, "scenes", "**", "*.tscn"), recursive=T
 REACH = [l.strip() for l in F["_reach"].splitlines()[1:] if l.strip()]
 def at(line): return REACH.index(line)
 assert F["_reach"].startswith("func _reach(milestone_id: String, message: String) -> bool:")
-order = [at("if _milestones_reached.has(milestone_id):"), at("_milestones_reached.append(milestone_id)"),
-         at("var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0"),
-         at("PointsManager.add_points(bonus_points)"), at("if _unlock_plots_for(milestone_id) > 0:"),
+# M13.1 (D-70): the guard, the record and the id's reward are the shared path's; _reach unlocks and announces after it.
+PR_SRC = open(os.path.join(REPO, "scripts", "rewards", "progression_rewards.gd"), encoding="utf-8").read()
+PR_BODY = [l.strip() for l in re.search(r"^static func reach\(.*?(?=^(?:static )?func |\Z)", PR_SRC, re.M | re.S).group(0).splitlines()[1:] if l.strip()]
+def pat(line): return PR_BODY.index(line)
+order = [pat("if record.has(id):"), pat("return -1"), pat("record.append(id)"), pat('var points := rewards.points(rule_id) if rule_id != "" else 0'),
+         pat("PointsManager.add_points(points)")]
+assert order == sorted(order), "the shared path: guard → record → the rule's reward → pay"
+order = [at('var bonus_points := ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, milestone_id if _rewards.has(milestone_id) else "")'),
+         at("if bonus_points < 0:"), at("return false"), at("if _unlock_plots_for(milestone_id) > 0:"),
          at("milestone_reached.emit(milestone_id, message, bonus_points)")]
-assert order == sorted(order), "guard → record → the id's reward → pay → unlock → announce"
+assert order == sorted(order), "_reach: the shared path (the id as its rule when the data names it) → already reached? stop → unlock → announce"
 CALLS = [c.split(",")[0].strip() for fn, b in F.items() if fn != "_reach" for c in re.findall(r"\b_reach\((.*)\)", b)]
 
 # ---------------------------------------------------------------- 2. one reward path

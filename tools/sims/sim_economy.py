@@ -35,12 +35,13 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 def _src(*p): return open(os.path.join(REPO, *p), encoding="utf-8").read()
 def _vals(f): return {k: v.strip('"') for k, v in re.findall(r'^(\w+) = (.+)$', open(f, encoding="utf-8").read().split("[resource]", 1)[1], re.M)}
 def _code(s): return "\n".join(l.split("#")[0] for l in s.splitlines() if not l.lstrip().startswith("##"))
-def _funcs(s): return {m.group(1): _code(m.group(0)) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", s, re.M | re.S)}
+def _funcs(s): return {m.group(1): _code(m.group(0)) for m in re.finditer(r"^(?:static )?func (\w+)\(.*?(?=^(?:static )?func |\Z)", s, re.M | re.S)}
 SCRIPTS = {os.path.relpath(p, REPO): _code(open(p, encoding="utf-8").read()) for p in glob.glob(os.path.join(REPO, "scripts", "**", "*.gd"), recursive=True)}
 F = {f: _funcs(open(os.path.join(REPO, f), encoding="utf-8").read()) for f in SCRIPTS}
 EX, FM, DM, DD, FP, GS, SM = ("scripts/autoload/exploration_manager.gd", "scripts/autoload/farm_manager.gd", "scripts/autoload/discovery_manager.gd",
                               "scripts/autoload/daily_discovery_manager.gd", "scripts/farming/farm_plot.gd", "scripts/autoload/game_state.gd",
                               "scripts/autoload/save_manager.gd")
+PR = "scripts/rewards/progression_rewards.gd"   # M13.1 (D-70): the one path of every once-ever progression reward
 
 # ---------------------------------------------------------------- data (the source of truth)
 RULES = {v["id"]: (int(v.get("points", "0")), int(v.get("threshold", "0"))) for v in map(_vals, glob.glob(os.path.join(REPO, "data", "rewards", "*.tres")))}
@@ -66,7 +67,9 @@ def _farm_milestones(fm):  # M06.4: get_milestones()'s registered ids (constants
         for f in glob.glob(os.path.join(REPO, "data", "crops", "*.tres")):
             t = open(f, encoding="utf-8").read(); st = re.search(r"^starting_seeds = (\d+)", t, re.M)
             if int(st.group(1) if st else 1) > 0: ids.add(prefix + re.search(r'crop_id = "([^"]+)"', t).group(1))
-    assert "var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0" in fm, "farm milestones pay by id in _reach()"
+    # M13.1 (D-70): _reach() hands the milestone's id to the shared progression path as the rule when the data names it.
+    assert 'ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, milestone_id if _rewards.has(milestone_id) else "")' in fm \
+        and 'var points := rewards.points(rule_id) if rule_id != "" else 0' in _src("scripts", "rewards", "progression_rewards.gd"), "farm milestones pay by id in _reach()"
     return ids
 FARM_MILESTONES = _farm_milestones(_src("scripts", "autoload", "farm_manager.gd"))
 MILESTONE_RULES = FARM_MILESTONES & set(RULES)       # one reward path (M06.4): a registered milestone pays its rule, if any
@@ -79,35 +82,36 @@ for f, funcs in F.items():
         if n: SITES[(f, fn)] = n
 REGISTER_SITES = {  # source -> the pay site(s) that pay it
     "discovery_collection": [(DM, "discover")], "discovery_thresholds": [(EX, "_on_discovery_made")],
-    "landmark": [(EX, "mark_landmark_reached")], "secret_location": [(EX, "mark_secret_location_found")],
-    "all_secret_locations": [(EX, "mark_secret_location_found")], "curiosity": [(EX, "_maybe_award_curiosity_bonus")],
-    "daily_discovery": [(DD, "_on_discovery_made")], "harvest": [(FP, "_run_harvest_sequence")], "farm_milestones": [(FM, "_reach")],
+    "landmark": [(PR, "reach")], "secret_location": [(PR, "reach")], "all_secret_locations": [(PR, "reach")], "curiosity": [(PR, "reach")],
+    "daily_discovery": [(DD, "_on_discovery_made")], "harvest": [(FP, "_run_harvest_sequence")], "farm_milestones": [(PR, "reach")],
     "requests": [("scripts/autoload/requests.gd", "complete")]}  # M08.6 (D-39): a completed request, once
 expected_sites = {}
 for sites in REGISTER_SITES.values():
-    for s in sites: expected_sites[s] = expected_sites.get(s, 0) + 1
+    for s in sites: expected_sites[s] = 1 if s == (PR, "reach") else expected_sites.get(s, 0) + 1   # the shared path pays in one place
 assert SITES == expected_sites, f"an unregistered or missing points source: {SITES} vs register {expected_sites}"
 
 # ---------------------------------------------------------------- classification, derived from the code
 exs = F[EX]; dms = F[DM]; dds = F[DD]; fms = F[FM]
 saved_exploration = F[EX].get("get_save_data", "")
-def once_ever(guard_fn, guard, record, saved_key):
-    return guard in exs.get(guard_fn, "") and record in exs.get(guard_fn, "") and saved_key in saved_exploration \
-        and exs[guard_fn].find(guard) < exs[guard_fn].find("PointsManager.add_points(")
+prs = F[PR].get("reach", "")
+# M13.1 (D-70): once ever = the caller hands the shared path its own saved record, and the path checks the id against it
+# (returning -1, nothing paid) before recording it, before paying.
+path_once = 0 <= prs.find("if record.has(id):\n\t\treturn -1") < prs.find("record.append(id)") < prs.find("PointsManager.add_points(")
+def once_ever(fn, call, saved_key, funcs=None):
+    return path_once and call in (funcs or exs).get(fn, "") and saved_key in (saved_exploration if funcs is None else F[FM].get("get_save_data", ""))
 CLASS = {}
-CLASS["landmark"] = "once_ever" if once_ever("mark_landmark_reached", "if _reached_landmarks.has(landmark_id):\n\t\treturn", "_reached_landmarks.append(landmark_id)", '"landmarks": Array(_reached_landmarks)') else "repeatable"
-CLASS["secret_location"] = "once_ever" if once_ever("mark_secret_location_found", "if _found_secret_locations.has(location_id):\n\t\treturn", "_found_secret_locations.append(location_id)", '"secrets": Array(_found_secret_locations)') else "repeatable"
-CLASS["all_secret_locations"] = "once_ever" if ("and not _all_secrets_bonus_awarded:" in exs["mark_secret_location_found"] and "_all_secrets_bonus_awarded = true" in exs["mark_secret_location_found"]
-                                                and '"all_secrets_bonus": _all_secrets_bonus_awarded' in saved_exploration) else "repeatable"
-CLASS["curiosity"] = "once_ever" if ("if _curiosity_bonus_given:\n\t\treturn" in exs["_maybe_award_curiosity_bonus"] and "_curiosity_bonus_given = true" in exs["_maybe_award_curiosity_bonus"]
-                                     and '"curiosity_bonus": _curiosity_bonus_given' in saved_exploration) else "repeatable"
+CLASS["landmark"] = "once_ever" if once_ever("mark_landmark_reached", 'ProgressionRewards.reach(_reached_landmarks, landmark_id, _rewards, "landmark")', '"landmarks": Array(_reached_landmarks)') else "repeatable"
+CLASS["secret_location"] = "once_ever" if once_ever("mark_secret_location_found", 'ProgressionRewards.reach(_found_secret_locations, location_id, _rewards, "secret_location")', '"secrets": Array(_found_secret_locations)') else "repeatable"
+CLASS["all_secret_locations"] = "once_ever" if once_ever("mark_secret_location_found", "ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE, _rewards, ALL_SECRETS_RULE)", '"all_secrets_bonus": _bonuses_paid.has(ALL_SECRETS_RULE)') else "repeatable"
+CLASS["curiosity"] = "once_ever" if once_ever("_maybe_award_curiosity_bonus", "ProgressionRewards.reach(_bonuses_paid, CURIOSITY_RULE, _rewards, CURIOSITY_RULE)", '"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE)') else "repeatable"
 thr_ok = "if _thresholds.has(_session_discovery_count) and not _awarded_thresholds.has(_session_discovery_count):" in exs["_on_discovery_made"] \
     and "DiscoveryManager.discovery_made.connect(_on_discovery_made)" in exs["_ready"] and "discovery_repeated" not in exs["_ready"] \
     and '"discovered_ids": DiscoveryManager.get_discovered_ids()' in SCRIPTS[SM]
 CLASS["discovery_thresholds"] = "per_session_bounded" if thr_ok else "repeatable"
 CLASS["daily_discovery"] = "per_day" if ("if is_completed_today():\n\t\treturn" in dds["_on_discovery_made"] and "completed_date = _today_string()" in dds["_on_discovery_made"]
                                          and '"completed_date": completed_date' in dds["get_save_data"]) else "repeatable"
-CLASS["farm_milestones"] = "once_ever" if ("if _milestones_reached.has(milestone_id):\n\t\treturn false" in fms["_reach"] and '"milestones": Array(_milestones_reached)' in fms["get_save_data"]) else "repeatable"
+CLASS["farm_milestones"] = "once_ever" if (path_once and "ProgressionRewards.reach(_milestones_reached, milestone_id," in fms["_reach"] and "if bonus_points < 0:\n\t\treturn false" in fms["_reach"]
+                                           and '"milestones": Array(_milestones_reached)' in fms["get_save_data"]) else "repeatable"
 plot_capture = F["scripts/farming/farm_plot.gd"].get("capture", "")
 CLASS["harvest"] = "rate_limited_repeatable" if ('"stage_time_left"' in plot_capture and all(c["cycle"] > 0 for c in CROPS.values())) else "repeatable"
 claimed = "definition.respawn_seconds <= 0.0 and discovered_ids.has(id)" in dms.get("is_claimed", "") and "if is_claimed(id):\n\t\treturn false" in dms["discover"] \
@@ -214,23 +218,24 @@ AUTOSAVED = {"first_discovery": "DiscoveryManager.discovery_made" in TRIGGERS, "
              # listeners of that signal, so GameState's save on it is deferred until they have run.
              "repeat_discovery": "DiscoveryManager.discovery_repeated.connect(_save.unbind(1), CONNECT_DEFERRED)" in gs_ready,
              "daily_on_repeat": "DiscoveryManager.discovery_repeated.connect(_save.unbind(1), CONNECT_DEFERRED)" in gs_ready,
-             # mark_landmark_reached records the place and pays before landmark_reached; mark_secret_location_found
-             # records and pays before secret_location_found, then the curiosity and every-secret bonuses, each recorded
-             # and paid before its own signal — so the last save in the chain follows the last reward paid.
+             # mark_landmark_reached records the place and pays (through the shared path, M13.1) before landmark_reached;
+             # mark_secret_location_found records and pays before secret_location_found, then the curiosity and every-secret
+             # bonuses, each recorded and paid before its own signal — so the last save in the chain follows the last reward paid.
              "landmark": "ExplorationManager.landmark_reached" in TRIGGERS,
              "secret": {"ExplorationManager.secret_location_found", "ExplorationManager.curiosity_bonus_awarded",
                         "ExplorationManager.all_secret_locations_found"} <= TRIGGERS}
 assert AUTOSAVED == {"first_discovery": True, "threshold": True, "harvest": True, "milestone": True, "sale": True,
                      "repeat_discovery": True, "landmark": True, "secret": True, "daily_on_repeat": True}
 ex = F["scripts/autoload/exploration_manager.gd"]
-assert ex["mark_landmark_reached"].find("_reached_landmarks.append(") < ex["mark_landmark_reached"].find("PointsManager.add_points(") \
-    < ex["mark_landmark_reached"].find("landmark_reached.emit("), "a landmark is recorded and paid before its signal (its save)"
+assert path_once, "the shared path records an id before it pays (M13.1)"
+assert 0 <= ex["mark_landmark_reached"].find("ProgressionRewards.reach(_reached_landmarks,") < ex["mark_landmark_reached"].find("landmark_reached.emit("), \
+    "a landmark is recorded and paid before its signal (its save)"
 ms = ex["mark_secret_location_found"]
-assert ms.find("_found_secret_locations.append(") < ms.find("PointsManager.add_points(bonus)") < ms.find("secret_location_found.emit(") \
-    < ms.find("_maybe_award_curiosity_bonus(") < ms.find("_all_secrets_bonus_awarded = true") < ms.find("PointsManager.add_points(all_bonus)") \
+assert 0 <= ms.find("ProgressionRewards.reach(_found_secret_locations,") < ms.find("secret_location_found.emit(") \
+    < ms.find("_maybe_award_curiosity_bonus(") < ms.find("ProgressionRewards.reach(_bonuses_paid, ALL_SECRETS_RULE,") \
     < ms.find("all_secret_locations_found.emit("), "a secret, then curiosity, then every secret: each recorded and paid before its signal"
 cb = ex["_maybe_award_curiosity_bonus"]
-assert cb.find("_curiosity_bonus_given = true") < cb.find("PointsManager.add_points(") < cb.find("curiosity_bonus_awarded.emit("), "curiosity: recorded and paid before its signal"
+assert 0 <= cb.find("ProgressionRewards.reach(_bonuses_paid, CURIOSITY_RULE,") < cb.find("curiosity_bonus_awarded.emit("), "curiosity: recorded and paid before its signal"
 dd = F["scripts/autoload/discovery_manager.gd"]["discover"]
 assert dd.find("PointsManager.add_points(") < dd.find("discovery_repeated.emit("), "a repeat collection pays before its signal"
 # M14.1a: a sighting is recorded before its signal (its save) and pays nothing — no points, coins or items to account for.

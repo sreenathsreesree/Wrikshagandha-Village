@@ -166,7 +166,7 @@ if __name__ == "__main__":
         "a variable classified twice": mut(AR, "wallet._balance derived\n", "wallet._balance derived\nwallet._balance session\n"),
         "an unknown class": mut(AR, "wallet._balance derived\n", "wallet._balance cached\n"),
         "a persistent variable relabelled session": mut(AR, "wallet._ledger persistent:wallet", "wallet._ledger session"),
-        "a session variable saved": mut(EX, '"curiosity_bonus": _curiosity_bonus_given,', '"curiosity_bonus": _curiosity_bonus_given,\n\t\t"beats": _summary_shown,'),
+        "a session variable saved": mut(EX, '"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE),', '"curiosity_bonus": _bonuses_paid.has(CURIOSITY_RULE),\n\t\t"beats": _summary_shown,'),
         "a persistent variable no longer saved": mut(WA, 'return {"ledger": _ledger.duplicate(true)}', 'return {"ledger": []}'),
         "a persistent variable under the wrong section": mut(AR, "wallet._ledger persistent:wallet", "wallet._ledger persistent:items"),
         "a new section with no classified state": mut("scripts/autoload/save_manager.gd", '\t"world_time": [TYPE_DICTIONARY],\n', '\t"world_time": [TYPE_DICTIONARY],\n\t"memos": [TYPE_DICTIONARY],\n'),

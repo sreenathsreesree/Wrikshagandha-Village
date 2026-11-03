@@ -109,7 +109,7 @@ const NUMBER_WORDS := ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seve
 
 var _crops: Array[CropDefinition] = []
 ## Milestone rewards (M05.3, M06.4): reward data named by the milestone id,
-## read only by _reach().
+## used only by _reach(), through the shared progression path (M13.1).
 var _rewards: RewardRules
 ## crop_id -> that crop's seed / produce item id (from data/items).
 var _seed_item_ids: Dictionary = {}
@@ -595,18 +595,17 @@ func _find_crop(crop_id: String) -> CropDefinition:
 ## The one path every farm milestone goes through (M06.4, D-27): records it
 ## once ever, pays its reward, opens what waits on it, announces it.
 ## Returns whether it was newly reached (so callers can avoid a second card
-## for the same moment). The reward is looked up here, by the milestone's
-## id, in the reward data (data/rewards/<id>.tres) — a milestone with no
-## rule pays nothing, and no caller ever chooses an amount. The id is the
-## hook: plots (unlock_on_milestone), MilestoneReveals (milestone_id), the
-## reward data and the Journal (get_milestones) all name the same ids.
+## for the same moment). Recording and paying go through the shared
+## progression path (ProgressionRewards.reach, M13.1), with the reward
+## named by the milestone's id in the reward data (data/rewards/<id>.tres)
+## — a milestone with no rule passes none and pays nothing, silently, and no
+## caller ever chooses an amount. The id is the hook: plots
+## (unlock_on_milestone), MilestoneReveals (milestone_id), the reward data
+## and the Journal (get_milestones) all name the same ids.
 func _reach(milestone_id: String, message: String) -> bool:
-	if _milestones_reached.has(milestone_id):
+	var bonus_points := ProgressionRewards.reach(_milestones_reached, milestone_id, _rewards, milestone_id if _rewards.has(milestone_id) else "")
+	if bonus_points < 0:
 		return false
-	_milestones_reached.append(milestone_id)
-	var bonus_points := _rewards.points(milestone_id) if _rewards.has(milestone_id) else 0
-	if bonus_points > 0:
-		PointsManager.add_points(bonus_points)
 	if _unlock_plots_for(milestone_id) > 0:
 		message += " There's room to grow a little more."
 	milestone_reached.emit(milestone_id, message, bonus_points)

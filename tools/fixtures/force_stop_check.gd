@@ -171,11 +171,11 @@ func facts(case: String) -> Dictionary:
 			f["secret_found"] = em.has_found_secret_location(secret_without_pair())
 		"curiosity":
 			f["secret_found"] = em.has_found_secret_location(secret_with_pair()[0])
-			f["curiosity_bonus"] = bool(em.get("_curiosity_bonus_given"))
+			f["curiosity_bonus"] = bool(em.get_save_data()["curiosity_bonus"])
 		"all_secrets":
 			var all := secrets()
 			f["last_secret_found"] = em.has_found_secret_location(all[all.size() - 1][0])
-			f["all_secrets_bonus"] = bool(em.get("_all_secrets_bonus_awarded"))
+			f["all_secrets_bonus"] = bool(em.get_save_data()["all_secrets_bonus"])
 		"repeat":
 			var id := repeatable_discovery()
 			f["collectible"] = int(al("Inventory").get_quantity(id))

@@ -245,7 +245,7 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
   the amounts listed in M01.6's "M05.3 rewards" item.
 - Result: ______ Notes: ______
 
-**S3.2 Farm loop** (M02.1, M04.2, M04.4, M06.1, M06.4)
+**S3.2 Farm loop** (M02.1, M04.2, M04.4, M06.1, M06.4, M13.1)
 - Needs: Phone.
 - Steps: prepare, plant (seed picker), water, wait, harvest at different qualities; try a locked plot and a plot mid-harvest.
 - Expected: the M01.6 "M04.2" and "M04.4" items — seed counts drop, planting refused at 0, one seed back on harvest,
@@ -267,7 +267,7 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
   adds coins (M06.2); points and coins never mix (M05.5).
 - Result: ______ Notes: ______
 
-**S3.5 Places and exploration rewards** (M03.6, M05.2, M10.1, M10.3)
+**S3.5 Places and exploration rewards** (M03.6, M05.2, M10.1, M10.3, M13.1)
 - Needs: Phone.
 - Steps: open the Journal's Places list; reach the Overlook and a secret place; find the Hidden Hollow by following its
   clue trail from the Secluded Pond Nook.
@@ -346,7 +346,7 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
 
 ## S4 — Persistence (~20 min)
 
-**S4.1 Relaunch keeps progress** (M02.1, M04.2, M04.3, M05.2, M05.3, M08.5, M09.2, M14.1a)
+**S4.1 Relaunch keeps progress** (M02.1, M04.2, M04.3, M05.2, M05.3, M08.5, M09.2, M14.1a, M13.1)
 - Needs: Phone.
 - Steps: make progress (points, a collectible, a planted plot mid-growth, a visited place, a seen species, a
   conversation); close the app normally; relaunch.
@@ -354,7 +354,7 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
   reaching the same places again pays nothing (M05.2); the Ancient Seed pays once ever (M05.3).
 - Result: ______ Notes: ______
 
-**S4.2 Force-stop keeps the moment** (M15.4, M14.1a, M05.6)
+**S4.2 Force-stop keeps the moment** (M15.4, M14.1a, M05.6, M13.1)
 - Needs: Phone (Route B for Android's Force stop; or a PC with adb).
 - Steps: reach a landmark (or collect a repeat discovery, or claim the daily bonus) and immediately force-stop the app
   (Android *Settings → Apps → (the game) → Force stop* — Route B; or `adb shell am force-stop com.wrikshagandha.village`
@@ -599,6 +599,7 @@ M10.1 S3.5
 M10.2 S3.1 S3.5
 M10.3 S3.5
 M11.1 S3.9
+M13.1 S3.2 S3.5 S4.1 S4.2
 M14.1a S3.10 S4.1 S4.2
 M15.4 S4.2
 E1 S5.1 S5.4 S6.3
