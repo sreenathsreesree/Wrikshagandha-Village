@@ -8,9 +8,12 @@ extends SceneTree
 ## itself except the one SaveManager.save_game() a check asks for.
 ##   mode=fresh    out=<facts.json>                 no save: the new-game facts
 ##   mode=fixture  expected=<v/expected.json> fresh=<facts.json> origin=<n>
-##                 [resave=1]  the loaded facts equal what the old version held
-##                 (sections it never saved equal a new game's); with resave=1
-##                 the game then saves: the build's SAVE_VERSION and exactly today's sections
+##                 [save=<v/save.json>] [resave=1]  the loaded facts equal what
+##                 the old version held (sections it never saved equal a new
+##                 game's); with save= the player memories (M14.1) the game
+##                 derives equal those the file's own records prove, worked out
+##                 here from its raw JSON; with resave=1 the game then saves:
+##                 the build's SAVE_VERSION and exactly today's sections
 ##   mode=newer                                     refused, never overwritten (the "newer" fixture)
 ##   mode=malformed fresh=<facts.json>              ignored like a damaged file
 ## Prints FIXTURE_CHECK PASS|FAIL lines; exits 1 on any failure.
@@ -19,6 +22,7 @@ const LANDMARK := "overlook"
 const SECRET := "secluded_pond_nook"
 const NPC := "villager"
 const REQUEST := "villager_stones"
+const MEMORIES := "res://data/memories/"
 const CURRENT_SECTIONS := ["daily_discovery", "discovered_ids", "exploration", "farm", "items", "journal_entries", "points",
 		"relationships", "requests", "save_version", "settings", "wallet", "wildlife_sightings", "world_time"]
 
@@ -46,8 +50,10 @@ func _run() -> void:
 	await process_frame
 	match str(args.get("mode", "")):
 		"fresh":
-			_write(str(args["out"]), JSON.stringify(facts(), "\t", true))
+			var new_game := facts()
+			_write(str(args["out"]), JSON.stringify(new_game, "\t", true))
 			print("FIXTURE_CHECK PASS fresh facts written")
+			check((new_game["memories"] as Array).is_empty(), "a new game remembers nothing (M14.1)", str(new_game["memories"]))
 		"fixture":
 			_check_fixture()
 		"newer":
@@ -93,6 +99,15 @@ func _check_fixture() -> void:
 		check(got["clock"][0] == fresh["clock"][0] and absf(float(got["clock"][1]) - float(fresh["clock"][1])) < 0.01, tag + " world time (absent: a new day)", "%s vs %s" % [got["clock"], fresh["clock"]])
 	source = expected if origin >= 9 else fresh
 	check(got["wildlife_sighted"] == source["wildlife_sighted"], tag + " wildlife sightings%s" % ("" if origin >= 9 else " (absent: none seen)"), "%s vs %s" % [got["wildlife_sighted"], source["wildlife_sighted"]])
+	if args.has("save"):
+		var want_memories := _memories_from_save(_read_json(str(args["save"])))
+		check(got["memories"] == want_memories and not want_memories.is_empty(), tag + " player memories %s (the save's own records prove them)" % [got["memories"]], "%s vs %s" % [got["memories"], want_memories])
+		var unrecorded: Array = []  # a memory resting on a record this version never saved
+		for memory: Resource in al("JournalManager").get_memories():
+			var record := str(memory.get("record"))
+			if (origin < 5 and record == "secret_place") or (origin < 9 and record == "wildlife"):
+				unrecorded.append(str(memory.get("id")))
+		check(unrecorded.is_empty(), tag + " no memory from a record v%d never saved" % origin, str(unrecorded))
 	if args.has("resave"):
 		al("SaveManager").save_game()
 		var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string("user://save.json"))
@@ -129,6 +144,10 @@ func facts() -> Dictionary:
 		journal.append([id, al("JournalManager").has_entry(id)])
 	var sighted: Array = Array(al("JournalManager").get_sighted_ids())
 	sighted.sort()
+	var memories: Array = []
+	for memory: Resource in al("JournalManager").get_memories():
+		memories.append(str(memory.get("id")))
+	memories.sort()
 	return {
 		"points": int(al("PointsManager").get_points()),
 		"discovered_ids": discovered,
@@ -147,7 +166,58 @@ func facts() -> Dictionary:
 		"request_state": str(al("Requests").get_state(REQUEST)),
 		"clock": [int(al("WorldClock").get_day()), float(al("WorldClock").get_fraction())],
 		"wildlife_sighted": sighted,
+		"memories": memories,
 	}
+
+## The player memories a save's own records prove, worked out here from the
+## file as it was written — not through the game: a memory holds when the
+## record it names, in the raw JSON, holds its fact (farm.milestones;
+## exploration.secrets, only known secret places, as a
+## load keeps them; wildlife_sightings, only species in the data). Sorted ids.
+func _memories_from_save(save: Dictionary) -> Array:
+	var secret := {}  # place id -> secret?
+	for file in DirAccess.get_files_at("res://data/places/"):
+		if file.ends_with(".tres"):
+			var place: Resource = load("res://data/places/" + file)
+			secret[str(place.get("id"))] = bool(place.get("secret"))
+	var species: Array = []
+	for file in DirAccess.get_files_at("res://data/wildlife/"):
+		if file.ends_with(".tres"):
+			species.append(str(load("res://data/wildlife/" + file).get("id")))
+	var milestones := _list(_section(save, "farm").get("milestones"))
+	var secrets: Array = []
+	for id: Variant in _list(_section(save, "exploration").get("secrets")):
+		if secret.has(id) and secret[id]:
+			secrets.append(id)
+	var sighted: Array = []
+	for id: Variant in _list(save.get("wildlife_sightings")):
+		if species.has(id):
+			sighted.append(id)
+	var ids: Array = []
+	for file in DirAccess.get_files_at(MEMORIES):
+		if not file.ends_with(".tres"):
+			continue
+		var memory: Resource = load(MEMORIES + file)
+		var fact := str(memory.get("fact_id"))
+		var holds := false
+		match str(memory.get("record")):
+			"farm_milestone":
+				holds = milestones.has(fact)
+			"secret_place":
+				holds = not secrets.is_empty() if fact == "" else secrets.has(fact)
+			"wildlife":
+				holds = sighted.has(fact)
+		if holds:
+			ids.append(str(memory.get("id")))
+	ids.sort()
+	return ids
+
+func _section(save: Dictionary, key: String) -> Dictionary:
+	var value: Variant = save.get(key)
+	return value if value is Dictionary else {}
+
+func _list(value: Variant) -> Array:
+	return value if value is Array else []
 
 ## Every plot field exactly, except the three read from the clock when a plot
 ## is captured (seconds left in a stage, seconds thirsty, the longest thirst):

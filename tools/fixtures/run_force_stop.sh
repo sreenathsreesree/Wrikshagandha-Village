@@ -10,12 +10,13 @@
 #          the act — a repeat collection of today's target — is what completes it.
 #   sighting (M14.1a): a real Rabbit and WildlifeController with the player inside
 #          its alert distance — the species seen through the game's own path.
+#   sighting_bird (M14.1): the same with a real SmallBird — its sighting and its player memory survive the kill.
 # Usage: GODOT=/path/to/Godot_v4.7.2 [PROJECT=<dir>] [CASES="landmark secret ..."] tools/fixtures/run_force_stop.sh
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 project="${PROJECT:-$(cd "$here/../.." && pwd)}"
 godot="${GODOT:-godot}"
-cases="${CASES:-control landmark secret curiosity all_secrets repeat daily sighting}"
+cases="${CASES:-control landmark secret curiosity all_secrets repeat daily sighting sighting_bird}"
 work="$(mktemp -d)"
 failed=0; passed=0
 if [ ! -d "$project/.godot" ]; then timeout 600 "$godot" --headless --editor --quit --path "$project" > "$work/import.log" 2>&1; fi

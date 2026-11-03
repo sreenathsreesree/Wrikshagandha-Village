@@ -3,7 +3,8 @@
 # tools/fixtures/saves/ is loaded by the current game at boot, exactly as a
 # player's save would be, and checked against what the old version held.
 #   v0..vN     (N = SAVE_VERSION) pass 1: load (migrated by SaveManager), compare, save again;
-#              pass 2: a new launch loads that re-saved file and compares again
+#              pass 2: a new launch loads that re-saved file and compares again; both passes also compare
+#              the player memories (M14.1) with those the fixture's raw save.json proves
 #   newer      stamped past SAVE_VERSION: not loaded, and the file is left byte-for-byte as it was
 #   malformed  ignored like a damaged file (a new game), no crash
 # Any SCRIPT ERROR in a run fails it. Each run uses its own data folder
@@ -38,8 +39,8 @@ for n in $(seq 0 "$current"); do
   v="v$n"; dir="$saves/$v"
   [ -f "$dir/save.json" ] && [ -f "$dir/expected.json" ] || { echo "  FIXTURE_CHECK FAIL MISSING $v (save.json / expected.json)"; failed=1; continue; }
   d="$work/$v"; place "$d" "$dir/save.json"
-  run "$d" "$work/$v.1.log" mode=fixture "expected=$dir/expected.json" "fresh=$work/fresh.json" "origin=$n" resave=1
-  run "$d" "$work/$v.2.log" mode=fixture "expected=$dir/expected.json" "fresh=$work/fresh.json" "origin=$n" again=1
+  run "$d" "$work/$v.1.log" mode=fixture "expected=$dir/expected.json" "fresh=$work/fresh.json" "origin=$n" "save=$dir/save.json" resave=1
+  run "$d" "$work/$v.2.log" mode=fixture "expected=$dir/expected.json" "fresh=$work/fresh.json" "origin=$n" "save=$dir/save.json" again=1
   echo "$v: $(grep -c 'FIXTURE_CHECK PASS' "$work/$v.1.log") + $(grep -c 'FIXTURE_CHECK PASS' "$work/$v.2.log") checks passed, $(cat "$work/$v.1.log" "$work/$v.2.log" | grep -c 'FIXTURE_CHECK FAIL') failed"
 done
 d="$work/newer"; place "$d" "$saves/newer/save.json"

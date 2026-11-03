@@ -12,21 +12,32 @@ extends Node
 ## relays it). A sighting is only remembered: it pays no points, coins or
 ## items. Saved as its own section, "wildlife_sightings" (save v9).
 
+## Player memories (M14.1, D-71): moments the player has already lived, each a
+## MemoryDefinition in MEMORIES_PATH naming the saved record that proves it —
+## a farm milestone reached, a secret place found, a species seen. Derived
+## each time they are asked for, from those records as
+## their owners hold them: nothing about a memory is stored or saved, and
+## remembering pays nothing, records nothing and announces nothing.
+
 signal entry_added(entry: Dictionary)
 ## A species seen for the first time ever (never again for that species).
 signal wildlife_sighted(species_id: String)
 
 const WILDLIFE_PATH := "res://data/wildlife/"
+const MEMORIES_PATH := "res://data/memories/"
 
 var _entries: Dictionary = {}
 ## WildlifeDefinition resources, in their Journal order.
 var _species: Array = []
 ## Ids of the species seen, in the order first seen.
 var _sighted_species: Array = []
+## MemoryDefinition resources, in their Journal order.
+var _memories: Array = []
 
 func _ready() -> void:
 	DiscoveryManager.discovery_made.connect(_on_discovery_made)
 	_load_species()
+	_load_memories()
 
 func _on_discovery_made(definition: DiscoveryDefinition) -> void:
 	var entry := {
@@ -101,3 +112,37 @@ func apply_sightings_save_data(data: Array) -> void:
 	for value: Variant in data:
 		if typeof(value) == TYPE_STRING and not _sighted_species.has(value):
 			_sighted_species.append(value)
+
+func _load_memories() -> void:
+	_memories.clear()
+	for path in ResourceDirectory.list_tres_paths(MEMORIES_PATH):
+		var resource: Resource = load(path)
+		if resource is MemoryDefinition and (resource as MemoryDefinition).id != "":
+			_memories.append(resource)
+		else:
+			push_warning("JournalManager: %s is not a memory definition with an id" % path)
+	_memories.sort_custom(func(a: MemoryDefinition, b: MemoryDefinition) -> bool: return a.order < b.order)
+
+## The memories the saved records prove right now, in their Journal order. A
+## moment not yet lived (or lived before its record was saved) is simply not
+## there — never inferred from anything else.
+func get_memories() -> Array:
+	var remembered: Array = []
+	for memory: MemoryDefinition in _memories:
+		if is_remembered(memory):
+			remembered.append(memory)
+	return remembered
+
+## Whether the record a memory names holds its fact, read through the owner's
+## own read-only query.
+func is_remembered(memory: MemoryDefinition) -> bool:
+	match memory.record:
+		MemoryDefinition.FARM_MILESTONE:
+			return FarmManager.is_milestone_reached(memory.fact_id)
+		MemoryDefinition.SECRET_PLACE:
+			if memory.fact_id == "":
+				return ExplorationManager.get_found_secret_count() > 0
+			return ExplorationManager.has_found_secret_location(memory.fact_id)
+		MemoryDefinition.WILDLIFE:
+			return has_sighted(memory.fact_id) and get_species(memory.fact_id) != null
+	return false

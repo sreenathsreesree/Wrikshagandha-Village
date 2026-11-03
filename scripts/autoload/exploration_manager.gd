@@ -125,6 +125,10 @@ func mark_landmark_reached(landmark_id: String) -> void:
 func has_found_secret_location(location_id: String) -> bool:
 	return _found_secret_locations.has(location_id)
 
+## How many secret places have been found (ever — the saved list).
+func get_found_secret_count() -> int:
+	return _found_secret_locations.size()
+
 func mark_secret_location_found(location_id: String) -> void:
 	var bonus := ProgressionRewards.reach(_found_secret_locations, location_id, _rewards, "secret_location")
 	if bonus < 0:

@@ -345,24 +345,44 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
   message or sound) (D-69).
 - Result: ______ Notes: ______ (record the route)
 
+**S3.13 Journal memories** (M14.1)
+- Source: the plan's M14.1 row (Android pending) and D-71.
+- Needs: Phone (an exported build for acceptance — Route B); a new game. Optional: an older save (note which build
+  wrote it, if known).
+- Steps: on the new game open the Journal; then plant a seed, harvest it, find a secret place, and walk up to a
+  rabbit, a small bird and a butterfly — opening the Journal after each; note your points and coins before and after
+  opening it; close the app normally, relaunch and open the Journal again. With an older save, open the Journal right
+  after loading it.
+- Expected: no Memories section until something is remembered; then a Memories section last in the left column, one
+  plain line per moment, in a fixed order — "You planted the garden's first seed.", "You brought in the garden's first
+  harvest.", "You found your first secret place.", "You came close to a rabbit (a small bird, a butterfly) for the
+  first time." Each line appears only after its own moment, and nothing names a moment not yet lived; reaching a
+  landmark (the garden included) adds no memory; nothing announces a memory (no card, message or sound); opening the
+  Journal changes no points, coins, items or friendship; after the relaunch the same lines are there. An older save
+  shows only what its records prove: nothing about a secret place from a save older than v5, nothing about wildlife
+  from one older than v9. Places, Wildlife, the garden record and Discoveries look as before (D-71).
+- Result: ______ Notes: ______ (record the route)
+
 ---
 
 ## S4 — Persistence (~20 min)
 
-**S4.1 Relaunch keeps progress** (M02.1, M04.2, M04.3, M05.2, M05.3, M08.5, M09.2, M14.1a, M13.1)
+**S4.1 Relaunch keeps progress** (M02.1, M04.2, M04.3, M05.2, M05.3, M08.5, M09.2, M14.1a, M13.1, M14.1)
 - Needs: Phone.
 - Steps: make progress (points, a collectible, a planted plot mid-growth, a visited place, a seen species, a
   conversation); close the app normally; relaunch.
 - Expected: everything restored; the world time continues from where it was (M09.2, no time passes while closed);
-  reaching the same places again pays nothing (M05.2); the Ancient Seed pays once ever (M05.3).
+  reaching the same places again pays nothing (M05.2); the Ancient Seed pays once ever (M05.3); the Journal's
+  memories are the same as before closing (M14.1).
 - Result: ______ Notes: ______
 
-**S4.2 Force-stop keeps the moment** (M15.4, M14.1a, M05.6, M13.1)
+**S4.2 Force-stop keeps the moment** (M15.4, M14.1a, M05.6, M13.1, M14.1)
 - Needs: Phone (Route B for Android's Force stop; or a PC with adb).
 - Steps: reach a landmark (or collect a repeat discovery, or claim the daily bonus) and immediately force-stop the app
   (Android *Settings → Apps → (the game) → Force stop* — Route B; or `adb shell am force-stop com.wrikshagandha.village`
   from a PC); relaunch. On Route A, force-stopping stops the editor app itself; record what you did.
-- Expected: the moment is kept with no double payment (M15.4); a species seen just before is still seen (M14.1a).
+- Expected: the moment is kept with no double payment (M15.4); a species seen just before is still seen (M14.1a);
+  a memory the moment made (a secret place, a species) is still in the Journal (M14.1).
 - Result: ______ Notes: ______
 
 **S4.3 Area reload round-trip** (M03.2, M03.3)
@@ -603,6 +623,7 @@ M10.2 S3.1 S3.5
 M10.3 S3.5
 M11.1 S3.9
 M13.1 S3.2 S3.5 S4.1 S4.2
+M14.1 S3.13 S4.1 S4.2
 M14.1a S3.10 S4.1 S4.2
 M15.4 S4.2
 E1 S5.1 S5.4 S6.3

@@ -162,7 +162,7 @@ M15.2, M15.3) and M00.1–M00.4.
 | Camera | `[~]` implemented; desktop verified | Follow + look-ahead, area bounds (M03.4), pinch/wheel zoom 7–15 m (M03.5), the Rest Mode settle and seated view (E1, D-62); Android pending |
 | Farming | Advanced prototype, **frozen** (D-11) | 4 crops, quality, basket, 7 plots, Elderbloom, exploration seeds, milestones, persistence; seeds and produce are inventory items (M06.1); device farm loop pending |
 | Exploration | `[~]` implemented; desktop verified | Landmarks, five secrets including the Hidden Hollow (M10), place data (M03.6), progress saved (M05.2); Android pending |
-| Discovery / journal / collection | `[~]` implemented; desktop verified | 9 discoveries, respawns, clues, daily discovery, journal, collection, Wildlife Journal (M14.1a); Android pending |
+| Discovery / journal / collection | `[~]` implemented; desktop verified | 9 discoveries, respawns, clues, daily discovery, journal, collection, Wildlife Journal (M14.1a), player memories (M14.1, derived only; not committed at this update); Android pending |
 | Wildlife / day-night / events | `[~]` implemented; desktop verified | 14 wildlife actors, a 600 s day saved as world time (M09.2), Clear/Rain weather (M09.3), rain startles the birds (M09.4), wildlife settles in the rain (W2, D-69), environmental events; Android pending |
 | Saving | `[~]` implemented; desktop verified | One JSON save, `save_version` 9 with step migrations (D-17); old-save fixtures (M15.3, 318 checks) and force-stop cases (M15.4, 16) pass in real Godot; Android pending |
 | Inventory | `[~]` implemented; desktop verified | `Inventory` autoload: seeds, produce (quality split) and collectibles as items (M04.1–M04.5); Android pending |
@@ -1856,9 +1856,18 @@ Goal: the small playable test area (placeholders).
 ### PHASE 14 — JOURNAL / COLLECTION
 | Milestone | Objective | Done when | Status |
 |---|---|---|---|
-| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[ ]` not complete — the Journal already shows discoveries, places with secrets ("???" until found), wildlife (M14.1a) and the garden's crop record, from data, each under its own milestone (Places M03.6, the landscape Journal M07.4a, Wildlife M14.1a); the player-memories section is not yet designed or implemented (deferred until designed, ARCHITECTURE §11) |
+| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop); Android pending — the last section, player memories, derived only (D-71; in the working tree, not committed at this update); the others under their own milestones (Places M03.6, the landscape Journal M07.4a, Wildlife M14.1a) |
 | M14.1a | Wildlife Journal (first slice of M14.1): rabbit, small bird and butterfly as data; a species is seen once ever when the player enters a creature's existing alert distance; shown in the Journal; saved at once (save v9); no reward | Seen species survive close/force-stop/relaunch; old saves load with none seen | `[~]` Implemented and verified on desktop; Android pending |
 | M14.2 | Elements and Rishis sections | After Phases 11–12 | `[!]` |
+
+**M14.1 — Player memories (the last Journal section)** `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop); Android pending; **not committed** at this update
+- **Developer-approved design (derived only, D-71):** a memory describes a moment already lived and appears only where existing saved data reliably proves it — no save v10, migration or new persistent state; nothing inferred from current state; no points, coins, items, relationship change, unlock or reward; no notification. The evidence table is D-71's; unsupported parts were narrowed, not invented (the first secret place is not named). **Final review corrections (2026-11-01):** the garden memory was removed — it repeated the Places list and the garden section — and with it the landmark record; First Seed is the first milestone in any save written by the game.
+- **Game code:** `scripts/journal/memory_definition.gd` (`MemoryDefinition`: id, text, order, record, fact_id; three records as constants; no functions) and `data/memories/` — `first_seed`, `first_harvest` (farm milestones), `first_secret_place` (any secret place), `first_rabbit`, `first_small_bird`, `first_butterfly` (wildlife); `journal_manager.gd` loads them (`_load_memories`, data) and derives them on each call (`get_memories`, `is_remembered` — each record owner's own read-only query; nothing stored, no signal); `exploration_manager.gd` gains one read-only query, `get_found_secret_count()`; `journal_screen.gd` adds the Memories section last on the left, only once there is one, one note each. Save format (v9), SaveManager, GameState, FarmManager and every other system unchanged.
+- **Tooling:** checker section "player memories (M14.1, D-71)" and the M15.2 note (3 items deferred); the state registry (`journal_manager._memories data`; `player_memories` off the deferred list; `sim_state_registry` +3 broken designs); `tools/sims/sim_player_memories.py`; `save_fixture_check.gd` / `run_save_fixtures.sh` (each fixture's memories against what its raw `save.json` proves — worked out from the JSON, not through the game — in both passes; none from a record the version never saved; a new game remembers nothing); `force_stop_check.gd` / `run_force_stop.sh` (every case's memories survive the kill; `secret` and `sighting` must have made theirs; the new case `sighting_bird` — a real SmallBird — gives the small bird's memory real-Godot coverage).
+- **Verification (actual runs, 2026-11-01 reconstruction, desktop):** see D-71 and the recovery report — the checker, `run_all.sh`, the sim (13 broken designs), 28 checker mutations, and real Godot 4.7.2: import clean, 359 save-fixture checks (v0–v4 first seed and first harvest; v5–v8 also the first secret place; v9 also the rabbit and the butterfly), 18 force-stop runs, the collection check, two real-Godot mutants failing. Desktop screenshots (Godot's OpenGL fallback under Xvfb — layout only, not a device check): no section for a new game, a short card for two memories, one card of about ten wrapped lines for all six; points unchanged by opening the Journal.
+- **Limits:** a moment lived before its record existed (a secret before save v5, wildlife before v9) is not remembered; memories carry no chronology; the section sits at the bottom of the left column, below Places, Wildlife and the garden.
+- **Pending:** device acceptance — Device Playtest Pack S3.13, S4.1 and S4.2 on an exported Godot 4.7.x build (§7); `[~]` → `[x]` only on the developer's report.
+- **Commit:** none — in the working tree of `recovery/organic-world-nov-2026`, unstaged, awaiting review.
 
 **M14.1a — Wildlife Journal** `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop, regression); Android pending
 - **Developer-approved defaults (1–4):** species as data; a sighting at the existing alert distance, once per species ever; no rewards of any kind; persisted in a new save section with a migration, real historical fixtures and an immediate save. **Workflow: Option A** — Commit 1 establishes the v9 history; the genuine v9 fixture is then generated from that commit with the established historical generator, the pending-fixture exception removed and the checks rerun (Commit 2, separately approved). Decision record: D-59.
@@ -2158,16 +2167,17 @@ runtime component of its own).
     their working container. They are reconstructed from the surviving session record in the working tree of
     `recovery/organic-world-nov-2026`, awaiting review: D-67 as a reconstructed prerequisite record (its original date
     unrecoverable), T2 Android export readiness, W2 wildlife in the rain, M13.1 one progression path, and this
-    reconciliation; the original commit objects are not restored.
+    reconciliation; the original commit objects are not restored. M14.1 player memories (derived only, D-71, with the
+    final review corrections) is implemented in the same working tree, not committed.
   - **Automated validation passed; device acceptance pending.** Every `[~]` milestone — the Device Playtest Pack lists
-    64 milestones (with the M01.6 gate and B0/B0.1) that owe a device test, among them W2 (S3.12) and M13.1 (S3.2,
-    S3.5, S4.1, S4.2) — plus the PC and Android visual reviews of B0, B0.1 and W1 and Rest Mode's licensed ambience and
+    65 milestones (with the M01.6 gate and B0/B0.1) that owe a device test, among them W2 (S3.12), M13.1 (S3.2,
+    S3.5, S4.1, S4.2) and M14.1 (S3.13, S4.1, S4.2) — plus the PC and Android visual reviews of B0, B0.1 and W1 and Rest Mode's licensed ambience and
     listening validation. No Android build has been exported and no device test has been run.
   - **Blocked.** M01.6 and the Phase 16 gate on an exported Godot 4.7.x Android build (§7); Stage A (A1–A4) on the
     Phase 16 gate (§8); A3 and the Great Tree also on the OD-9 cultural review (D-67, a reconstructed prerequisite;
     outstanding) and their own approval; M13.2 on O-04; M11.2–M11.5 on O-09; Phase 12 on R-01…R-07; M14.2 on Phases
     11–12; M15.1's remaining parts on O-04, O-09 and R-01…R-07.
-  - **Not yet designed or implemented.** The Journal's player memories (M14.1); world changes, elemental progression
+  - **Not yet designed or implemented.** World changes, elemental progression
     beyond Earth and Rishi progression (deferred until designed, ARCHITECTURE §11); the open village decisions OD-3 to
     OD-11 (OD-9's review is a recorded prerequisite for A3, D-67, not a decision).
 - **Next gate:** **M01.6 — Android movement playtest** and the device checks owed by every `[~]` milestone, run as the
@@ -2176,7 +2186,8 @@ runtime component of its own).
   and the default movement mode (O-06). The project has never been exported: the first export needs a PC with Godot
   4.7.x, its export templates and the Android SDK.
 - **Also pending:** W1 and B0/B0.1 PC and Android visual review; Rest Mode's licensed ambience, listening validation and
-  Android acceptance; W2's Android acceptance (S3.12); M13.1's device regression (S3.2, S3.5, S4.1, S4.2).
+  Android acceptance; W2's Android acceptance (S3.12); M13.1's device regression (S3.2, S3.5, S4.1, S4.2); M14.1's device acceptance (S3.13, S4.1,
+  S4.2).
 - **Not before Phase 16 passes on Android:** Stage A and any large world expansion (§8); the Great Tree (D-53) and the
   waterfall stay future work.
 - **Recorded progress before T1 (kept as written):**

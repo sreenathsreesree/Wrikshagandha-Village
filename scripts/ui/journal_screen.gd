@@ -13,6 +13,10 @@ class_name JournalScreen
 ## Wildlife (M14.1a, D-59): under Places, every species in the wildlife data in
 ## its order — a seen one by name with its note, an unseen one "???", as an
 ## unvisited place. Read from JournalManager; a sighting is never made here.
+##
+## Memories (M14.1, D-71): last on the left, once there is one — the moments
+## the saved records prove (JournalManager.get_memories()), one plain line
+## each in their fixed order. A moment not yet lived is never hinted at.
 
 ## Leaf green for a visited place; an unvisited one stays "???" (secrets
 ## stay secret).
@@ -54,6 +58,9 @@ func _refresh() -> void:
 	left_list.add_child(_build_wildlife_section())
 	if FarmManager.is_garden_found() or int(FarmManager.get_activity_counts().planted) > 0:
 		left_list.add_child(_build_garden_section())
+	var memories := JournalManager.get_memories()
+	if not memories.is_empty():
+		left_list.add_child(_build_memories_section(memories))
 
 	var entries := JournalManager.get_entries()
 	var visited := 0
@@ -182,6 +189,20 @@ func _build_garden_section() -> Control:
 	box.add_child(marks)
 
 	return section
+
+## The memories handed in, one note each, in the order given — only displays.
+func _build_memories_section(memories: Array) -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	box.add_child(_build_heading("Memories"))
+	var card := _build_card()
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 10)
+	for memory: MemoryDefinition in memories:
+		rows.add_child(_build_note(memory.text))
+	card.add_child(rows)
+	box.add_child(card)
+	return box
 
 ## "Wild Carrot ×2, Meadow Herb ×1, Golden Sunflower ×0" — read straight
 ## from FarmManager's session inventory, in its crop order. Only crops the

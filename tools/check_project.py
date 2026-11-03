@@ -4392,14 +4392,14 @@ notes.append(f"save fixtures (M15.3): v0..v{fx_sv} real saves from {len(fx_commi
 # Every autoload member variable is classified in the state registry (docs/ARCHITECTURE.md §11, ```state-registry):
 # persistent:<section> / derived / session / data; FarmPlot.capture() is the only saved world object; only GameState
 # saves; the current M15.3 fixture holds every section; the deferred items (elemental and Rishi progression, world
-# changes, player memories) have no state until designed and classified. The rules live in one place,
+# changes) have no state until designed and classified (player memories left the list with M14.1, D-71). The rules live in one place,
 # tools/sims/sim_state_registry.py (also run with its broken copies by run_all.sh); this section applies them.
 import importlib.util as _ilu
 _spec = _ilu.spec_from_file_location("sim_state_registry", os.path.join("tools", "sims", "sim_state_registry.py"))
 _sr = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_sr)
 for problem in _sr.violations(_sr.load_sources(os.getcwd())):
     err(f"state registry (M15.2): {problem}")
-notes.append("session vs persistent (M15.2): every autoload variable classified; FarmPlot the only saved world object; only GameState saves; 4 items deferred")
+notes.append("session vs persistent (M15.2): every autoload variable classified; FarmPlot the only saved world object; only GameState saves; 3 items deferred")
 
 # ------------------------------------------------------------ save reliability (M15.4)
 # Progress that pays or records something is saved when it happens (a force-stop can't lose it): GameState saves at
@@ -4488,6 +4488,131 @@ if not os.path.isfile("tools/sims/sim_wildlife_journal.py"):
 for b in wj_bad:
     err(f"wildlife journal (M14.1a, D-59): {b}")
 notes.append(f"wildlife journal (M14.1a): {len(wj_defs)} species as data; once-ever sighting at alert_distance; saved at once (v9); no reward")
+
+# ------------------------------------------------------------ player memories (M14.1, D-71)
+# Derived only. Each memory is a MemoryDefinition in data/memories/ naming the saved record that proves it — a farm
+# milestone, a secret place (any, or one), a wildlife species — and the id in it. JournalManager works out which hold
+# each time it is asked (get_memories / is_remembered), through each owner's own read-only query, and keeps nothing: no
+# variable holds a derived memory, no save section, no signal, no notification. Remembering pays, records and announces
+# nothing, and the Journal only displays the memories it is handed — last on the left, only once there is one.
+# (The garden memory and its landmark record were removed at the M14.1 review: they repeated what Places and the garden
+# section already show.) Behaviour: tools/sims/sim_player_memories.py; real Godot: run_save_fixtures.sh (each fixture's
+# memories against its raw save, before and after a re-save) and run_force_stop.sh (memories kept through a kill,
+# including the small bird's, case sighting_bird).
+MEM_RECORDS = ["farm_milestone", "secret_place", "wildlife"]
+mem_bad = []
+MD = "scripts/journal/memory_definition.gd"
+md = code_only(scripts.get(MD, ""))
+if not re.search(r"^extends Resource\s*class_name MemoryDefinition$", md, re.M) or re.search(r"^func ", md, re.M) \
+   or re.findall(r'^const (\w+) := "(\w+)"$', md, re.M) != [("FARM_MILESTONE", "farm_milestone"), ("SECRET_PLACE", "secret_place"), ("WILDLIFE", "wildlife")] \
+   or re.findall(r"^@export var (\w+): (\w+) = ", md, re.M) != [("id", "String"), ("text", "String"), ("order", "int"),
+                                                                 ("record", "String"), ("fact_id", "String")]:
+    mem_bad.append(f"{MD}: a plain Resource (MemoryDefinition) — id, text, order, record, fact_id and the three records, no functions")
+# What each record can hold: FarmManager's registered milestones (its Journal rows, the per-crop ones from the starter
+# crops' data), the secret places, the species.
+fm_src = scripts.get("scripts/autoload/farm_manager.gd", "")
+fm_consts = dict(re.findall(r'^const (\w+) := "([^"]*)"$', fm_src, re.M))
+gm_rows = func_body(fm_src, "get_milestones") or ""
+mem_milestones = {fm_consts.get(c, "?") for c in re.findall(r"_milestone_row\(([A-Z_]+),", gm_rows)}
+if "_milestone_row(CROP_GROWN_PREFIX + crop.crop_id," in gm_rows:
+    for path in glob.glob("data/crops/*.tres"):
+        cv = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(path, encoding="utf-8").read(), re.M))
+        if int(cv.get("starting_seeds", "1") or 0) > 0:
+            mem_milestones.add(fm_consts.get("CROP_GROWN_PREFIX", "?") + cv.get("crop_id", ""))
+mem_places = {}
+for path in glob.glob("data/places/*.tres"):
+    pv = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', open(path, encoding="utf-8").read(), re.M))
+    mem_places[pv.get("id", "")] = pv.get("secret") == "true"
+mem_facts = {"farm_milestone": mem_milestones, "secret_place": {p for p, s in mem_places.items() if s} | {""}, "wildlife": set(wj_defs)}
+mem_defs, mem_orders = {}, set()
+for path in sorted(glob.glob("data/memories/*.tres")):
+    t = open(path, encoding="utf-8").read()
+    mv = dict(re.findall(r'^(\w+) = "?([^"\n]*)"?$', t, re.M))
+    mid, rec, fact, text = mv.get("id", ""), mv.get("record", ""), mv.get("fact_id", ""), mv.get("text", "")
+    if 'script_class="MemoryDefinition"' not in t or 'path="res://scripts/journal/memory_definition.gd"' not in t \
+       or not mid or os.path.basename(path) != mid + ".tres" or mid in mem_defs \
+       or not re.fullmatch(r"\d+", mv.get("order", "")) or mv["order"] in mem_orders:
+        mem_bad.append(f"{path}: a MemoryDefinition with a unique id (its file name) and a unique order")
+    if rec not in MEM_RECORDS or fact not in mem_facts.get(rec, set()) or (fact == "" and rec != "secret_place"):
+        mem_bad.append(f"{path}: record '{rec}' / fact_id '{fact}' — one of {MEM_RECORDS}, naming an id that record can hold "
+                       f"(empty only for secret_place: any secret place)")
+    if not re.fullmatch(r"[A-Z][^!?\d\n+]*\.", text) or re.search(r"(?i)\b(points?|coins?|rewards?|unlock\w*|bonus\w*|earn\w*|wriksha)\b", text):
+        mem_bad.append(f"{path}: its text is one plain sentence — no exclamation, number or reward ('{text}')")
+    mem_defs[mid] = rec
+    mem_orders.add(mv.get("order", ""))
+if not mem_defs:
+    mem_bad.append("data/memories: at least one memory")
+jm_full = scripts.get("scripts/autoload/journal_manager.gd", "")
+jmc = code_only(jm_full)
+if 'const MEMORIES_PATH := "res://data/memories/"' not in jmc or not re.fullmatch(
+        r"func _load_memories\(\) -> void:\s*_memories\.clear\(\)\s*for path in ResourceDirectory\.list_tres_paths\(MEMORIES_PATH\):\s*"
+        r"var resource: Resource = load\(path\)\s*if resource is MemoryDefinition and \(resource as MemoryDefinition\)\.id != \"\":\s*"
+        r"_memories\.append\(resource\)\s*else:\s*push_warning\([^\n]*\)\s*"
+        r"_memories\.sort_custom\(func\(a: MemoryDefinition, b: MemoryDefinition\) -> bool: return a\.order < b\.order\)\s*",
+        code_only(func_body(jm_full, "_load_memories") or "")) or "\t_load_memories()" not in (func_body(jmc, "_ready") or ""):
+    mem_bad.append("journal_manager.gd: the memories are every MemoryDefinition in data/memories/, loaded at start in their order")
+if not re.fullmatch(r"func get_memories\(\) -> Array:\s*var remembered: Array = \[\]\s*for memory: MemoryDefinition in _memories:\s*"
+                    r"if is_remembered\(memory\):\s*remembered\.append\(memory\)\s*return remembered\s*",
+                    code_only(func_body(jm_full, "get_memories") or "")):
+    mem_bad.append("journal_manager.gd: get_memories() is every memory is_remembered() holds, in order — derived on each call, kept nowhere")
+if not re.fullmatch(r"func is_remembered\(memory: MemoryDefinition\) -> bool:\s*match memory\.record:\s*"
+                    r"MemoryDefinition\.FARM_MILESTONE:\s*return FarmManager\.is_milestone_reached\(memory\.fact_id\)\s*"
+                    r"MemoryDefinition\.SECRET_PLACE:\s*if memory\.fact_id == \"\":\s*return ExplorationManager\.get_found_secret_count\(\) > 0\s*"
+                    r"return ExplorationManager\.has_found_secret_location\(memory\.fact_id\)\s*"
+                    r"MemoryDefinition\.WILDLIFE:\s*return has_sighted\(memory\.fact_id\) and get_species\(memory\.fact_id\) != null\s*"
+                    r"return false\s*", code_only(func_body(jm_full, "is_remembered") or "")):
+    mem_bad.append("journal_manager.gd: is_remembered() asks each record's owner its own read-only question — the milestone reached, "
+                   "a (or the) secret place found, the species seen and still in the data — and nothing else")
+# The questions it asks only read: each is one line over the owner's saved list.
+for f, fn, body in (("scripts/autoload/farm_manager.gd", "is_milestone_reached", r"return _milestones_reached\.has\(milestone_id\)"),
+                    ("scripts/autoload/exploration_manager.gd", "has_found_secret_location", r"return _found_secret_locations\.has\(location_id\)"),
+                    ("scripts/autoload/exploration_manager.gd", "get_found_secret_count", r"return _found_secret_locations\.size\(\)"),
+                    ("scripts/autoload/journal_manager.gd", "has_sighted", r"return _sighted_species\.has\(species_id\)"),
+                    ("scripts/autoload/journal_manager.gd", "get_species", r"for definition: WildlifeDefinition in _species:\s*"
+                     r"if definition\.id == species_id:\s*return definition\s*return null")):
+    if not re.fullmatch(rf"func {fn}\([^)]*\) -> \w+:\s*{body}\s*", code_only(func_body(scripts.get(f, ""), fn) or "")):
+        mem_bad.append(f"{f}: {fn}() only reads its saved list (a memory's proof)")
+for fn in re.findall(r"^func (\w+)\(", jmc, re.M):
+    if fn != "_load_memories" and re.search(r"\b_memories(\.(append|clear|sort_custom|erase|insert|push_back|push_front|remove_at|resize|fill|assign)\(|\s*=[^=])",
+                                             code_only(func_body(jm_full, fn) or "")):
+        mem_bad.append(f"journal_manager.gd: {fn}() writes _memories — only _load_memories() fills it, from data")
+if re.search(r"(?i)^signal \w*memor", jmc, re.M) or re.search(r"(?i)memor\w*\.emit\(|emit\([^)]*memor", jmc):
+    mem_bad.append("journal_manager.gd: a memory is never announced (no signal)")
+for fn in ("get_save_data", "apply_save_data", "get_sightings_save_data", "apply_sightings_save_data"):
+    if re.search(r"(?i)memor|is_remembered", code_only(func_body(jm_full, fn) or "")):
+        mem_bad.append(f"journal_manager.gd: {fn}() — a memory is never saved or loaded")
+if re.search(r"(?i)memor", code_only(scripts.get("scripts/autoload/save_manager.gd", "")) + code_only(scripts.get("scripts/autoload/game_state.gd", ""))):
+    mem_bad.append("save_manager.gd / game_state.gd: no memory section and no save on a memory")
+mem_users = sorted(f for f, s2 in scripts.items() if not f.startswith("tools/") and re.search(r"\b(get_memories|is_remembered|MemoryDefinition)\b", code_only(s2))
+                   and f not in (MD, "scripts/autoload/journal_manager.gd", "scripts/ui/journal_screen.gd"))
+if mem_users:
+    mem_bad.append(f"only the Journal shows memories — no notification, HUD card or other reader (also: {mem_users})")
+js_full = scripts.get("scripts/ui/journal_screen.gd", "")
+jsr = code_only(func_body(js_full, "_refresh") or "")
+if not re.search(r"left_list\.add_child\(_build_places_section\(\)\)\s*left_list\.add_child\(_build_wildlife_section\(\)\)\s*"
+                 r"if FarmManager\.is_garden_found\(\) or int\(FarmManager\.get_activity_counts\(\)\.planted\) > 0:\s*"
+                 r"left_list\.add_child\(_build_garden_section\(\)\)\s*var memories := JournalManager\.get_memories\(\)\s*"
+                 r"if not memories\.is_empty\(\):\s*left_list\.add_child\(_build_memories_section\(memories\)\)\s", jsr):
+    mem_bad.append("journal_screen.gd: Places, Wildlife and the garden as before, then Memories — only once there is one")
+jbm = code_only(func_body(js_full, "_build_memories_section") or "")
+if not re.search(r'box\.add_child\(_build_heading\("Memories"\)\)', jbm) \
+   or not re.search(r"for memory: MemoryDefinition in memories:\s*rows\.add_child\(_build_note\(memory\.text\)\)\s*card\.add_child\(rows\)", jbm) \
+   or re.search(r"\b(JournalManager|FarmManager|ExplorationManager|is_remembered)\b|\?\?\?", jbm) \
+   or code_only(js_full).count("get_memories(") != 1 or "is_remembered(" in code_only(js_full):
+    mem_bad.append("journal_screen.gd: the Memories section shows the memories it is handed, one note each — it decides nothing and hints at none")
+FXC, FSC, FSS = "tools/fixtures/save_fixture_check.gd", "tools/fixtures/run_save_fixtures.sh", "tools/fixtures/run_force_stop.sh"
+fss = open(FSS, encoding="utf-8").read() if os.path.exists(FSS) else ""
+if "get_memories()" not in scripts.get(FXC, "") or '"save=$dir/save.json"' not in (open(FSC, encoding="utf-8").read() if os.path.exists(FSC) else "") \
+   or '"memories"' not in scripts.get("tools/fixtures/force_stop_check.gd", "") or not re.search(r'^cases="\$\{CASES:-[^}]*\bsighting_bird\b', fss, re.M) \
+   or '"sighting_bird": "res://scenes/wildlife/SmallBird.tscn"' not in scripts.get("tools/fixtures/force_stop_check.gd", ""):
+    mem_bad.append("the real-Godot checks cover memories: every fixture's against its raw save (run_save_fixtures.sh passes save=), and through a "
+                   "force-stop, the small bird's included (case sighting_bird)")
+if not os.path.isfile("tools/sims/sim_player_memories.py"):
+    mem_bad.append("tools/sims/sim_player_memories.py exists")
+for b in mem_bad:
+    err(f"player memories (M14.1, D-71): {b}")
+notes.append(f"player memories (M14.1): {len(mem_defs)} memories as data over {len(set(mem_defs.values()))} saved records; derived on each call "
+             f"(no saved state, no signal); remembering pays nothing; shown last in the Journal once there is one")
 
 # ------------------------------------------------------------ organic art (Stage B0, D-60)
 # The organic prototype changes only how six props look: each keeps its root node, its CollisionShape3D and the

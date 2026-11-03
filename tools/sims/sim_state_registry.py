@@ -14,15 +14,15 @@ Rules:
     variable — ItemStore, Inventory._store), only FarmManager's save function captures, and FarmPlot.capture() saves
     exactly the registered fields;
  6. every save section is in the M15.3 fixture of the current SAVE_VERSION;
- 7. a deferred item (elemental / Rishi progression, world changes, player memories) has no variable or section yet —
-    once implemented it must be classified, not left deferred.
+ 7. a deferred item (elemental / Rishi progression, world changes) has no variable or section yet — once implemented
+    it must be classified, not left deferred. (Player memories left the list with M14.1, D-71: derived only, their
+    definitions classified data — putting them back while that state exists fails.)
 """
 import glob, json, os, re, sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 CLASSES = ("persistent", "derived", "session", "data")
-DEFERRED_PATTERNS = {"elemental_progression": r"element", "rishi_progression": r"rishi", "world_changes": r"world_change",
-                     "player_memories": r"memor"}
+DEFERRED_PATTERNS = {"elemental_progression": r"element", "rishi_progression": r"rishi", "world_changes": r"world_change"}
 
 def load_sources(repo=REPO):
     """{relative path: text} for project.godot, the architecture doc, every .gd outside tools/, and the current fixture."""
@@ -176,7 +176,10 @@ if __name__ == "__main__":
         "a data class saves without being persistent state": mut(AR, "inventory._store persistent:items", "inventory._store session"),
         "the current fixture lacks a section": {**S, f"tools/fixtures/saves/v{sv}/save.json": json.dumps({k: x for k, x in json.loads(S[f"tools/fixtures/saves/v{sv}/save.json"]).items() if k != "wallet"})},
         "a deferred item implemented but still deferred": mut(PL, "var points: int = 0\n", "var points: int = 0\nvar rishi_favour: int = 0\n"),
-        "a deferred item dropped from the list": mut(AR, "deferred elemental_progression rishi_progression world_changes player_memories", "deferred elemental_progression rishi_progression world_changes"),
+        "a deferred item dropped from the list": mut(AR, "deferred elemental_progression rishi_progression world_changes\n", "deferred elemental_progression rishi_progression\n"),
+        "player memories deferred again while implemented": mut(AR, "deferred elemental_progression rishi_progression world_changes\n", "deferred elemental_progression rishi_progression world_changes player_memories\n"),
+        "player memories' definitions left unclassified": mut(AR, "journal_manager._memories data\n", ""),
+        "player memories saved as a section": mut("scripts/autoload/save_manager.gd", '\t"wildlife_sightings": [TYPE_ARRAY],\n', '\t"wildlife_sightings": [TYPE_ARRAY],\n\t"memories": [TYPE_ARRAY],\n'),
     }
     caught, survivors = 0, []
     for name, s in MUTANTS.items():
@@ -185,7 +188,7 @@ if __name__ == "__main__":
     reg_n = len(re.findall(r"^\w+\.\w+ (?:persistent|derived|session|data)", re.search(r"```state-registry\n(.*?)```", S[AR], re.S).group(1), re.M))
     sec_n = len(re.findall(r'^\t"(\w+)": \[', S["scripts/autoload/save_manager.gd"], re.M))
     print(f"state registry (M15.2): {reg_n} autoload variables classified; {sec_n} sections each with its owner's persistent state; "
-          f"only GameState saves; FarmPlot the only saved world object; current fixture holds every section; 4 items deferred")
+          f"only GameState saves; FarmPlot the only saved world object; current fixture holds every section; 3 items deferred")
     print(f"broken designs: {caught} caught — {caught} by behaviour, 0 by a crash []")
     if survivors:
         print("SURVIVED:", survivors); sys.exit(1)

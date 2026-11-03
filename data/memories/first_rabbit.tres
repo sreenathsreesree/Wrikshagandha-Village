@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="MemoryDefinition" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/journal/memory_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "first_rabbit"
+text = "You came close to a rabbit for the first time."
+order = 50
+record = "wildlife"
+fact_id = "rabbit"

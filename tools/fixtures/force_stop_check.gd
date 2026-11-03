@@ -17,9 +17,15 @@ extends SceneTree
 ## (a bare Node3D) placed inside the rabbit's alert distance — the species is
 ## seen through the game's own path and must survive the kill; seeing it again
 ## after the relaunch pays and records nothing more.
+## M14.1: every case's facts include the player memories the game derives, so
+## each must come back the same after the kill (and again on a further
+## launch); sighting and secret must also have made theirs (none before the act).
+## sighting_bird does the same with a real SmallBird scene, so the small bird's
+## sighting and its memory are covered in real Godot too.
 
 const LANDMARK := "overlook"
-const SPECIES_SCENE := "res://scenes/wildlife/Rabbit.tscn"
+const SPECIES_SCENES := {"sighting": "res://scenes/wildlife/Rabbit.tscn", "sighting_bird": "res://scenes/wildlife/SmallBird.tscn"}
+const SPECIES := {"sighting": "rabbit", "sighting_bird": "small_bird"}
 
 var args := {}
 
@@ -55,8 +61,10 @@ func _run() -> void:
 			var got := facts(case)
 			# Both sides as a save file reads back (every number a float), then compared.
 			var ok := want is Dictionary and JSON.stringify(JSON.parse_string(JSON.stringify(got)), "", true) == JSON.stringify(want, "", true)
-			if case == "sighting":  # the moment must have happened: the creature was seen through the game's own path
-				ok = ok and want is Dictionary and want.get("sighted", []) == ["rabbit"]
+			if case in SPECIES:  # the moment must have happened: the creature was seen through the game's own path
+				ok = ok and want is Dictionary and want.get("sighted", []) == [SPECIES[case]]
+			if case == "secret" or case in SPECIES:  # and remembered: setup leaves no memory, so the act made it
+				ok = ok and want is Dictionary and not (want.get("memories", []) as Array).is_empty()
 			print("FORCE_STOP_%s %s :: after relaunch %s ; held before the kill %s" % ["PASS" if ok else "FAIL", case, JSON.stringify(got, "", true), JSON.stringify(want, "", true)])
 			quit(0 if ok else 1)
 		"again":
@@ -74,7 +82,7 @@ func _run() -> void:
 				"daily":
 					allowed = int(al("DiscoveryDatabase").get_definition(str(al("DailyDiscoveryManager").get("target_id"))).points_value)
 					_act(case)
-				"sighting":
+				"sighting", "sighting_bird":
 					_act(case)
 					for i in 10:
 						await process_frame
@@ -157,13 +165,17 @@ func _act(case: String) -> void:
 			dm.discover(str(al("DailyDiscoveryManager").get("target_id")))
 		"control":
 			dm.discover(repeatable_discovery())
-		"sighting":
-			_see_creature()
+		"sighting", "sighting_bird":
+			_see_creature(SPECIES_SCENES[case])
 
 ## The case's own state, read through the game's getters.
 func facts(case: String) -> Dictionary:
 	var em := al("ExplorationManager")
-	var f := {"points": int(al("PointsManager").get_points())}
+	var memories: Array = []
+	for memory: Resource in al("JournalManager").get_memories():
+		memories.append(str(memory.get("id")))
+	memories.sort()
+	var f := {"points": int(al("PointsManager").get_points()), "memories": memories}
 	match case:
 		"landmark":
 			f["landmark_reached"] = em.has_reached_landmark(LANDMARK)
@@ -183,7 +195,7 @@ func facts(case: String) -> Dictionary:
 		"control":
 			f["discovered"] = Array(al("DiscoveryManager").get_discovered_ids()).has(repeatable_discovery())
 			f["collectible"] = int(al("Inventory").get_quantity(repeatable_discovery()))
-		"sighting":
+		"sighting", "sighting_bird":
 			var sighted: Array = Array(al("JournalManager").get_sighted_ids())
 			sighted.sort()
 			f["sighted"] = sighted
@@ -196,11 +208,11 @@ func facts(case: String) -> Dictionary:
 ## The game's own sighting path: the creature's scene, the controller that
 ## relays its sighting, and the player standing inside its alert distance but
 ## outside its flee distance; then a few frames.
-func _see_creature() -> void:
+func _see_creature(scene: String) -> void:
 	# Loaded, not named: in -s mode this script compiles before the autoloads the controller uses exist.
 	var controller: Node = load("res://scripts/world_simulation/wildlife_controller.gd").new()
 	root.add_child(controller)
-	var creature: Node3D = load(SPECIES_SCENE).instantiate()
+	var creature: Node3D = load(scene).instantiate()
 	root.add_child(creature)
 	var player := Node3D.new()
 	root.add_child(player)
