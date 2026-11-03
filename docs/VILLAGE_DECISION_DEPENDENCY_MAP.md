@@ -10,6 +10,10 @@ construction and does not satisfy, replace or shorten the Phase 16 gate (§8 bel
 > and the Great Tree position and seats stay conditional on OD-2 (a).
 >
 > **Update (2026-10-20): OD-2 is decided** — option (a), as the layout rule (D-66). OD-3 … OD-11 remain open.
+>
+> **Update (reconstructed 2026-11-01; original date unrecoverable): a prerequisite for A3, not a decision** — the OD-9
+> cultural review of the shrine details (the kalava threads and clay diyas) comes before A3 (D-67, a reconstructed record).
+> The review has not been done and OD-9's options stay as listed below; OD-3 … OD-11 remain open.
 
 > This review is not the lock's construction step *A1 — Ground, rim, bounds, bands* (lock §11), which still waits for
 > Phase 16 and its own approval.
