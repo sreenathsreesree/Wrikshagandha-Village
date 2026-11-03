@@ -1732,7 +1732,7 @@ Goal: the small playable test area (placeholders).
 - **Pre-existing issues (documented, not fixed):** as M09.4; and a save from before M05.2 (version < 5) with four secrets has no bonus flag, which `_was_paid` reads as unpaid, so such a save would pay the 50 on the Hollow (dev-era saves only; unchanged rule from D-21).
 - **Pending (Android):** deferred by the developer — M10.3's "Find it on device".
 - **Files:** changed `scenes/world/Meadow.tscn`, `tools/check_project.py`, `tools/sims/sim_slice_layout.py`, `tools/sims/sim_places.py`, `tools/sims/sim_economy.py`, `tools/README.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN_DECISIONS.md` (D-45), `docs/VERTICAL_SLICE_LAYOUT.md`, this plan; new `data/places/hidden_hollow.tres`, `tools/sims/sim_hidden_hollow.py`.
-- **Commit:** §15.
+- **Commit:** `e5483d0` (§15).
 
 ### PHASE 11 — FIVE ELEMENTS (one at a time)
 | Milestone | Objective | Done when | Status |
@@ -1778,7 +1778,7 @@ Goal: the small playable test area (placeholders).
   - Headless editor import: no error or warning (as on `e5483d0`). Headless resource load (Godot's own `ResourceLoader`): 5 elements (script variables exactly `id`, `display_name`, `order`), 9 places, 17 items, 9 discoveries all load with `element_id`; the 9 non-empty values resolve; no problem.
   - Desktop regression (the 52-run set plus the Hidden Hollow HH1/HH2), compared with `e5483d0` (the same probe): 53 of 54 logs identical line for line (numbers aside); in L the documented pre-existing walk after the loop times out at the same spot on both, the baseline fitting one more re-tap before its 30 s timeout (timing only). Script errors 0 / 0; non-finite 0 / 0; the engine's `ERR_CANT_OPEN` (54) and `det == 0` (493) lines identical in number; node counts identical (1351 outdoors; 346 indoors with 1114 parked).
   - Scope audit: exactly the planned 23 files; no scene, `project.godot`, autoload, save, Journal, HUD, manager or pinned file changed; existing-world digest `89878544adee7640` and scene digest `97d36b491f83d13d` unchanged; `SAVE_VERSION` 8.
-- **Commit:** §15 (after approval).
+- **Commit:** `c66f895` (§15).
 
 **M11.1 — Earth prototype mechanic: Nurture (D-47)** `[~]` Implemented and verified on desktop; Android pending
 - **Objective:** the first playable elemental prototype. Earth as nurture: the player uses one dormant Earth-responsive wild plant in the Meadow and it visibly awakens, holds briefly and relaxes back to dormant — repeatable; "the world responds to care". A distinct Earth interaction based on growth and living physical response — not farming, a spell, a reward or a progression step.
@@ -1835,7 +1835,7 @@ Goal: the small playable test area (placeholders).
   - **L and NPC are not deterministic in this environment, on either tree.** L and NPC were re-run three times each on both the M11.1 working tree and `c66f895` (12 runs, run in parallel at about 8–22 fps): no script errors in any of the 12; the same classes of varying outcome appeared on **both** trees — door and talk taps registering as `none` (the 450 ms limit at a low frame rate) or `offscreen`, "through-line" walks arriving 7–10 / 10, the talk beside the door opening or not, and the re-tap count of L's documented pre-existing walk after the loop. One baseline NPC run lost sync after a missed door tap and then logged repeated `!is_inside_tree()` messages from the probe reading parked nodes. The variation is pre-existing and not attributed to M11.1; nothing here shows these two phases to be deterministic, and none of the varying outcomes is unique in kind to the M11.1 tree.
   - Scope: only the files above; no farming, save, reward, progression, HUD or element-data code touched; `SAVE_VERSION` 8; existing-world digest `89878544adee7640` unchanged; scene digest re-recorded deliberately (`97d36b491f83d13d` → `b03dc4ae99ac6b03`: the `EarthPrototype` node); all pins unchanged.
   - Pending: the Android/device gate (`[~]` → `[x]` only after it).
-- **Commit:** §15 (after approval).
+- **Commit:** `0e31e10` (§15).
 
 ### PHASE 12 — FIVE RISHIS — `[!]` blocked on R-01…R-07
 - Only after the Rishi design is formally locked. Milestones will be written from the decisions.
@@ -1856,7 +1856,7 @@ Goal: the small playable test area (placeholders).
 ### PHASE 14 — JOURNAL / COLLECTION
 | Milestone | Objective | Done when | Status |
 |---|---|---|---|
-| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[ ]` |
+| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[ ]` not complete — the Journal already shows discoveries, places with secrets ("???" until found), wildlife (M14.1a) and the garden's crop record, from data, each under its own milestone (Places M03.6, the landscape Journal M07.4a, Wildlife M14.1a); the player-memories section is not yet designed or implemented (deferred until designed, ARCHITECTURE §11) |
 | M14.1a | Wildlife Journal (first slice of M14.1): rabbit, small bird and butterfly as data; a species is seen once ever when the player enters a creature's existing alert distance; shown in the Journal; saved at once (save v9); no reward | Seen species survive close/force-stop/relaunch; old saves load with none seen | `[~]` Implemented and verified on desktop; Android pending |
 | M14.2 | Elements and Rishis sections | After Phases 11–12 | `[!]` |
 
@@ -1867,12 +1867,12 @@ Goal: the small playable test area (placeholders).
 - **Tooling:** M15.2 registry (`journal_manager._sighted_species persistent:wildlife_sightings`, `journal_manager._species data`); M15.3 coverage (the runner's sections and current version read from the build, a sightings check per fixture, `v9_newer` renamed `newer` and stamped `SAVE_VERSION` + 1, the generator's guarded sighting step — regenerating v8 from `adb284c` with it gives an identical `calls.json`, 19/19); a temporary **pending-fixture exception** for Commit 1 only (v9 from the working tree, labelled `"pending": true, "historical": false, "commit": null`) — **removed after Commit 1 `bcdf2ed`**: v9 regenerated from `bcdf2ed` with the ordinary historical path (`v9:bcdf2ed:M14.1a` in `COMMITS`), the PENDING mode, the checker/model allowance, the runner's notice and the pending-only mutant deleted (the checker keeps requiring a real commit in every `meta.json`); M15.4 force-stop case `sighting` (a real Rabbit scene and WildlifeController, the player inside its alert distance, the act must actually see it); checker section "wildlife journal (M14.1a, D-59)"; `tools/sims/sim_wildlife_journal.py`; `sim_economy`'s trigger snapshot (+ the trigger, traced: recorded before its signal, pays nothing); `sim_save_versioning` (the section and step 8); `sim_hidden_hollow`'s "SAVE_VERSION stays 8" restated version-independently (the Hollow added no save version).
 - **Verification (actual runs, desktop):** `tools/check_project.py` exit 0 (ALL CHECKS PASSED); `tools/run_all.sh` exit 0 (5/5, 40 simulations); `git diff --check` clean. **Real Godot:** `run_save_fixtures.sh` — ALL SAVE FIXTURES PASSED (318 checks; v0–v9 real — the Commit 1 run had v9 pending, rerun after the historical regeneration; `newer` refused byte-identical; `malformed` ignored); `run_force_stop.sh` — ALL FORCE-STOP CASES PASSED (16: 8 cases × kill + again; `sighting` keeps the rabbit through SIGKILL, re-seeing it pays 0); with GameState's trigger removed the sighting is lost (FAIL), so the harness can fail. **Mutation testing:** `sim_wildlife_journal` 16/16 (15 by behaviour, 1 by a crash — a second identical connection, an error in Godot) + 1 equivalent (the save deferred to the frame's end); file-level 16/16 on temporary copies (checker/sims), none crash-only; real-Godot 3/3 (SaveManager not loading the section, the runner's sections missing it, a sighting at flee distance). Found and fixed during it: the checker accepted an unlabelled `commit: null` meta (now requires a commit outside the pending exception); the force-stop case passed when nothing was seen (it now requires the sighting). **Proximity cost:** `WildlifeActor._process` called directly, 14 creatures × 20,000 rounds, ×3: 1.285 µs (pre-edit) vs 1.310 µs per actor-frame — +0.025 µs, within run-to-run noise (≈0.35 µs a frame for the Meadow's 14). **Regression (desktop probe, all of `e1_reg.sh` incl. notch layouts + E1 input phases E1B/E1E/E1H/E1J/E1K; current tree vs the pre-edit baseline):** 64/64 phases exit 0 on both; 57/64 logs identical (numbers aside); 0 script errors, 0 non-finite either side. Differences: EN1/WX1 save keys gain `wildlife_sightings` (expected); HH1/HH2 Journal rows gain the Wildlife list and count, and the relaunch shows all three species kept (expected — real in-play sightings); L (STUCK vs TIMEOUT, already varying before M14.1a), SVC (veil sampled at STOP — 15 vs 14 of 57 transitions either tree, sampling) and E1E (the nearest object is the wandering NPC or Wild Mint; both stand and interact; the Wild Mint collection logs a pre-existing `monitorable` error, also in the baseline — queued as a separate task) are timing/randomness. Natural play during the probe saved v9 sightings in most Meadow phases. Input: InputManager, joystick, Player, camera and rest spot byte-identical; the input phases match the baseline.
 - **Android pending:** sightings in play, the Journal's Wildlife list on a phone, and `adb shell am force-stop` right after a first sighting.
-- **Commit:** Commit 1 `bcdf2ed` (the implementation, with v9 pending); Commit 2 — the historical v9 fixture and the exception's removal — not committed; awaiting approval.
+- **Commit:** Commit 1 `bcdf2ed` (the implementation, with v9 pending); Commit 2 `3f2cfaf` — the historical v9 fixture and the exception's removal.
 
 ### PHASE 15 — SAVE SYSTEM
 | Milestone | Objective | Done when | Status |
 |---|---|---|---|
-| M15.1 | Full versioned persistence: inventory, crops, discoveries, coins, NPC relationships, world changes, elemental and Rishi progression | Everything important survives close/reopen/update | `[ ]` |
+| M15.1 | Full versioned persistence: inventory, crops, discoveries, coins, NPC relationships, world changes, elemental and Rishi progression | Everything important survives close/reopen/update | `[!]` O-04, O-09, R-01…R-07 — today's state is versioned and persisted (M15.2–M15.4); world changes, elemental and Rishi progression wait on their decisions |
 | M15.2 | Session vs persistent state documented and enforced | Doc + checks | `[x]` completed and checked (docs + checks only; no game code changed) |
 | M15.3 | Old-save compatibility fixtures in `tools/` | Fixtures load | `[x]` completed and checked (tooling; no game code changed; real-Godot fixture runs pass) |
 | M15.4 | Save reliability: a landmark or secret reached, the curiosity and every-secret bonuses, a repeat discovery collection and the daily bonus are saved when they happen (world time unchanged, by decision) | A force-stop right after each moment keeps it, with no double payment | `[~]` implemented and verified on desktop in real Godot (force-stop); Android pending |
@@ -1889,7 +1889,7 @@ Goal: the small playable test area (placeholders).
 - **`tools/sims/sim_economy.py` (developer-approved update):** its autosave-trigger snapshot gains the six triggers; its `AUTOSAVED` table now derives the repeat collection, daily-on-repeat, landmark and secret from GameState's code (the repeat entries require the deferred connection; the secret entry requires the secret, curiosity and every-secret triggers) instead of hard-coding them unsaved; new order assertions read from the code (each reward recorded and paid before its signal; a repeat collection pays before `discovery_repeated`). The crash model's actions now report what the code saves — a claimed once-ever discovery collected again, or a place reached again, returns before paying or any signal, so nothing is saved (both expectations had matched only by coincidence before); a new assertion: no crash loses earnings. Reward amounts, eligibility, D-21 and the source snapshot are unchanged. Result: 3,000 random players, 4,059 crashes, 0 earnings lost, no duplicate payment. The model revealed no duplication, missing reward or inconsistency.
 - **Verification (actual runs):** `tools/check_project.py` exit 0 (ALL CHECKS PASSED); `tools/run_all.sh` exit 0 (5/5, 39 simulations); `git diff --check` clean; real-Godot force-stop **before** (HEAD's `game_state.gd`) control PASS and six FAIL, **after** 14/14 PASS (7 cases + 7 second relaunches); per-trigger removal in real Godot as above; file-level mutation (checker + `sim_economy`) **10/10 caught**, none by a crash — each of the six triggers removed (both), the repeat save made synchronous (both), a periodic save added (checker only — the economy model has no time), a landmark signalled before it is recorded and a repeat collection signalled before paying (both, via the order assertions); the daily trigger counts as caught here (the checker's contract) but is **equivalent in behaviour** (real Godot: removing it changes no case). M15.3 real-Godot save-fixture suite ALL PASSED (268 checks, 0 script errors); save-related regression subset (WC1/WC2, SVC/SVC2, E1S/E1R) 6/6 identical, 0 script errors.
 - **Android pending:** a force-stop with `adb shell am force-stop` right after each moment keeps it.
-- **Commit:** — (not committed; awaiting review).
+- **Commit:** `bcdf2ed` (with M14.1a, E1 and the other save-system work).
 
 **M15.2 — Session vs persistent state** `[x]` Completed and checked (documentation and checks only — no game code changed; no runtime component)
 - **Objective:** one authoritative classification of the game's runtime state — persistent (saved and restored), derived (rebuilt from persistent state), session (gone on relaunch, by design) or data (loaded from `data/` / the project each launch) — and checks that keep it complete and true as the code changes.
@@ -1897,7 +1897,7 @@ Goal: the small playable test area (placeholders).
 - **Implemented:** `docs/ARCHITECTURE.md` §11 — the classification (persistent sections and owners, derived, session with the decision behind each, when persistent state is actually written and the known late-save risk, the deferred items) and a machine-readable registry (```state-registry): all **74** autoload member variables (persistent 29, session 22, data 19, derived 4 — counted from the registry), FarmPlot.capture()'s 11 fields, the 4 deferred items. `tools/sims/sim_state_registry.py` holds the rules and runs them on the real sources and on 16 broken copies; the checker's new section "session vs persistent (M15.2)" applies the same rules. Rules: every autoload variable classified exactly once (and no stale entries); every save section's persistent variables live in the autoload that writes it and are read by its save function (or a same-file helper); no derived/session/data variable in a save function's own body; only GameState saves or loads; FarmPlot is the only saved world object (a plain data class may carry save functions only as the type of a classified persistent autoload variable — `ItemStore`, `Inventory._store`); FarmPlot.capture() saves exactly the registered fields; the current M15.3 fixture holds every section; a deferred item with state fails until classified.
 - **Found during implementation:** `ItemStore` (`scripts/items/item_store.gd`, a RefCounted, not a world object) defines `get_save_data`/`apply_save_data` as the Inventory's store — the first draft of rule 5 flagged it; the rule was refined (above) rather than the code changed, and a broken copy that relabels `Inventory._store` shows the refinement still catches misuse.
 - **Verification (actual runs):** `tools/check_project.py` exit 0 (ALL CHECKS PASSED, 94 scripts); `tools/run_all.sh` exit 0 (5/5, 39 simulations incl. `sim_state_registry`); `git diff --check` clean; `sim_state_registry.py` 16/16 broken copies caught by behaviour; file-level mutation (temporary copies, checker + model) **12/12 caught**, each by at least one M15.2-specific checker error and by the model, none by a crash — a new unclassified autoload variable, a renamed (stale) variable, a session variable saved, a section added unclassified and without a fixture, `save_game()` called from another script, a persistent variable relabelled session, a stale registry entry, FarmPlot saving an unregistered field, a world object saving itself, the current fixture missing a section, a deferred item implemented while deferred, the registry removed; the real-Godot save-fixture suite (M15.3) on a fresh copy of the finished tree: ALL SAVE FIXTURES PASSED IN GODOT (268 checks), exit 0, 0 script errors. Manifest: 62 of the 66 E1/D-56/D-58/M15.3 files byte-identical; the four shared files (`docs/ARCHITECTURE.md`, `tools/check_project.py`, `tools/README.md`, this plan) differ only by M15.2's blocks — removing them restores the recorded bytes exactly. `save_manager.gd`, `game_state.gd`, autoloads, gameplay scripts and scenes, `data/` and `project.godot` unchanged; `SAVE_VERSION` 8.
-- **Commit:** — (not committed; awaiting review).
+- **Commit:** `bcdf2ed` (with M14.1a, E1 and the other save-system work).
 
 **M15.3 — Old-save compatibility fixtures** `[x]` Completed and checked (tooling only — no runtime game component; nothing to test on Android)
 - **Objective:** one real save file per save format the game has had — v0 (unversioned) to v8 (`SAVE_VERSION`) — loaded by today's build through the existing path, with the values the old version held, and stamped v8 on the next save; plus a newer-than-supported and a malformed fixture. Before this, migrations were proven only by Python models over synthetic saves.
@@ -1912,7 +1912,7 @@ Goal: the small playable test area (placeholders).
 - **Regression (desktop, Godot 4.7.2 probe, a fresh copy of the finished tree):** the save-related subset — WC1/WC2 (world time, fresh + relaunch), SVC/SVC2 (services + relaunch), E1S/E1R (seated save + relaunch) — **6 / 6 logs identical** to the previous E1 runs (numbers aside), script errors 0 / 0, `ERR_CANT_OPEN` 1 / 1 each; every game file byte-identical to the 59-log regression copy.
 - **No migration defect found.** `SAVE_VERSION` 8; `save_manager.gd`, `game_state.gd`, autoloads, gameplay scripts, scenes, `data/`, `project.godot` and every E1/D-56/D-58 file unchanged.
 - **Limits:** the fixtures' `daily_discovery` dates are the generation day, so that section is not compared (a later day re-rolls it); regenerating reproduces the method, not the bytes (timings and dates differ). The real-Godot runner is not in `run_all.sh` (it needs a Godot binary).
-- **Commit:** — (not committed; awaiting review).
+- **Commit:** `bcdf2ed` (fixtures v0–v8 from their historical commits, with M14.1a, E1 and the other save-system work); the v9 fixture became historical in `3f2cfaf`.
 
 ### ORGANIC WORLD REDESIGN — Stage B0 (art prototype)
 **Stage B0 — Organic art prototype** `[~]` Implemented and verified on desktop on `prototype/organic-world` (from `3f2cfaf`); visual review on PC and Android pending; committed as `c0d1670`. Decision record: D-60. Stage A (expansion to ~128 × 96 m, growing west and north) is separate and not started.
@@ -1929,7 +1929,7 @@ Goal: the small playable test area (placeholders).
 - **Measured (real Godot, the actual meshes):** triangles — round 1,827 / tall 1,051 / wide 1,730 (budget 2,000 each), rock A 400 / rock B 380 (400), bush 580 (600), grass 60 (60), Great Tree 11,064 (12,000). Bounds — low-band (trunk) reach 0.218 / 0.172 / 0.269 m against 0.25 / 0.21 / 0.29; root band 0.551 / 0.429 / 0.632 m against 0.60 / 0.50 / 0.70; canopy bottom 1.77 / 1.48 / 1.61 m against at least 1.20 / 1.20 / 1.10; canopy reach 1.10 / 0.89 / 1.55 m against 1.50 / 1.20 / 1.80; rock A 0.50 m reach, 0.52 m high, rock B 0.45 / 0.34 m (0.60 / 0.60); bush 0.43 / 0.60 m (0.50 / 0.70); grass 0.20 / 0.40 m (0.40 / 0.45). Great Tree: reach 7.86 m, height 9.43 m, canopy bottom 4.62 m.
 - **Finding for Stage A:** at the follow camera's angle the Great Tree's crown hides the player completely when the player is under or north of it; the opt-in fade solves this without a script or camera change (see the blueprint, §4).
 - **Verification:** see the B0.1 report (checker, run_all, `tools/art/run_organic_checks.sh`, save fixtures, force-stop, boot errors, regression vs `c0d1670`, navigation-mesh hash, mutations, relative render measurements, screenshots).
-- **Commits:** local only, awaiting review (ground and paths; B0.1 art; A0 blueprint).
+- **Commits:** `72abe46` (ground and paths), `7e4cd73` (B0.1 art), `cd43646` (A0 blueprint) — on `prototype/organic-world`, not merged into `main`.
 
 ### ORGANIC WORLD REDESIGN — A0 Village World Design Lock
 **A0 — Village World Design Lock** — approved by the developer (2026-10-19, with two conditions); documentation and
@@ -2010,7 +2010,7 @@ The authored rest spots deferred by Phase 09's world-direction constraint start 
     - **Probe limits, not game faults:** synthetic mouse-motion events need `global_position` for Godot's touch emulation (real OS events carry it); one E1K run's single right-side tap returned `none` and the five-point retry registered every tap.
     - **Known limitations:** the occupied-seat no-op follows the seat's 0.45 m shape, which wraps the seated player's lower body — a tap there is a no-op, not a stand; the joystick moves nothing until the drag passes 24 px; a pinch that begins with one finger on the left half before the 24 px point is a pinch (no joystick); with a lost release and a different next index the old joystick holds until a mode switch, focus loss or that index returns.
   - Pending: the Android/device gate (`[~]` → `[x]` only after it), now including D-58 (floating joystick touch feel, multitouch, the left-half split on real screens and cut-outs) and the D-56 seat tap on a phone.
-- **Commit:** §15 (after approval).
+- **Commit:** E1 `bcdf2ed` (with M14.1a and the save-system work); Rest Mode R1–R4 `96003fa` (on `prototype/organic-world`).
 
 ### WORLD ATMOSPHERE — LIVING MEADOW (Group W)
 Polish of the existing playable area so it feels like a peaceful, living place — no expansion (Phase 16 still gates that), no new systems, timers or rewards. One small, visual milestone at a time.
@@ -2026,7 +2026,7 @@ Polish of the existing playable area so it feels like a peaceful, living place �
 - **Contracts:** `check_project.py` — D-61's Meadow hash masks exactly the `PondEdge` addition; a new "living pond edge" section; `water.gdshader` and `PondWater.tscn` pinned. `sim_slice_layout.py` — `PondEdge` outside the existing-world digest (unchanged `89878544adee7640`), the scene digest re-recorded (`d2a642d51add3a9c`), the dressing's placement rules. `run_organic_checks.sh` — the pond meshes regenerated byte-identically and their shape measured (`mode=pond`).
 - **Verification (desktop, Godot 4.7.2):** see the W1 report — checker, `run_all.sh`, organic art checks, navigation mesh identical (445 / 561, same hash), collection ×3, save fixtures, force-stop, the full Rest Mode probe, 20 static contract mutations, before/after screenshots and render measurements (software rendering, relative only).
 - **Pending:** PC GPU and Android visual review (the shore's colour and edge on a real screen, the seated view at yaw −45°/0°/+45°, shimmer or z-fighting at the lip, frame rate); `[~]` → `[x]` only on the developer's report.
-- **Commit:** after approval.
+- **Commit:** `ca9b3b0` (on `prototype/organic-world`; not merged into `main`).
 
 ### TOOLING — DEVICE PLAYTEST PACK (T1)
 **T1 — Device Playtest Pack** — implemented (documentation and tooling only; awaiting the developer's review; no
@@ -2134,19 +2134,49 @@ runtime component of its own).
 | M09.2 | `adb284c` |
 | M09.3 | `09c2a1c` |
 | M09.4 | `aad31bf` |
+| M10 | `e5483d0` |
+| M11.0 | `c66f895` |
+| M11.1 | `0e31e10` |
+| E1, M14.1a, M15.2–M15.4 | `bcdf2ed`; the v9 fixture `3f2cfaf` |
+| B0 | `c0d1670` |
+| B0.1 (with the live ground and paths) | `72abe46`, `7e4cd73` |
+| A0 blueprint | `cd43646` |
+| Rest Mode R1–R4 | `96003fa` |
+| W1 | `ca9b3b0` |
+| T1 | `086175a` |
+| D-67, T2, W2, M13.1 (reconstructed 2026-11-01) | not committed — the original local commits `45ba202`, `766ca6f`, `de0b1b1`, `d1bc986` were lost unpushed with their working container |
 
 ## 16. Current position
-- **Where things stand (T1, 2026-10-19):** Phases 00–10 are complete in code, with M11.1 (Earth — Nurture), M14.1a
-  (Wildlife Journal), M15.2–M15.4 (save fixtures and reliability), E1 and Rest Mode R1–R4 (D-62), the organic art
-  stages B0/B0.1 and the Living Pond Edge W1 (D-63, commit `ca9b3b0`). Almost all of it is **desktop verified only**:
-  every `[~]` milestone still owes its device test.
+- **Where things stand (reconciled 2026-10-27; recovered 2026-11-01 on `recovery/organic-world-nov-2026` from `5e5fd81`):**
+  - **Implemented and committed.** On `main` (up to `3f2cfaf`): Phases 00–10 in code, M11.0 and M11.1 (Earth —
+    Nurture), E1, M14.1a (Wildlife Journal) and M15.2–M15.4 (state registry, old-save fixtures, save reliability). On
+    `prototype/organic-world` only (not merged into `main`): Rest Mode R1–R4 (`96003fa`, D-62), the organic art B0
+    (`c0d1670`) and B0.1 (`72abe46`, `7e4cd73`), W1 (`ca9b3b0`), T1 (`086175a`) and the A0 blueprint and design lock with
+    D-64–D-66 (documentation only).
+  - **Reconstructed, not committed (2026-11-01).** The local commits made after `5e5fd81` — `45ba202` (D-67), `766ca6f`
+    (T2, D-68), `de0b1b1` (W2, D-69), `d1bc986` (M13.1, D-70) and `d59093b` (this reconciliation) — were lost unpushed with
+    their working container. They are reconstructed from the surviving session record in the working tree of
+    `recovery/organic-world-nov-2026`, awaiting review: D-67 as a reconstructed prerequisite record (its original date
+    unrecoverable), T2 Android export readiness, W2 wildlife in the rain, M13.1 one progression path, and this
+    reconciliation; the original commit objects are not restored.
+  - **Automated validation passed; device acceptance pending.** Every `[~]` milestone — the Device Playtest Pack lists
+    64 milestones (with the M01.6 gate and B0/B0.1) that owe a device test, among them W2 (S3.12) and M13.1 (S3.2,
+    S3.5, S4.1, S4.2) — plus the PC and Android visual reviews of B0, B0.1 and W1 and Rest Mode's licensed ambience and
+    listening validation. No Android build has been exported and no device test has been run.
+  - **Blocked.** M01.6 and the Phase 16 gate on an exported Godot 4.7.x Android build (§7); Stage A (A1–A4) on the
+    Phase 16 gate (§8); A3 and the Great Tree also on the OD-9 cultural review (D-67, a reconstructed prerequisite;
+    outstanding) and their own approval; M13.2 on O-04; M11.2–M11.5 on O-09; Phase 12 on R-01…R-07; M14.2 on Phases
+    11–12; M15.1's remaining parts on O-04, O-09 and R-01…R-07.
+  - **Not yet designed or implemented.** The Journal's player memories (M14.1); world changes, elemental progression
+    beyond Earth and Rishi progression (deferred until designed, ARCHITECTURE §11); the open village decisions OD-3 to
+    OD-11 (OD-9's review is a recorded prerequisite for A3, D-67, not a decision).
 - **Next gate:** **M01.6 — Android movement playtest** and the device checks owed by every `[~]` milestone, run as the
   short sessions of `docs/PLAYTEST_PACK.md` (S0–S7; several sittings), on an **exported** Godot 4.7.x Android build for
   final acceptance (§7; editor-on-phone runs are preliminary only). The developer's results decide each `[~]` → `[x]`
   and the default movement mode (O-06). The project has never been exported: the first export needs a PC with Godot
   4.7.x, its export templates and the Android SDK.
 - **Also pending:** W1 and B0/B0.1 PC and Android visual review; Rest Mode's licensed ambience, listening validation and
-  Android acceptance.
+  Android acceptance; W2's Android acceptance (S3.12); M13.1's device regression (S3.2, S3.5, S4.1, S4.2).
 - **Not before Phase 16 passes on Android:** Stage A and any large world expansion (§8); the Great Tree (D-53) and the
   waterfall stay future work.
 - **Recorded progress before T1 (kept as written):**

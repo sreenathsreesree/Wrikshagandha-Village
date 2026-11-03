@@ -290,8 +290,11 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
 - Result: ______ Notes: ______
 
 **S3.8 Routines, weather and reactions** (M09.1, M09.3, M09.4)
-- Needs: Phone (about 10 minutes of watching). S3.12 needs the same rain, so the two can share a sitting.
-- Steps: watch a full day (600 s) near the pond path and the NPC spot; note any rain.
+- Needs: Phone (about 10 minutes of watching); for the rain, a game that has reached it — in the fixed weather calendar
+  rain first begins on day 4 at three-quarters of the day (evening), about 35 minutes of outdoor play from a new game,
+  since time pauses indoors and while the app is closed (a first day never rains). S3.12 needs the same rain, so the two
+  can share a sitting.
+- Steps: watch a full day (600 s) near the pond path and the NPC spot; be outdoors when the first rain begins.
 - Expected: the villager is by the pond path morning/afternoon and at its spot dawn/evening/night (M09.1); weather is
   visible (M09.3); when rain begins, birds flee (M09.4).
 - Result: ______ Notes: ______
