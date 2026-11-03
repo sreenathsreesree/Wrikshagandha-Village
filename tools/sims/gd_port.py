@@ -144,7 +144,8 @@ def build(sources):
     WC, wc_consts = translate(sources["wc"], "WorldClock", {})
     TOD, tod_consts = translate(sources["tod"], "TimeOfDay", {})
     WS, ws_consts = translate(sources["ws"], "WorldSimulation", {"WorldClock": "WORLD.clock", "FarmManager": "WORLD.farm"},
-                              ["_ready", "_process", "_present_time", "configure", "_on_time_updated", "_on_garden_interest_changed"])
+                              ["_ready", "_process", "_present_time", "configure", "_on_time_updated", "_on_garden_interest_changed",
+                               "_on_weather_changed"])
     WCTL, wctl_consts = translate(sources["wctl"], "WeatherController", {})
     EVT, _ = translate(sources["evt"], "EnvironmentalEvent", {"DiscoveryManager": "WORLD.discovery", "FarmManager": "WORLD.farm", "Time": "WORLD.time"})
     EVC, _ = translate(sources["evc"], "EnvironmentalEventController", {})
@@ -246,6 +247,8 @@ class Game:
         g.ws.time_of_day = g.tod
         g.lights, g.wild = Mock(applied=[]), Mock(phase=None)
         g.wild.set_time_phase = lambda p: setattr(g.wild, "phase", p)
+        g.wild.raining, g.wild.rain_calls = None, 0       # W2 (D-69): the rain relay, as the controller hears it
+        g.wild.set_raining = lambda r: (setattr(g.wild, "raining", r), setattr(g.wild, "rain_calls", g.wild.rain_calls + 1))
         g.lights.apply_time = lambda f, rain=0.0: (g.lights.applied.append(f), setattr(g.lights, "rain", rain))
         g.ws.environment_controller, g.ws.wildlife_controller = g.lights, g.wild
         g.weather = g.kit["WCTL"]()                      # the real WeatherController, its schedule and a stand-in emitter

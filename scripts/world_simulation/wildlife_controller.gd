@@ -7,6 +7,8 @@ class_name WildlifeController
 ## WorldSimulation.configure(), after the whole scene is ready.
 ## Each actor's one sighting (M14.1a, D-59) is relayed to the Journal, which
 ## keeps a species once ever; nothing here pays, saves or remembers.
+## Whether it is raining (W2, D-69) is relayed like the day's phase; wildlife
+## never names the weather.
 
 ## TimeOfDay phase -> how dark it is for wildlife (0 = day, 1 = night).
 ## Unknown phases read as day.
@@ -42,3 +44,12 @@ func set_time_phase(phase: String) -> void:
 		if node is WildlifeActor:
 			var actor: WildlifeActor = node
 			actor.set_darkness(darkness)
+
+## Relays whether it is raining (W2, D-69): every actor rests a little longer
+## while it rains. Called at configure and on each weather change, via
+## WorldSimulation — never per frame.
+func set_raining(raining: bool) -> void:
+	for node in get_tree().get_nodes_in_group("wildlife_actor"):
+		if node is WildlifeActor:
+			var actor: WildlifeActor = node
+			actor.set_raining(raining)

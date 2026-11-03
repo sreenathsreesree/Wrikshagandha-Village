@@ -3498,7 +3498,8 @@ notes.append(f"world clock (M09.2): WorldClock day from {const_val(wc_src, 'STAR
 # days up to always_clear_days are Clear; the rain fades over ramp_fraction at a spell's edges. WeatherController
 # (inside WorldSimulation) never reads WorldClock — WorldSimulation hands it the day and fraction — holds no clock,
 # saves nothing and emits weather_changed only on a change during play (never the first resolution). It reacts to
-# nothing (M09.4 will consume the signal); farming, NPCs, wildlife and the rest never hear of the weather.
+# nothing; farming, NPCs, saves and the rest never hear of the weather. (Its two listeners, M09.4's startle and W2's
+# rain relay, are checked below; wildlife hears only "raining or not" through that relay, never the weather.)
 WSCH_GD, WCTL_GD, WS_TSCN, ENV_GD = ("scripts/world_simulation/weather_schedule.gd", "scripts/world_simulation/weather_controller.gd",
                                      "scenes/world_simulation/WorldSimulation.tscn", "scripts/world_simulation/environment_controller.gd")
 wsch_src, wctl_src = scripts.get(WSCH_GD, ""), scripts.get(WCTL_GD, "")
@@ -3553,22 +3554,26 @@ for f, s2 in scripts.items():
     if f.startswith("tools/") and not f.startswith("tools/fixtures/"): continue
     c = code_only(s2)
     wapply += [f] * len(re.findall(r"\bweather_controller\.apply_time\(", c))
-    # M09.4 (D-44) replaced "nothing connects weather_changed": exactly one production listener (checked below)
+    # M09.4 (D-44) replaced "nothing connects weather_changed"; W2 (D-69) adds the second production listener (checked below)
     wlisten += [(f, m) for m in re.findall(r"(\S*weather_changed\.connect\([^)\n]*\))", c)]
     if f not in (WCTL_GD, WSCH_GD, WS_GD) and re.search(r"\bWeatherController\b|\bWeatherSchedule\b|\bweather_controller\b|\bis_raining\(|\bget_rain_intensity\(", c):
         err(f"{f}: reads the weather — only WorldSimulation drives it and nothing reacts in M09.3 (farming, NPCs, wildlife, saves never hear of it; D-43)")
-if wlisten != [(WS_GD, "weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)")] \
-   or "weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)" not in code_only(ws_fn.get("configure", "")):
-    err(f"exactly one production connection consumes WeatherController.weather_changed: WorldSimulation.configure() -> EnvironmentalEventController (found {wlisten}; D-44)")
+W2_LISTENERS = ["weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)",
+                "weather_controller.weather_changed.connect(_on_weather_changed)"]
+ws_conf = code_only(ws_fn.get("configure", ""))
+if wlisten != [(WS_GD, w) for w in W2_LISTENERS] or not all(w in ws_conf for w in W2_LISTENERS) \
+   or ws_conf.find(W2_LISTENERS[0]) > ws_conf.find(W2_LISTENERS[1]):
+    err(f"exactly two production connections consume WeatherController.weather_changed, both in WorldSimulation.configure(): the startle "
+        f"(EnvironmentalEventController, D-44) first, then WorldSimulation's own rain relay (W2, D-69) (found {wlisten})")
 if wapply != [WS_GD, WS_GD]:
     err(f"WeatherController.apply_time() is called only by WorldSimulation (_ready and _present_time), with WorldClock's day and fraction (found {wapply})")
 if re.search(r"weather|rain", code_only(scripts.get("scripts/autoload/save_manager.gd", "")), re.I):
     err("scripts/autoload/save_manager.gd: weather is never saved — it is derived from the saved world time (D-43)")
 notes.append(f"weather (M09.3): seed {wvals.get('weather_seed')}, {wvals.get('slots_per_day')} slots/day, rain chance {wvals.get('rain_chance')}, "
-             f"ramp {wvals.get('ramp_fraction')} day, Clear through day {wvals.get('always_clear_days')}; given the clock by WorldSimulation; not saved; one listener (M09.4)")
+             f"ramp {wvals.get('ramp_fraction')} day, Clear through day {wvals.get('always_clear_days')}; given the clock by WorldSimulation; not saved; two listeners (M09.4, W2)")
 
 # ------------------------------------------------------------ weather reaction (M09.4, D-44)
-# Rain beginning during play startles the five SmallBirds through the existing event layer: WorldSimulation's one
+# Rain beginning during play startles the five SmallBirds through the existing event layer: WorldSimulation's first
 # weather_changed connection -> EnvironmentalEventController.on_weather_changed() -> every EnvironmentalEvent whose
 # trigger_weather matches, through its own can_trigger()/fire(). A weather-triggered event never enters the distance
 # loop. RainBirdDisturbance (WILDLIFE_DISTURBANCE, rain, repeatable, 60 s cooldown, the five SmallBirds) lives under a
@@ -3605,7 +3610,64 @@ for f, s2 in scripts.items():
         err(f"{f}: takes part in the weather reaction — only WeatherController, WorldSimulation and the event layer do (no NPC, farming, wildlife or UI listener; D-44)")
     if re.search(r"\bplay_wildlife_sound\(", c) and f != "scripts/autoload/ambient_audio_manager.gd":
         err(f"{f}: calls play_wildlife_sound() — audio is M09A's, not the rain reaction's (D-44)")
-notes.append(f"weather reaction (M09.4): rain beginning -> RainBirdDisturbance -> startle {[b for b, _ in birds]}; one weather_changed listener; distance loop skips weather events; nothing saved")
+notes.append(f"weather reaction (M09.4): rain beginning -> RainBirdDisturbance -> startle {[b for b, _ in birds]}; the first weather_changed listener; distance loop skips weather events; nothing saved")
+
+# ------------------------------------------------------------ wildlife in the rain (W2, D-69)
+# While it rains each creature is a little less lively, the way the night already makes it: WildlifeActor's export
+# rain_activity (0.05-1, default 1 = unchanged) beside night_activity; activity = max(MIN_ACTIVITY 0.05, the night's
+# factor exactly as before x the rain's while raining). Activity is read only by the next decision (_enter_idle,
+# _enter_pause, _enter_wander) — never by the flee, the startle or the per-frame movement. WorldSimulation's second
+# weather_changed listener relays is_raining() through WildlifeController.set_raining() to every actor, and is called
+# once at configure, after the actors are wired; wildlife never names the weather. The tuning lives on the three creature
+# scenes only (butterfly 0.25, small bird 0.6, rabbit 0.7; no Meadow override). Behaviour: tools/sims/sim_wildlife_weather.py.
+W2_ACTOR, W2_CTL = "scripts/world_simulation/wildlife_actor.gd", "scripts/world_simulation/wildlife_controller.gd"
+W2_TUNING = {"scenes/wildlife/WildlifeButterfly.tscn": "0.25", "scenes/wildlife/SmallBird.tscn": "0.6", "scenes/wildlife/Rabbit.tscn": "0.7"}
+w2_bad = []
+w2_src = scripts.get(W2_ACTOR, "")
+w2a = code_only(w2_src)
+w2_fn = {m.group(1): m.group(0) for m in re.finditer(r"^func (\w+)\(.*?(?=^func |\Z)", w2a, re.M | re.S)}
+if w2_src.count("@export_range(0.05, 1.0) var rain_activity: float = 1.0\n") != 1 or not re.search(r"^const MIN_ACTIVITY := 0\.05$", w2a, re.M) \
+   or not re.search(r"^var _darkness: float = 0\.0$", w2a, re.M) or not re.search(r"^var _raining: bool = false$", w2a, re.M):
+    w2_bad.append(f"{W2_ACTOR}: the export rain_activity (0.05-1, default 1), MIN_ACTIVITY 0.05, and the relayed _darkness / _raining")
+if not re.fullmatch(r"func _update_activity\(\) -> void:\s*var rain_factor := rain_activity if _raining else 1\.0\s*"
+                    r"_activity = maxf\(MIN_ACTIVITY, lerpf\(1\.0, night_activity, _darkness\) \* rain_factor\)\s*", w2_fn.get("_update_activity", "")) \
+   or not re.fullmatch(r"func set_darkness\(darkness: float\) -> void:\s*_darkness = clampf\(darkness, 0\.0, 1\.0\)\s*_update_activity\(\)\s*", w2_fn.get("set_darkness", "")) \
+   or not re.fullmatch(r"func set_raining\(raining: bool\) -> void:\s*_raining = raining\s*_update_activity\(\)\s*", w2_fn.get("set_raining", "")):
+    w2_bad.append(f"{W2_ACTOR}: activity = max(MIN_ACTIVITY, lerp(1, night_activity, darkness) x (rain_activity while raining, else 1)), "
+                  f"recomputed when the darkness or the rain is relayed — nothing else")
+w2_readers = sorted(fn for fn, body in w2_fn.items() if re.search(r"\b_activity\b", body) and fn != "_update_activity")
+if w2_readers != ["_enter_idle", "_enter_pause", "_enter_wander"]:
+    w2_bad.append(f"{W2_ACTOR}: activity is read only by the next decision — _enter_idle, _enter_pause, _enter_wander (found {w2_readers})")
+w2_rain_users = sorted(fn for fn, body in w2_fn.items() if re.search(r"\b(_raining|rain_activity)\b", body))
+if w2_rain_users != ["_update_activity", "set_raining"]:
+    w2_bad.append(f"{W2_ACTOR}: the rain reaches only the activity (found it in {w2_rain_users})")
+if not re.fullmatch(r"func _enter_flee\(\) -> void:\s*state = \"flee\"\s*_state_timer = randf_range\(1\.0, 2\.0\)\s*", w2_fn.get("_enter_flee", "")) \
+   or not re.fullmatch(r"func startle\(\) -> void:\s*if state != \"flee\":\s*_enter_flee\(\)\s*", w2_fn.get("startle", "")):
+    w2_bad.append(f"{W2_ACTOR}: the flee and the startle keep their fixed 1-2 s, untouched by the activity")
+w2c = code_only(scripts.get(W2_CTL, ""))
+if not re.search(r"func set_raining\(raining: bool\) -> void:\s*for node in get_tree\(\)\.get_nodes_in_group\(\"wildlife_actor\"\):\s*"
+                 r"if node is WildlifeActor:\s*var actor: WildlifeActor = node\s*actor\.set_raining\(raining\)\s*(?=func |\Z)", w2c) \
+   or re.search(r"\bweather\b|is_raining|WeatherController", w2c, re.I):
+    w2_bad.append(f"{W2_CTL}: set_raining(raining) relays to every WildlifeActor and nothing else; wildlife never names the weather")
+if not re.fullmatch(r"func _on_weather_changed\(_weather: String\) -> void:\s*wildlife_controller\.set_raining\(weather_controller\.is_raining\(\)\)\s*",
+                    code_only(ws_fn.get("_on_weather_changed", ""))):
+    w2_bad.append(f"{WS_GD}: _on_weather_changed() relays weather_controller.is_raining() to WildlifeController.set_raining() — nothing else")
+w2_order = [ws_conf.find(s) for s in ("wildlife_controller.wire_actors()", W2_LISTENERS[0], W2_LISTENERS[1], "_on_weather_changed(weather_controller.get_weather())")]
+if -1 in w2_order or w2_order != sorted(w2_order) or ws_conf.count("_on_weather_changed(weather_controller.get_weather())") != 1:
+    w2_bad.append(f"{WS_GD}: configure() wires the actors, connects the startle then the rain relay, and tells the actors the current rain once")
+for scene, want in W2_TUNING.items():
+    root = re.search(r'^\[node name="\w+" type="Node3D" groups=\["wildlife_actor"\]\]\n((?:[^\[\n].*\n)+)', open(scene, encoding="utf-8").read() if os.path.exists(scene) else "", re.M)
+    if not root or re.findall(r"^rain_activity = (\S+)$", root.group(1), re.M) != [want]:
+        w2_bad.append(f"{scene}: rain_activity = {want} on its root (D-69's tuning)")
+for path in sorted(glob.glob("scenes/**/*.tscn", recursive=True)):
+    if path not in W2_TUNING and re.search(r"^rain_activity = ", open(path, encoding="utf-8").read(), re.M):
+        w2_bad.append(f"{path}: overrides rain_activity — the tuning lives on the three creature scenes only")
+if not os.path.isfile("tools/sims/sim_wildlife_weather.py"):
+    w2_bad.append("tools/sims/sim_wildlife_weather.py exists")
+for b in w2_bad:
+    err(f"wildlife in the rain (W2, D-69): {b}")
+notes.append(f"wildlife in the rain (W2): rain_activity {', '.join(f'{os.path.basename(s)[:-5]} {v}' for s, v in W2_TUNING.items())}; "
+             f"max(0.05, night x rain); decisions only; relayed at configure and on each change")
 
 # ------------------------------------------------------------ hidden places (M10, D-45)
 # A fifth secret, the Hidden Hollow, added as data and scene content only (M10.1): one PlaceDefinition

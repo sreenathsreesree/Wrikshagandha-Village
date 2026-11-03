@@ -290,7 +290,7 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
 - Result: ______ Notes: ______
 
 **S3.8 Routines, weather and reactions** (M09.1, M09.3, M09.4)
-- Needs: Phone (about 10 minutes of watching).
+- Needs: Phone (about 10 minutes of watching). S3.12 needs the same rain, so the two can share a sitting.
 - Steps: watch a full day (600 s) near the pond path and the NPC spot; note any rain.
 - Expected: the villager is by the pond path morning/afternoon and at its spot dawn/evening/night (M09.1); weather is
   visible (M09.3); when rain begins, birds flee (M09.4).
@@ -323,6 +323,24 @@ Source: the M01.6 checklist and the movement milestones' runtime tests.
   say "no runtime test of its own"; M05.4 is "regression only"; M05.6 is "model only". Whether each moves to `[x]` when
   S1–S4 pass with no regression, or under §6's no-runtime rule, is not settled in the plan.
 - Result: ______ Notes: ______
+
+**S3.12 Wildlife in the rain** (W2)
+- Source: the plan's W2 row (*Done when:* an exported Android build on the phone accepts it) and D-69.
+- Needs: Phone (an exported build for acceptance — Route B); a game that has reached the first rain. In the fixed
+  weather calendar rain first begins on day 4 at three-quarters of the day (evening) — about 35 minutes of outdoor
+  play from a new game, since time pauses indoors and while the app is closed; the first rain by daylight begins on
+  day 5 at half the day (about 42 minutes). A rain spell lasts at least 2½ minutes.
+- Steps: watch the butterflies, small birds and rabbits for a minute or two before the rain; watch the birds as the
+  rain begins, then all the creatures for a few minutes of rain; walk up to a rabbit, a small bird and a butterfly
+  while it rains; still during the rain, close the app normally and relaunch; stay outdoors until the rain ends and
+  watch for a minute or two of Clear.
+- Expected: when rain begins, the five small birds flee once, as before (M09.4); while it rains the creatures rest
+  noticeably longer between their short wanders — the butterflies most, the birds less, the rabbits least — and none
+  freezes, vanishes or jitters; each one you walk up to flees as soon, as fast and as far as in Clear weather; after
+  the relaunch during rain they are already settled and nothing startles them (a bird still flees if you walk up to
+  it); when Clear returns their usual liveliness comes back from their next rest; nothing else changes (no reward,
+  message or sound) (D-69).
+- Result: ______ Notes: ______ (record the route)
 
 ---
 
@@ -585,6 +603,7 @@ M14.1a S3.10 S4.1 S4.2
 M15.4 S4.2
 E1 S5.1 S5.4 S6.3
 W1 S6.1 S6.2 S6.3 S7.1
+W2 S3.12
 B0 S6.4
 B0.1 S6.4
 ```

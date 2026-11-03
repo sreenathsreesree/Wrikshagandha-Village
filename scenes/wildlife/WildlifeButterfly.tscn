@@ -28,6 +28,7 @@ flee_speed = 2.8
 turn_speed = 5.0
 attraction_sensitivity = 0.8
 night_activity = 0.3
+rain_activity = 0.25
 
 [node name="Body" type="MeshInstance3D" parent="."]
 mesh = SubResource("SphereMesh_body")

@@ -25,6 +25,7 @@ flee_speed = 4.0
 turn_speed = 8.0
 attraction_sensitivity = 0.6
 night_activity = 0.5
+rain_activity = 0.6
 
 [node name="Body" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0.09, 0)

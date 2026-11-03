@@ -58,6 +58,10 @@ class_name WildlifeActor
 ## 1 it rests longer between wanders and is less drawn to attractions —
 ## a butterfly settling for the night, a bird quieting down.
 @export_range(0.05, 1.0) var night_activity: float = 1.0
+## How lively this creature stays while it rains (1 = unchanged; W2, D-69).
+## Combined with the night's: it rests longer between wanders and is less
+## drawn to attractions — its flee and the rain startle are untouched.
+@export_range(0.05, 1.0) var rain_activity: float = 1.0
 
 ## Optional flat circle of ground (same position space as this actor) the
 ## creature never crosses — while wandering, fleeing or heading back it
@@ -77,6 +81,9 @@ class_name WildlifeActor
 ## ever; the actor itself records, pays and saves nothing.
 signal sighted(species_id: String)
 
+## The least lively a creature ever gets, night and rain together (W2, D-69).
+const MIN_ACTIVITY := 0.05
+
 ## Set by WildlifeController once, after every actor in the scene exists —
 ## never touched by the actor itself.
 var player: Node3D
@@ -91,6 +98,9 @@ var _idle_base_rotation: float = 0.0
 var _current_interest_index: int = -1
 var _attraction: float = 0.0
 var _activity: float = 1.0
+## The last darkness and rain WildlifeController relayed; _activity follows both.
+var _darkness: float = 0.0
+var _raining: bool = false
 var _sighting_reported: bool = false
 
 func _ready() -> void:
@@ -220,7 +230,20 @@ func set_attraction(key: String, strength: float) -> void:
 
 ## darkness: 0 = daylight, 1 = full night.
 func set_darkness(darkness: float) -> void:
-	_activity = lerpf(1.0, night_activity, clampf(darkness, 0.0, 1.0))
+	_darkness = clampf(darkness, 0.0, 1.0)
+	_update_activity()
+
+## Whether it is raining (W2, D-69) — event-driven from WildlifeController,
+## like the darkness; takes effect from the next decision, nothing interrupted.
+func set_raining(raining: bool) -> void:
+	_raining = raining
+	_update_activity()
+
+## The night's factor exactly as before, times the rain's while it rains,
+## never below MIN_ACTIVITY. Read only by the next rest and wander decision.
+func _update_activity() -> void:
+	var rain_factor := rain_activity if _raining else 1.0
+	_activity = maxf(MIN_ACTIVITY, lerpf(1.0, night_activity, _darkness) * rain_factor)
 
 func _enter_idle() -> void:
 	state = "idle"

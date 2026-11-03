@@ -5,7 +5,7 @@ class_name WorldSimulation
 ## about each other: TimeOfDay only knows "what fraction of the day is it",
 ## EnvironmentController only knows "how do I paint that", VegetationController
 ## only publishes player position, WildlifeController only wires actors
-## and relays phase/attraction changes to them, and
+## and relays phase/attraction/rain changes to them, and
 ## Ambient is a seam for future effects. Any one of these can be swapped or
 ## removed without touching the others. configure() is called once by the
 ## owning world scene (e.g. meadow.gd) after everything else is ready.
@@ -55,8 +55,12 @@ func configure(player: Node3D, directional_light: DirectionalLight3D, world_envi
 	environmental_event_controller.player = player
 	exploration_landmark_controller.player = player
 	weather_controller.player = player
-	# M09.4 (D-44): the one listener of the weather — rain beginning reaches the event layer.
+	# M09.4 (D-44): rain beginning reaches the event layer (the birds' startle) — connected first.
 	weather_controller.weather_changed.connect(environmental_event_controller.on_weather_changed)
+	# W2 (D-69): the second listener — wildlife settles while it rains. Told now too, after the
+	# actors are wired, so a load, a relaunch or a fresh area during rain is raining at once.
+	weather_controller.weather_changed.connect(_on_weather_changed)
+	_on_weather_changed(weather_controller.get_weather())
 
 	time_of_day.time_updated.connect(_on_time_updated)
 	_on_time_updated(time_of_day.day_fraction)
@@ -86,3 +90,6 @@ func _on_time_updated(day_fraction: float) -> void:
 
 func _on_garden_interest_changed(level: float) -> void:
 	wildlife_controller.set_attraction(FarmManager.WILDLIFE_ATTRACTION_KEY, level)
+
+func _on_weather_changed(_weather: String) -> void:
+	wildlife_controller.set_raining(weather_controller.is_raining())
