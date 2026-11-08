@@ -162,7 +162,7 @@ M15.2, M15.3) and M00.1–M00.4.
 | Camera | `[~]` implemented; desktop verified | Follow + look-ahead, area bounds (M03.4), pinch/wheel zoom 7–15 m (M03.5), the Rest Mode settle and seated view (E1, D-62); Android pending |
 | Farming | Advanced prototype, **frozen** (D-11) | 4 crops, quality, basket, 7 plots, Elderbloom, exploration seeds, milestones, persistence; seeds and produce are inventory items (M06.1); device farm loop pending |
 | Exploration | `[~]` implemented; desktop verified | Landmarks, five secrets including the Hidden Hollow (M10), place data (M03.6), progress saved (M05.2); Android pending |
-| Discovery / journal / collection | `[~]` implemented; desktop verified | 9 discoveries, respawns, clues, daily discovery, journal, collection, Wildlife Journal (M14.1a), player memories (M14.1, derived only; not committed at this update); Android pending |
+| Discovery / journal / collection | `[~]` implemented; desktop verified | 9 discoveries, respawns, clues, daily discovery, journal, collection, Wildlife Journal (M14.1a), player memories (M14.1, derived only); Android pending |
 | Wildlife / day-night / events | `[~]` implemented; desktop verified | 14 wildlife actors, a 600 s day saved as world time (M09.2), Clear/Rain weather (M09.3), rain startles the birds (M09.4), wildlife settles in the rain (W2, D-69), environmental events; Android pending |
 | Saving | `[~]` implemented; desktop verified | One JSON save, `save_version` 9 with step migrations (D-17); old-save fixtures (M15.3, 318 checks) and force-stop cases (M15.4, 16) pass in real Godot; Android pending |
 | Inventory | `[~]` implemented; desktop verified | `Inventory` autoload: seeds, produce (quality split) and collectibles as items (M04.1–M04.5); Android pending |
@@ -1852,22 +1852,23 @@ Goal: the small playable test area (placeholders).
 - **Tooling:** checker section "one progression path (M13.1, D-70)" and the old-code contracts restated (M05.2, the pay sites, M06.4, the Hidden Hollow, the state registry); `tools/sims/sim_progression.py`; the shared path in `sim_economy`, `sim_milestones`, `sim_hidden_hollow`, `sim_rewards`, `sim_points_coins`, `sim_repeat_rewards` and `sim_state_registry`; `force_stop_check.gd` reads the two flags through `get_save_data()`.
 - *Reconstructed 2026-11-01 after the original commit was lost unpushed; D-70's text survived. Results of this reconstruction's runs are in D-70.*
 - **Pending:** the device regression — Device Playtest Pack S3.2, S3.5, S4.1 and S4.2 on an exported Godot 4.7.x build (§7): milestone cards, exploration bonuses, relaunch and force-stop exactly as before; `[~]` → `[x]` only on the developer's report.
+- **Commit:** `277f2dd` (reconstructed, on `recovery/organic-world-nov-2026`; not merged into `prototype/organic-world` or `main`); the original `d1bc986` was lost unpushed and is not restored.
 
 ### PHASE 14 — JOURNAL / COLLECTION
 | Milestone | Objective | Done when | Status |
 |---|---|---|---|
-| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop); Android pending — the last section, player memories, derived only (D-71; in the working tree, not committed at this update); the others under their own milestones (Places M03.6, the landscape Journal M07.4a, Wildlife M14.1a) |
+| M14.1 | Journal sections: discoveries, crops, wildlife, places, secrets, player memories | All sections fed by data | `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop); Android pending — the last section, player memories, derived only (D-71; commit `3d6bdc9` on `recovery/organic-world-nov-2026`); the others under their own milestones (Places M03.6, the landscape Journal M07.4a, Wildlife M14.1a) |
 | M14.1a | Wildlife Journal (first slice of M14.1): rabbit, small bird and butterfly as data; a species is seen once ever when the player enters a creature's existing alert distance; shown in the Journal; saved at once (save v9); no reward | Seen species survive close/force-stop/relaunch; old saves load with none seen | `[~]` Implemented and verified on desktop; Android pending |
 | M14.2 | Elements and Rishis sections | After Phases 11–12 | `[!]` |
 
-**M14.1 — Player memories (the last Journal section)** `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop); Android pending; **not committed** at this update
+**M14.1 — Player memories (the last Journal section)** `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop); Android pending
 - **Developer-approved design (derived only, D-71):** a memory describes a moment already lived and appears only where existing saved data reliably proves it — no save v10, migration or new persistent state; nothing inferred from current state; no points, coins, items, relationship change, unlock or reward; no notification. The evidence table is D-71's; unsupported parts were narrowed, not invented (the first secret place is not named). **Final review corrections (2026-11-01):** the garden memory was removed — it repeated the Places list and the garden section — and with it the landmark record; First Seed is the first milestone in any save written by the game.
 - **Game code:** `scripts/journal/memory_definition.gd` (`MemoryDefinition`: id, text, order, record, fact_id; three records as constants; no functions) and `data/memories/` — `first_seed`, `first_harvest` (farm milestones), `first_secret_place` (any secret place), `first_rabbit`, `first_small_bird`, `first_butterfly` (wildlife); `journal_manager.gd` loads them (`_load_memories`, data) and derives them on each call (`get_memories`, `is_remembered` — each record owner's own read-only query; nothing stored, no signal); `exploration_manager.gd` gains one read-only query, `get_found_secret_count()`; `journal_screen.gd` adds the Memories section last on the left, only once there is one, one note each. Save format (v9), SaveManager, GameState, FarmManager and every other system unchanged.
 - **Tooling:** checker section "player memories (M14.1, D-71)" and the M15.2 note (3 items deferred); the state registry (`journal_manager._memories data`; `player_memories` off the deferred list; `sim_state_registry` +3 broken designs); `tools/sims/sim_player_memories.py`; `save_fixture_check.gd` / `run_save_fixtures.sh` (each fixture's memories against what its raw `save.json` proves — worked out from the JSON, not through the game — in both passes; none from a record the version never saved; a new game remembers nothing); `force_stop_check.gd` / `run_force_stop.sh` (every case's memories survive the kill; `secret` and `sighting` must have made theirs; the new case `sighting_bird` — a real SmallBird — gives the small bird's memory real-Godot coverage).
 - **Verification (actual runs, 2026-11-01 reconstruction, desktop):** see D-71 and the recovery report — the checker, `run_all.sh`, the sim (13 broken designs), 28 checker mutations, and real Godot 4.7.2: import clean, 359 save-fixture checks (v0–v4 first seed and first harvest; v5–v8 also the first secret place; v9 also the rabbit and the butterfly), 18 force-stop runs, the collection check, two real-Godot mutants failing. Desktop screenshots (Godot's OpenGL fallback under Xvfb — layout only, not a device check): no section for a new game, a short card for two memories, one card of about ten wrapped lines for all six; points unchanged by opening the Journal.
 - **Limits:** a moment lived before its record existed (a secret before save v5, wildlife before v9) is not remembered; memories carry no chronology; the section sits at the bottom of the left column, below Places, Wildlife and the garden.
 - **Pending:** device acceptance — Device Playtest Pack S3.13, S4.1 and S4.2 on an exported Godot 4.7.x build (§7); `[~]` → `[x]` only on the developer's report.
-- **Commit:** none — in the working tree of `recovery/organic-world-nov-2026`, unstaged, awaiting review.
+- **Commit:** `3d6bdc9` (on `recovery/organic-world-nov-2026`, pushed; not merged into `prototype/organic-world` or `main`) — M14.1's first commit; the lost first implementation was never committed.
 
 **M14.1a — Wildlife Journal** `[~]` Implemented and verified on desktop (real Godot: fixtures, force-stop, regression); Android pending
 - **Developer-approved defaults (1–4):** species as data; a sighting at the existing alert distance, once per species ever; no rewards of any kind; persisted in a new save section with a migration, real historical fixtures and an immediate save. **Workflow: Option A** — Commit 1 establishes the v9 history; the genuine v9 fixture is then generated from that commit with the established historical generator, the pending-fixture exception removed and the checks rerun (Commit 2, separately approved). Decision record: D-59.
@@ -2029,7 +2030,7 @@ Polish of the existing playable area so it feels like a peaceful, living place �
 | W1 | Living Pond Edge — a natural, irregular wet-earth shoreline hiding the pond's hard edge, a few existing-mesh stones, reeds and lily pads, minimal seeded ground cover; the seated Rest Mode view first, the camera-facing south kept low and open (D-63) | Desktop checks pass and the PC and Android visual reviews accept it | `[~]` implemented; desktop automated validation passed; PC and Android visual review pending |
 | W2 | Wildlife settles in the rain — while it rains each creature rests a little longer between its short wanders and is a little less drawn to the garden, the way the night already makes it (`rain_activity` beside `night_activity`: butterfly 0.25, small bird 0.6, rabbit 0.7), relayed from the weather like the day's phase; the flee, the M09.4 startle, the Wildlife Journal and saves unchanged (D-69) | Desktop checks pass and an exported Android build on the phone accepts it (S3.12) | `[~]` implemented; desktop automated validation passed; Android acceptance and visual review pending |
 
-- **W2 (D-69), developer-approved:** the activity formula `max(0.05, night factor × rain factor)` read only by the next rest and wander decision; WorldSimulation's second `weather_changed` listener relays `is_raining()` through `WildlifeController.set_raining()` (and once at configure, after the actors are wired). Files: `wildlife_actor.gd`, `wildlife_controller.gd`, `world_simulation.gd`, the three creature scenes; checker (the two-listener contract and a W2 section), `tools/sims/sim_wildlife_weather.py`, `gd_port.py`'s relay stub. *Reconstructed 2026-11-01 after the original commit was lost unpushed (D-69's text survived).* Device test: S3.12; `[~]` → `[x]` only on the developer's report.
+- **W2 (D-69), developer-approved:** the activity formula `max(0.05, night factor × rain factor)` read only by the next rest and wander decision; WorldSimulation's second `weather_changed` listener relays `is_raining()` through `WildlifeController.set_raining()` (and once at configure, after the actors are wired). Files: `wildlife_actor.gd`, `wildlife_controller.gd`, `world_simulation.gd`, the three creature scenes; checker (the two-listener contract and a W2 section), `tools/sims/sim_wildlife_weather.py`, `gd_port.py`'s relay stub. *Reconstructed 2026-11-01 after the original commit was lost unpushed (D-69's text survived).* Commit: `a46b428` (reconstructed, on `recovery/organic-world-nov-2026`; the original `de0b1b1` is not restored). Device test: S3.12; `[~]` → `[x]` only on the developer's report.
 - **W1 (D-63), developer-approved scope:** the shoreline, sparse dressing and minimal ground cover only. `water.gdshader`, gameplay, saves, interactions, wildlife, audio, camera, Rest Mode, navigation source geometry and world boundaries unchanged; no colliders, no navigation membership.
 - **Implementation:** `scenes/world/PondEdge.tscn` (one instance in `Meadow.tscn` on the pond); `tools/art/generate_pond_edge.gd` (offline, fixed seeds) → `assets/organic/meshes/pond_shore.res`, `pond_stones.res`, `pond_ground_cover.res`; `shaders/pond_shore.gdshader` + `assets/organic/materials/pond_shore.tres`.
 - **Contracts:** `check_project.py` — D-61's Meadow hash masks exactly the `PondEdge` addition; a new "living pond edge" section; `water.gdshader` and `PondWater.tscn` pinned. `sim_slice_layout.py` — `PondEdge` outside the existing-world digest (unchanged `89878544adee7640`), the scene digest re-recorded (`d2a642d51add3a9c`), the dressing's placement rules. `run_organic_checks.sh` — the pond meshes regenerated byte-identically and their shape measured (`mode=pond`).
@@ -2066,6 +2067,8 @@ runtime component of its own).
   unchanged preset only the two preview scenes and their two remaps are gone.
 - **Not verified:** an APK export (Godot 4.7.x export templates, the Android SDK and a debug keystore on the
   developer's PC) and anything on a device; no milestone status changes.
+- **Commit:** `88ae625` (reconstructed, on `recovery/organic-world-nov-2026`; not merged into `prototype/organic-world` or `main`); the original
+  `766ca6f` was lost unpushed and is not restored.
 
 ### LATER PHASES (only after Phase 16)
 - Full world and complete elemental regions
@@ -2153,22 +2156,29 @@ runtime component of its own).
 | Rest Mode R1–R4 | `96003fa` |
 | W1 | `ca9b3b0` |
 | T1 | `086175a` |
-| D-67, T2, W2, M13.1 (reconstructed 2026-11-01) | not committed — the original local commits `45ba202`, `766ca6f`, `de0b1b1`, `d1bc986` were lost unpushed with their working container |
+| D-67 (reconstructed; on `recovery/organic-world-nov-2026`) | `5d065b1` — the original `45ba202` was lost unpushed and is not restored |
+| T2 (reconstructed; on `recovery/organic-world-nov-2026`) | `88ae625` — the original `766ca6f` was lost unpushed and is not restored |
+| W2 (reconstructed; on `recovery/organic-world-nov-2026`) | `a46b428` — the original `de0b1b1` was lost unpushed and is not restored |
+| M13.1 (reconstructed; on `recovery/organic-world-nov-2026`) | `277f2dd` — the original `d1bc986` was lost unpushed and is not restored |
+| Documentation reconciliation (reconstructed; on `recovery/organic-world-nov-2026`) | `b335be8` — the original `d59093b` was lost unpushed and is not restored |
+| M14.1 (on `recovery/organic-world-nov-2026`) | `3d6bdc9` — its first commit; the first implementation was lost uncommitted |
 
 ## 16. Current position
-- **Where things stand (reconciled 2026-10-27; recovered 2026-11-01 on `recovery/organic-world-nov-2026` from `5e5fd81`):**
+- **Where things stand (reconciled 2026-10-27; recovered 2026-11-01 on `recovery/organic-world-nov-2026` from `5e5fd81`; committed and pushed 2026-11-03):**
   - **Implemented and committed.** On `main` (up to `3f2cfaf`): Phases 00–10 in code, M11.0 and M11.1 (Earth —
     Nurture), E1, M14.1a (Wildlife Journal) and M15.2–M15.4 (state registry, old-save fixtures, save reliability). On
     `prototype/organic-world` only (not merged into `main`): Rest Mode R1–R4 (`96003fa`, D-62), the organic art B0
     (`c0d1670`) and B0.1 (`72abe46`, `7e4cd73`), W1 (`ca9b3b0`), T1 (`086175a`) and the A0 blueprint and design lock with
     D-64–D-66 (documentation only).
-  - **Reconstructed, not committed (2026-11-01).** The local commits made after `5e5fd81` — `45ba202` (D-67), `766ca6f`
-    (T2, D-68), `de0b1b1` (W2, D-69), `d1bc986` (M13.1, D-70) and `d59093b` (this reconciliation) — were lost unpushed with
-    their working container. They are reconstructed from the surviving session record in the working tree of
-    `recovery/organic-world-nov-2026`, awaiting review: D-67 as a reconstructed prerequisite record (its original date
-    unrecoverable), T2 Android export readiness, W2 wildlife in the rain, M13.1 one progression path, and this
-    reconciliation; the original commit objects are not restored. M14.1 player memories (derived only, D-71, with the
-    final review corrections) is implemented in the same working tree, not committed.
+  - **Reconstructed, committed and pushed (2026-11-03) — on `recovery/organic-world-nov-2026` only** (not merged into
+    `prototype/organic-world` or `main`). The local commits made after `5e5fd81` — `45ba202` (D-67), `766ca6f` (T2,
+    D-68), `de0b1b1` (W2, D-69), `d1bc986` (M13.1, D-70) and `d59093b` (the documentation reconciliation) — were lost
+    unpushed with their working container. They were reconstructed from the surviving session record (2026-11-01) and
+    committed as new commits, in the same order: `5d065b1` (D-67, a reconstructed prerequisite record; its original date
+    unrecoverable), `88ae625` (T2 Android export readiness), `a46b428` (W2 wildlife in the rain), `277f2dd` (M13.1 one
+    progression path) and `b335be8` (the documentation reconciliation); the original commit objects are not restored.
+    M14.1 player memories (derived only, D-71, with the final review corrections), whose first implementation was lost
+    uncommitted, followed as `3d6bdc9`.
   - **Automated validation passed; device acceptance pending.** Every `[~]` milestone — the Device Playtest Pack lists
     65 milestones (with the M01.6 gate and B0/B0.1) that owe a device test, among them W2 (S3.12), M13.1 (S3.2,
     S3.5, S4.1, S4.2) and M14.1 (S3.13, S4.1, S4.2) — plus the PC and Android visual reviews of B0, B0.1 and W1 and Rest Mode's licensed ambience and
