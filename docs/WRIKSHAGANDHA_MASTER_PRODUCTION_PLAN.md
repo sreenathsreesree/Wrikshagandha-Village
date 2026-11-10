@@ -2171,6 +2171,7 @@ runtime component of its own).
 | M13.1 (reconstructed; on `recovery/organic-world-nov-2026`) | `277f2dd` — the original `d1bc986` was lost unpushed and is not restored |
 | Documentation reconciliation (reconstructed; on `recovery/organic-world-nov-2026`) | `b335be8` — the original `d59093b` was lost unpushed and is not restored |
 | M14.1 (on `recovery/organic-world-nov-2026`) | `3d6bdc9` — its first commit; the first implementation was lost uncommitted |
+| P0.3 — pre-playtest fix for M01.6 (on `recovery/organic-world-nov-2026`) | `2b9f92b` |
 
 ## 16. Current position
 - **Where things stand (reconciled 2026-10-27; recovered 2026-11-01 on `recovery/organic-world-nov-2026` from `5e5fd81`; committed and pushed 2026-11-03):**
