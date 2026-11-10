@@ -29,6 +29,13 @@ const DEFAULT_WINDUP := {"scale": Vector3(1.05, 1.15, 1.05), "lift": 0.06}
 
 const WINDUP_DURATION := 0.09
 
+## The smallest scale this discovery (a physics Area3D) is ever given — the
+## start of the spawn grow and the end of the collect shrink. Godot's physics
+## inverts every collision object's transform, and an exactly zero scale
+## can't be inverted (it logs "det == 0" each time); a thousandth of full
+## size is not visible, so both animations look as they did from and to zero.
+const MIN_AREA_SCALE := Vector3(0.001, 0.001, 0.001)
+
 signal harvested(discovery_id: String)
 
 @export var discovery_id: String = ""
@@ -82,7 +89,7 @@ func get_interaction_metadata() -> Dictionary:
 ## a small scale-up plus a brief glow on the shared indicator, then back to
 ## normal. Existing discovery logic is untouched; this is presentation only.
 func play_spawn_animation() -> void:
-	scale = Vector3.ZERO
+	scale = MIN_AREA_SCALE
 	var tween := create_tween()
 	tween.tween_property(self, "scale", Vector3.ONE, 0.35) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -120,7 +127,7 @@ func _play_harvest_feedback() -> void:
 	var tween := create_tween()
 	tween.tween_property(self, "scale", Vector3.ONE * 1.25, 0.1) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_property(self, "scale", Vector3.ZERO, 0.2) \
+	tween.tween_property(self, "scale", MIN_AREA_SCALE, 0.2) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	await tween.finished
 
@@ -159,7 +166,7 @@ func _play_collected_burst() -> void:
 
 ## A handful of small glowing dots scattering outward — the "small
 ## particles" moment. Spawned as a sibling (not a child of self) so it
-## isn't squashed by this node's own shrink-to-zero tween.
+## isn't squashed by this node's own shrink-away tween.
 func _spawn_harvest_particles() -> void:
 	var parent := get_parent()
 	if parent == null:
